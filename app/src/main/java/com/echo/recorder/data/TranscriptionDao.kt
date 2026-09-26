@@ -1,0 +1,32 @@
+package com.echo.recorder.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+data class TranscriptionWithAudio(
+    val id: Long,
+    val segmentId: Long,
+    val text: String,
+    val timestampMillis: Long,
+    val durationSeconds: Int,
+    val filePath: String,
+    val overlapSeconds: Int
+)
+
+@Dao
+interface TranscriptionDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTranscription(transcription: Transcription): Long
+
+    @Query("SELECT t.id, t.segmentId, t.text, t.timestampMillis, t.durationSeconds, a.filePath, a.overlapSeconds FROM transcriptions t INNER JOIN audio_segments a ON t.segmentId = a.id ORDER BY t.timestampMillis DESC")
+    fun getAllTranscriptionsWithAudio(): Flow<List<TranscriptionWithAudio>>
+
+    @Query("SELECT t.id, t.segmentId, t.text, t.timestampMillis, t.durationSeconds, a.filePath, a.overlapSeconds FROM transcriptions t INNER JOIN audio_segments a ON t.segmentId = a.id WHERE t.text LIKE '%' || :query || '%' ORDER BY t.timestampMillis DESC")
+    fun searchTranscriptions(query: String): Flow<List<TranscriptionWithAudio>>
+
+    @Query("DELETE FROM transcriptions WHERE id = :id")
+    suspend fun deleteTranscription(id: Long)
+}
