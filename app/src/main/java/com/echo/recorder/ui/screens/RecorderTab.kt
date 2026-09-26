@@ -112,6 +112,13 @@ fun RecorderTab(
         else -> "44.1 kHz (HD)"
     }
 
+    val activeModelName = when (userPreferences.selectedSttModel) {
+        UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper Tiny"
+        UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
+        UserPreferences.STT_MODEL_INDIC_CONFORMER -> "IndicConformer"
+        else -> "Google Speech"
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -337,7 +344,7 @@ fun RecorderTab(
                         color = if (isServiceRunning) PrimaryBlue.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         Text(
-                            text = if (isServiceRunning) "LIVE (HINDI/HINGLISH)" else "IDLE",
+                            text = if (isServiceRunning) "LIVE • $activeModelName" else activeModelName.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = if (isServiceRunning) PrimaryBlue else TextMuted,
@@ -352,9 +359,9 @@ fun RecorderTab(
                     text = if (liveTranscript.isNotBlank() && isServiceRunning) {
                         liveTranscript
                     } else if (isServiceRunning) {
-                        "Listening for your voice in Hindi, Hinglish, or English... Speak now to transcribe."
+                        "Listening with $activeModelName for voice in Hindi, Hinglish, or English... Speak now to transcribe."
                     } else {
-                        "Start recording to transcribe and extract action items."
+                        "Start recording to transcribe and extract action items with $activeModelName."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (liveTranscript.isNotBlank() && isServiceRunning) TextPrimary else TextMuted,
@@ -364,7 +371,7 @@ fun RecorderTab(
                 if (isServiceRunning) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Audio slices saved every ${userPreferences.bufferLengthSeconds}s • Extracted to Dashboard notes",
+                        text = "AI Model: $activeModelName • Slices saved every ${userPreferences.bufferLengthSeconds}s • Synced to Dashboard",
                         style = MaterialTheme.typography.labelSmall,
                         color = AccentPurple
                     )

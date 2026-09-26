@@ -23,6 +23,7 @@ class PreferencesRepository(private val context: Context) {
         val SKIP_SILENCE = booleanPreferencesKey("skip_silence")
         val AUTO_DELETE_AUDIO = booleanPreferencesKey("auto_delete_audio")
         val SELECTED_LANGUAGE = stringPreferencesKey("selected_language")
+        val SELECTED_STT_MODEL = stringPreferencesKey("selected_stt_model")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -33,7 +34,8 @@ class PreferencesRepository(private val context: Context) {
             liveTranscribe = preferences[PreferencesKeys.LIVE_TRANSCRIBE] ?: true,
             skipSilence = preferences[PreferencesKeys.SKIP_SILENCE] ?: true,
             autoDeleteAudio = preferences[PreferencesKeys.AUTO_DELETE_AUDIO] ?: false,
-            selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN"
+            selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN",
+            selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_GOOGLE_SPEECH
         )
     }
 
@@ -76,6 +78,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateLanguage(lang: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SELECTED_LANGUAGE] = lang
+        }
+    }
+
+    suspend fun updateSttModel(modelId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SELECTED_STT_MODEL] = modelId
         }
     }
 }

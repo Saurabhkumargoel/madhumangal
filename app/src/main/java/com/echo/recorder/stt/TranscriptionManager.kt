@@ -23,26 +23,26 @@ class TranscriptionManager(
     private val noteTaskDao: NoteTaskDao
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
-    private val transcriptionQueue = Channel<Long>(Channel.UNLIMITED)
-    private val sttEngine: SpeechToTextEngine = HindiHinglishSTTEngine(context)
-    private val tinyAiProcessor = TinyAiProcessor()
+    private val transcriptionQueue = Channel<Pair<Long, String?>>(Channel.UNLIMITED)
     private val prefsRepo = PreferencesRepository(context)
+    private val sttEngine: SpeechToTextEngine = HindiHinglishSTTEngine(context, prefsRepo)
+    private val tinyAiProcessor = TinyAiProcessor()
 
     init {
         scope.launch {
-            for (segmentId in transcriptionQueue) {
-                processSegment(segmentId)
+            for ((segmentId, liveTranscript) in transcriptionQueue) {
+                processSegment(segmentId, liveTranscript)
             }
         }
     }
 
-    fun enqueueTranscription(segmentId: Long) {
+    fun enqueueTranscription(segmentId: Long, liveTranscript: String? = null) {
         scope.launch {
-            transcriptionQueue.send(segmentId)
+            transcriptionQueue.send(Pair(segmentId, liveTranscript))
         }
     }
 
-    private suspend fun processSegment(segmentId: Long) {
+    private suspend fun processSegment(segmentId: Long, liveTranscript: String?) {
         val segment = audioSegmentDao.getSegmentById(segmentId) ?: return
 
         // Update status to TRANSCRIBING
@@ -50,45 +50,42 @@ class TranscriptionManager(
         audioSegmentDao.updateSegment(updatedSegment)
 
         val audioFile = File(segment.filePath)
-        val result = sttEngine.transcribeAudioFile(audioFile)
+        val textToUse = if (!liveTranscript.isNullOrBlank()) {
+            liveTranscript
+        } else {
+            sttEngine.transcribeAudioFile(audioFile).getOrDefault("[Audio Recorded: ${audioFile.name}]")
+        }
 
-        result.fold(
-            onSuccess = { transcribedText ->
-                // Insert into transcriptions table
-                val transcription = Transcription(
-                    segmentId = segment.id,
-                    text = transcribedText,
-                    timestampMillis = segment.startTimeMillis,
-                    durationSeconds = segment.durationSeconds,
-                    confidence = 0.95f
-                )
-                val transcriptionId = transcriptionDao.insertTranscription(transcription)
-
-                // Update live transcript display on screen
-                com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
-
-                // Process with Tiny AI to extract NoteTasks
-                val extractedTasks = tinyAiProcessor.processTranscription(transcribedText, transcriptionId)
-                for (task in extractedTasks) {
-                    noteTaskDao.insertTask(task)
-                }
-
-                // Mark segment COMPLETED
-                audioSegmentDao.updateSegment(segment.copy(status = AudioSegment.STATUS_COMPLETED))
-
-                // Check auto-delete setting
-                val prefs = prefsRepo.userPreferencesFlow.first()
-                if (prefs.autoDeleteAudio && audioFile.exists()) {
-                    try {
-                        audioFile.delete()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            },
-            onFailure = { error ->
-                audioSegmentDao.updateSegment(segment.copy(status = AudioSegment.STATUS_FAILED))
-            }
+        // Insert into transcriptions table
+        val transcription = Transcription(
+            segmentId = segment.id,
+            text = textToUse,
+            timestampMillis = segment.startTimeMillis,
+            durationSeconds = segment.durationSeconds,
+            confidence = 0.95f
         )
+        val transcriptionId = transcriptionDao.insertTranscription(transcription)
+
+        // Update live transcript display on screen
+        com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = textToUse
+
+        // Process with Tiny AI to extract NoteTasks
+        val extractedTasks = tinyAiProcessor.processTranscription(textToUse, transcriptionId)
+        for (task in extractedTasks) {
+            noteTaskDao.insertTask(task)
+        }
+
+        // Mark segment COMPLETED
+        audioSegmentDao.updateSegment(segment.copy(status = AudioSegment.STATUS_COMPLETED))
+
+        // Check auto-delete setting
+        val prefs = prefsRepo.userPreferencesFlow.first()
+        if (prefs.autoDeleteAudio && audioFile.exists()) {
+            try {
+                audioFile.delete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

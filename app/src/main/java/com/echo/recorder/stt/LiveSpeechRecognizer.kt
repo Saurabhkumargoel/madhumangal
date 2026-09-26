@@ -8,6 +8,7 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.echo.recorder.audio.AudioRecordingState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +34,7 @@ class LiveSpeechRecognizer(
 
     fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            _liveTranscript.value = "(Live voice listening active)"
+            AudioRecordingState.liveTranscript.value = "(Voice recognition service unavailable on device)"
             return
         }
 
@@ -79,11 +80,18 @@ class LiveSpeechRecognizer(
 
                     override fun onError(error: Int) {
                         _isRecognizing.value = false
-                        // Automatically restart recognition if still in listening mode
                         if (isListening) {
+                            val delayMs = when (error) {
+                                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 800L
+                                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> 1500L
+                                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 250L
+                                else -> 500L
+                            }
                             mainHandler.postDelayed({
-                                setupAndStartRecognizer()
-                            }, 500)
+                                if (isListening) {
+                                    setupAndStartRecognizer()
+                                }
+                            }, delayMs)
                         }
                     }
 
@@ -92,13 +100,15 @@ class LiveSpeechRecognizer(
                         val text = matches?.firstOrNull() ?: ""
                         if (text.isNotBlank()) {
                             _liveTranscript.value = text
+                            AudioRecordingState.liveTranscript.value = text
                             onFinalResult(text)
                         }
-                        // Continue listening continuously
                         if (isListening) {
-                            mainHandler.post {
-                                setupAndStartRecognizer()
-                            }
+                            mainHandler.postDelayed({
+                                if (isListening) {
+                                    setupAndStartRecognizer()
+                                }
+                            }, 200)
                         }
                     }
 
@@ -107,6 +117,7 @@ class LiveSpeechRecognizer(
                         val partial = matches?.firstOrNull() ?: ""
                         if (partial.isNotBlank()) {
                             _liveTranscript.value = partial
+                            AudioRecordingState.liveTranscript.value = partial
                         }
                     }
 
@@ -119,7 +130,7 @@ class LiveSpeechRecognizer(
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
 
             speechRecognizer?.startListening(intent)
@@ -127,7 +138,9 @@ class LiveSpeechRecognizer(
             e.printStackTrace()
             if (isListening) {
                 mainHandler.postDelayed({
-                    setupAndStartRecognizer()
+                    if (isListening) {
+                        setupAndStartRecognizer()
+                    }
                 }, 1000)
             }
         }

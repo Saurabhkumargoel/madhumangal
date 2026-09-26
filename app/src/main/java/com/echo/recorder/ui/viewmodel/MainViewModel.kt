@@ -137,6 +137,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSttModel(modelId: String) {
+        viewModelScope.launch {
+            prefsRepo.updateSttModel(modelId)
+        }
+    }
+
     fun toggleTaskCompletion(id: Long, isCompleted: Boolean) {
         viewModelScope.launch {
             noteTaskDao.updateTaskCompletion(id, isCompleted)
