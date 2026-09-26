@@ -41,6 +41,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val lowHangingFruits: StateFlow<List<NoteTask>> = noteTaskDao.getLowHangingFruits()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    val isServiceRunning: StateFlow<Boolean> = com.echo.recorder.audio.AudioRecordingState.isRunning
+    val currentAmplitude: StateFlow<Float> = com.echo.recorder.audio.AudioRecordingState.currentAmplitude
+    val currentDb: StateFlow<Int> = com.echo.recorder.audio.AudioRecordingState.currentDb
+    val elapsedSeconds: StateFlow<Long> = com.echo.recorder.audio.AudioRecordingState.elapsedSeconds
+    val liveTranscript: StateFlow<String> = com.echo.recorder.audio.AudioRecordingState.liveTranscript
+    val createdSegmentsCount: StateFlow<Int> = com.echo.recorder.audio.AudioRecordingState.createdSegmentsCount
+    val isSpeechDetected: StateFlow<Boolean> = com.echo.recorder.audio.AudioRecordingState.isSpeechDetected
+    val statusMessage: StateFlow<String> = com.echo.recorder.audio.AudioRecordingState.statusMessage
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 

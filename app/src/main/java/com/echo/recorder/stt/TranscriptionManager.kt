@@ -64,6 +64,9 @@ class TranscriptionManager(
                 )
                 val transcriptionId = transcriptionDao.insertTranscription(transcription)
 
+                // Update live transcript display on screen
+                com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
+
                 // Process with Tiny AI to extract NoteTasks
                 val extractedTasks = tinyAiProcessor.processTranscription(transcribedText, transcriptionId)
                 for (task in extractedTasks) {

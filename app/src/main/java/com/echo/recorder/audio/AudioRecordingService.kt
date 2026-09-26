@@ -2,10 +2,8 @@ package com.echo.recorder.audio
 
 import android.annotation.SuppressLint
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -18,14 +16,10 @@ import com.echo.recorder.MainActivity
 import com.echo.recorder.R
 import com.echo.recorder.data.AudioSegment
 import com.echo.recorder.data.UserPreferences
-import com.echo.recorder.stt.LiveSpeechRecognizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -44,29 +38,8 @@ class AudioRecordingService : Service() {
     private var timerJob: Job? = null
 
     private lateinit var bufferManager: AudioBufferManager
-    private var liveRecognizer: LiveSpeechRecognizer? = null
-
-    private var currentSampleRate = UserPreferences.QUALITY_TINIEST // 8000 Hz default
-
-    private val _serviceState = MutableStateFlow(StateIsRunning(false))
-    val serviceState: StateFlow<StateIsRunning> = _serviceState.asStateFlow()
-
-    private val _currentAmplitude = MutableStateFlow(0f)
-    val currentAmplitude: StateFlow<Float> = _currentAmplitude.asStateFlow()
-
-    private val _currentDb = MutableStateFlow(-60)
-    val currentDb: StateFlow<Int> = _currentDb.asStateFlow()
-
-    private val _elapsedSeconds = MutableStateFlow(0L)
-    val elapsedSeconds: StateFlow<Long> = _elapsedSeconds.asStateFlow()
-
-    private val _liveTranscript = MutableStateFlow("")
-    val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
-
-    private val _createdSegmentsCount = MutableStateFlow(0)
-    val createdSegmentsCount: StateFlow<Int> = _createdSegmentsCount.asStateFlow()
-
-    data class StateIsRunning(val isRunning: Boolean)
+    private var hardwareSampleRate = 16000
+    private var targetSampleRate = UserPreferences.QUALITY_TINIEST // 8000 Hz default
 
     inner class LocalBinder : Binder() {
         fun getService(): AudioRecordingService = this@AudioRecordingService
@@ -83,7 +56,7 @@ class AudioRecordingService : Service() {
 
         bufferManager = AudioBufferManager(
             outputDirectory = audioDir,
-            bufferLengthSeconds = 15, // Default to smaller 15s chunks
+            bufferLengthSeconds = 15,
             overlapSeconds = 3,
             sampleRate = UserPreferences.QUALITY_TINIEST,
             skipSilence = true,
@@ -92,16 +65,6 @@ class AudioRecordingService : Service() {
             }
         )
 
-        liveRecognizer = LiveSpeechRecognizer(this) { finalSpeech ->
-            _liveTranscript.value = finalSpeech
-        }
-
-        serviceScope.launch {
-            liveRecognizer?.liveTranscript?.collectLatest { text ->
-                _liveTranscript.value = text
-            }
-        }
-
         // Sync preferences
         serviceScope.launch {
             prefsRepo.userPreferencesFlow.collectLatest { prefs ->
@@ -109,8 +72,7 @@ class AudioRecordingService : Service() {
                 bufferManager.overlapSeconds = prefs.overlapSeconds
                 bufferManager.sampleRate = prefs.sampleRate
                 bufferManager.skipSilence = prefs.skipSilence
-                currentSampleRate = prefs.sampleRate
-                liveRecognizer?.setLanguage(prefs.selectedLanguage)
+                targetSampleRate = prefs.sampleRate
             }
         }
     }
@@ -127,56 +89,50 @@ class AudioRecordingService : Service() {
     fun startRecording() {
         if (isRecording) return
 
-        val sampleRate = currentSampleRate
-        val channelConfig = AudioFormat.CHANNEL_IN_MONO
-        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-
-        val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-        val bufferSize = (minBufferSize * 2).coerceAtLeast(2048)
-
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSize
-            )
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val recordPair = createAudioRecord(targetSampleRate)
+        if (recordPair == null) {
+            AudioRecordingState.statusMessage.value = "ERROR: Microphone Incompatible"
             return
         }
 
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            audioRecord?.release()
-            audioRecord = null
-            return
-        }
+        audioRecord = recordPair.first
+        hardwareSampleRate = recordPair.second
+        bufferManager.sampleRate = targetSampleRate
+        AudioRecordingState.actualSampleRate.value = targetSampleRate
 
         startForeground(NOTIFICATION_ID, createNotification())
         isRecording = true
-        _serviceState.value = StateIsRunning(true)
-        _elapsedSeconds.value = 0L
+
+        // Update centralized state immediately
+        AudioRecordingState.isRunning.value = true
+        AudioRecordingState.statusMessage.value = "RECORDING LIVE"
+        AudioRecordingState.elapsedSeconds.value = 0L
+        AudioRecordingState.liveTranscript.value = "Listening to your voice..."
 
         // Start ticking timer
         timerJob = serviceScope.launch {
             while (isActive && isRecording) {
                 delay(1000)
-                _elapsedSeconds.value = _elapsedSeconds.value + 1
+                AudioRecordingState.elapsedSeconds.value = AudioRecordingState.elapsedSeconds.value + 1
             }
         }
-
-        // Start live streaming speech recognizer
-        liveRecognizer?.startListening()
 
         audioRecord?.startRecording()
 
         recordingThread = Thread {
-            val audioBuffer = ByteArray(1024)
+            val audioBuffer = ByteArray(2048)
+            val shouldDownsample = (hardwareSampleRate == 16000 && targetSampleRate == 8000)
+
             while (isRecording && !Thread.currentThread().isInterrupted) {
                 val read = audioRecord?.read(audioBuffer, 0, audioBuffer.size) ?: 0
                 if (read > 0) {
-                    bufferManager.appendPcmData(audioBuffer, read)
+                    val pcmToSend = if (shouldDownsample) {
+                        downsample16kTo8k(audioBuffer, read)
+                    } else {
+                        audioBuffer.copyOf(read)
+                    }
+
+                    bufferManager.appendPcmData(pcmToSend, pcmToSend.size)
 
                     // Calculate amplitude & decibels
                     var maxAmp = 0
@@ -186,28 +142,69 @@ class AudioRecordingService : Service() {
                         if (absSample > maxAmp) maxAmp = absSample
                     }
                     val normalizedAmp = (maxAmp / 32768f).coerceIn(0f, 1f)
-                    _currentAmplitude.value = normalizedAmp
+                    AudioRecordingState.currentAmplitude.value = normalizedAmp
 
-                    // Decibels calculation: 20 * log10(amp)
                     val db = if (maxAmp > 0) (20 * log10(maxAmp.toDouble() / 32768.0)).toInt().coerceIn(-60, 0) else -60
-                    _currentDb.value = db
+                    AudioRecordingState.currentDb.value = db
+                    AudioRecordingState.isSpeechDetected.value = db > -40
                 }
             }
         }.apply { start() }
+    }
+
+    /**
+     * Tries preferred sample rate, falls back to 16000, 44100, 48000 if device HAL doesn't support 8000.
+     */
+    @SuppressLint("MissingPermission")
+    private fun createAudioRecord(preferredRate: Int): Pair<AudioRecord, Int>? {
+        val rates = listOf(preferredRate, 16000, 44100, 48000, 8000).distinct()
+        for (rate in rates) {
+            val minBuf = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            if (minBuf > 0) {
+                try {
+                    val record = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        rate,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        (minBuf * 2).coerceAtLeast(4096)
+                    )
+                    if (record.state == AudioRecord.STATE_INITIALIZED) {
+                        return Pair(record, rate)
+                    } else {
+                        record.release()
+                    }
+                } catch (e: Exception) {
+                    // Try next candidate rate
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Downsamples 16kHz 16-bit mono PCM to 8kHz by taking alternate 2-byte samples.
+     */
+    private fun downsample16kTo8k(src: ByteArray, length: Int): ByteArray {
+        val outLength = (length / 4) * 2
+        val out = ByteArray(outLength)
+        var outIdx = 0
+        for (i in 0 until length - 3 step 4) {
+            out[outIdx] = src[i]
+            out[outIdx + 1] = src[i + 1]
+            outIdx += 2
+        }
+        return out
     }
 
     fun stopRecording() {
         if (!isRecording) return
 
         isRecording = false
-        _serviceState.value = StateIsRunning(false)
-        _currentAmplitude.value = 0f
-        _currentDb.value = -60
+        AudioRecordingState.reset()
 
         timerJob?.cancel()
         timerJob = null
-
-        liveRecognizer?.stopListening()
 
         try {
             audioRecord?.stop()
@@ -245,9 +242,9 @@ class AudioRecordingService : Service() {
                 status = AudioSegment.STATUS_PENDING
             )
             val segmentId = app.database.audioSegmentDao().insertSegment(segment)
-            _createdSegmentsCount.value = _createdSegmentsCount.value + 1
+            AudioRecordingState.createdSegmentsCount.value = AudioRecordingState.createdSegmentsCount.value + 1
 
-            // Trigger offline transcription
+            // Trigger offline transcription and live feed update
             app.transcriptionManager.enqueueTranscription(segmentId)
         }
     }
@@ -269,10 +266,10 @@ class AudioRecordingService : Service() {
 
         return NotificationCompat.Builder(this, EchoApplication.NOTIFICATION_CHANNEL_ID)
             .setContentTitle("🔴 GoodEcho: Recording Live")
-            .setContentText("Continuous listening active (${bufferManager.bufferLengthSeconds}s chunks, ${bufferManager.sampleRate}Hz)")
+            .setContentText("Listening continuously (${bufferManager.bufferLengthSeconds}s chunks, ${bufferManager.sampleRate}Hz)")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, "Stop Recording", stopPendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

@@ -35,9 +35,11 @@ fun MainScreen(
     elapsedSeconds: Long = 0L,
     liveTranscript: String = "",
     createdSegmentsCount: Int = 0,
+    isSpeechDetected: Boolean = false,
+    statusMessage: String = "STANDBY",
     onRequestPermission: () -> Unit = {}
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(1) } // Default to Recorder Tab for instant clarity!
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
     val transcriptions by viewModel.transcriptions.collectAsState(initial = emptyList())
     val searchQuery by viewModel.searchQuery.collectAsState(initial = "")
@@ -124,6 +126,8 @@ fun MainScreen(
                 elapsedSeconds = elapsedSeconds,
                 liveTranscript = liveTranscript,
                 createdSegmentsCount = createdSegmentsCount,
+                isSpeechDetected = isSpeechDetected,
+                statusMessage = statusMessage,
                 userPreferences = userPreferences,
                 onRequestPermission = onRequestPermission,
                 modifier = Modifier.padding(paddingValues)
