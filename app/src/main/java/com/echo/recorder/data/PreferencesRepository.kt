@@ -18,16 +18,22 @@ class PreferencesRepository(private val context: Context) {
     private object PreferencesKeys {
         val BUFFER_LENGTH_SECONDS = intPreferencesKey("buffer_length_seconds")
         val OVERLAP_SECONDS = intPreferencesKey("overlap_seconds")
+        val SAMPLE_RATE = intPreferencesKey("sample_rate")
+        val LIVE_TRANSCRIBE = booleanPreferencesKey("live_transcribe")
+        val SKIP_SILENCE = booleanPreferencesKey("skip_silence")
         val AUTO_DELETE_AUDIO = booleanPreferencesKey("auto_delete_audio")
-        val SELECTED_STT_ENGINE = stringPreferencesKey("selected_stt_engine")
+        val SELECTED_LANGUAGE = stringPreferencesKey("selected_language")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
         UserPreferences(
-            bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 60,
-            overlapSeconds = preferences[PreferencesKeys.OVERLAP_SECONDS] ?: 5,
+            bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 15,
+            overlapSeconds = preferences[PreferencesKeys.OVERLAP_SECONDS] ?: 3,
+            sampleRate = preferences[PreferencesKeys.SAMPLE_RATE] ?: UserPreferences.QUALITY_TINIEST,
+            liveTranscribe = preferences[PreferencesKeys.LIVE_TRANSCRIBE] ?: true,
+            skipSilence = preferences[PreferencesKeys.SKIP_SILENCE] ?: true,
             autoDeleteAudio = preferences[PreferencesKeys.AUTO_DELETE_AUDIO] ?: false,
-            selectedSttEngine = preferences[PreferencesKeys.SELECTED_STT_ENGINE] ?: "LOCAL_OFFLINE"
+            selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN"
         )
     }
 
@@ -43,15 +49,33 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun updateSampleRate(sampleRate: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SAMPLE_RATE] = sampleRate
+        }
+    }
+
+    suspend fun updateLiveTranscribe(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LIVE_TRANSCRIBE] = enabled
+        }
+    }
+
+    suspend fun updateSkipSilence(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SKIP_SILENCE] = enabled
+        }
+    }
+
     suspend fun updateAutoDeleteAudio(autoDelete: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.AUTO_DELETE_AUDIO] = autoDelete
         }
     }
 
-    suspend fun updateSttEngine(engine: String) {
+    suspend fun updateLanguage(lang: String) {
         context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.SELECTED_STT_ENGINE] = engine
+            preferences[PreferencesKeys.SELECTED_LANGUAGE] = lang
         }
     }
 }

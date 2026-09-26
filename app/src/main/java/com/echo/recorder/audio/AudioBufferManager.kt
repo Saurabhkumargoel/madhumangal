@@ -6,23 +6,25 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 class AudioBufferManager(
     private val outputDirectory: File,
-    bufferLengthSeconds: Int = 60,
-    overlapSeconds: Int = 5,
+    bufferLengthSeconds: Int = 15,
+    overlapSeconds: Int = 3,
+    var sampleRate: Int = 8000,
+    var skipSilence: Boolean = true,
     private val onSegmentCreated: (file: File, startTimeMillis: Long, endTimeMillis: Long, durationSeconds: Int, overlapSeconds: Int) -> Unit
 ) {
 
-    companion object {
-        const val SAMPLE_RATE = 16000
-        const val BYTES_PER_SAMPLE = 2 // 16-bit mono
-        const val BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE // 32,000 bytes/sec
-    }
+    val bytesPerSample: Int = 2 // 16-bit mono
+    val bytesPerSecond: Int
+        get() = sampleRate * bytesPerSample
 
-    var bufferLengthSeconds: Int = bufferLengthSeconds.coerceAtLeast(10)
+    var bufferLengthSeconds: Int = bufferLengthSeconds.coerceAtLeast(5)
         set(value) {
-            field = value.coerceAtLeast(10)
+            field = value.coerceAtLeast(5)
         }
 
     var overlapSeconds: Int = overlapSeconds.coerceAtLeast(0)
@@ -46,7 +48,7 @@ class AudioBufferManager(
         pcmStream.write(data, 0, length)
         accumulatedCycleBytes += length
 
-        val targetCycleBytes = bufferLengthSeconds * BYTES_PER_SECOND
+        val targetCycleBytes = bufferLengthSeconds * bytesPerSecond
 
         if (accumulatedCycleBytes >= targetCycleBytes) {
             flushSegment()
@@ -59,29 +61,53 @@ class AudioBufferManager(
         if (fullData.isEmpty()) return
 
         val endTimeMillis = System.currentTimeMillis()
-        val totalDurationSeconds = fullData.size / BYTES_PER_SECOND
+        val totalDurationSeconds = (fullData.size / bytesPerSecond).coerceAtLeast(1)
 
-        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-        val timestampStr = dateFormat.format(Date(cycleStartTimeMillis))
-        val fileName = "segment_${timestampStr}_${segmentCounter.getAndIncrement()}.wav"
-        val outputFile = File(outputDirectory, fileName)
+        // Voice Activity Detection / Silence Check
+        val hasSpeech = if (skipSilence) checkSpeechActivity(fullData) else true
 
-        // Save WAV file
-        val success = WavFileWriter.writeWavFile(fullData, outputFile)
-        if (success) {
-            onSegmentCreated(outputFile, cycleStartTimeMillis, endTimeMillis, totalDurationSeconds, overlapSeconds)
+        if (hasSpeech) {
+            val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+            val timestampStr = dateFormat.format(Date(cycleStartTimeMillis))
+            val fileName = "chunk_${timestampStr}_${segmentCounter.getAndIncrement()}.wav"
+            val outputFile = File(outputDirectory, fileName)
+
+            // Save WAV file with current sample rate
+            val success = WavFileWriter.writeWavFile(fullData, outputFile, sampleRate)
+            if (success) {
+                onSegmentCreated(outputFile, cycleStartTimeMillis, endTimeMillis, totalDurationSeconds, overlapSeconds)
+            }
         }
 
-        // Prepare next buffer carrying forward the overlap data (e.g. 5 seconds)
+        // Prepare next buffer carrying forward the overlap data
         pcmStream.reset()
         accumulatedCycleBytes = 0
         cycleStartTimeMillis = System.currentTimeMillis() - (overlapSeconds * 1000L)
 
-        val overlapBytes = overlapSeconds * BYTES_PER_SECOND
+        val overlapBytes = overlapSeconds * bytesPerSecond
         if (fullData.size > overlapBytes && overlapBytes > 0) {
             val overlapData = fullData.copyOfRange(fullData.size - overlapBytes, fullData.size)
             pcmStream.write(overlapData, 0, overlapData.size)
         }
+    }
+
+    /**
+     * Calculates RMS energy of 16-bit PCM samples to filter out pure ambient silence.
+     */
+    private fun checkSpeechActivity(pcmData: ByteArray): Boolean {
+        if (pcmData.size < 400) return false
+        var sumSquares = 0.0
+        val sampleCount = pcmData.size / 2
+
+        for (i in 0 until pcmData.size - 1 step 2) {
+            val sample = (pcmData[i].toInt() and 0xFF) or (pcmData[i + 1].toInt() shl 8)
+            val shortVal = sample.toShort().toDouble()
+            sumSquares += shortVal * shortVal
+        }
+
+        val rms = sqrt(sumSquares / sampleCount)
+        // Energy threshold: typical silence is < 150 RMS
+        return rms > 160.0
     }
 
     @Synchronized

@@ -17,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -34,6 +35,9 @@ class MainActivity : ComponentActivity() {
 
     private var isServiceRunning by mutableStateOf(false)
     private var currentAmplitude by mutableFloatStateOf(0f)
+    private var currentDb by mutableIntStateOf(-60)
+    private var elapsedSeconds by mutableLongStateOf(0L)
+    private var liveTranscript by mutableStateOf("")
     private var createdSegmentsCount by mutableIntStateOf(0)
 
     private val serviceConnection = object : ServiceConnection {
@@ -55,7 +59,8 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
         if (recordAudioGranted) {
-            // Permission granted
+            // Auto start recording immediately on permission grant so user doesn't wonder!
+            viewModel.startRecordingService(this)
         }
     }
 
@@ -66,14 +71,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             GoodEchoTheme {
-                // Collect states from bound service if available
+                // Collect states from bound service
                 audioService?.let { service ->
                     val serviceRunningState by service.serviceState.collectAsState()
                     val amplitudeState by service.currentAmplitude.collectAsState()
+                    val dbState by service.currentDb.collectAsState()
+                    val timerState by service.elapsedSeconds.collectAsState()
+                    val liveTextState by service.liveTranscript.collectAsState()
                     val countState by service.createdSegmentsCount.collectAsState()
 
                     isServiceRunning = serviceRunningState.isRunning
                     currentAmplitude = amplitudeState
+                    currentDb = dbState
+                    elapsedSeconds = timerState
+                    liveTranscript = liveTextState
                     createdSegmentsCount = countState
                 }
 
@@ -81,7 +92,11 @@ class MainActivity : ComponentActivity() {
                     viewModel = viewModel,
                     isServiceRunning = isServiceRunning,
                     currentAmplitude = currentAmplitude,
-                    createdSegmentsCount = createdSegmentsCount
+                    currentDb = currentDb,
+                    elapsedSeconds = elapsedSeconds,
+                    liveTranscript = liveTranscript,
+                    createdSegmentsCount = createdSegmentsCount,
+                    onRequestPermission = { checkAndRequestPermissions() }
                 )
             }
         }

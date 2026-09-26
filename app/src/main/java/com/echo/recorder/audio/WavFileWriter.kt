@@ -6,21 +6,21 @@ import java.io.IOException
 
 object WavFileWriter {
 
-    private const val SAMPLE_RATE = 16000
     private const val CHANNELS = 1
     private const val BITS_PER_SAMPLE = 16
 
     /**
      * Writes raw 16-bit PCM byte array to a standard WAV audio file with RIFF header.
+     * Supports dynamic sample rates (e.g. 8000 Hz for tiniest quality, 16000 Hz, etc.)
      */
-    fun writeWavFile(pcmData: ByteArray, outputFile: File): Boolean {
+    fun writeWavFile(pcmData: ByteArray, outputFile: File, sampleRate: Int = 8000): Boolean {
         return try {
             FileOutputStream(outputFile).use { out ->
                 val totalAudioLen = pcmData.size.toLong()
                 val totalDataLen = totalAudioLen + 36
-                val byteRate = SAMPLE_RATE * CHANNELS * BITS_PER_SAMPLE / 8
+                val byteRate = sampleRate * CHANNELS * BITS_PER_SAMPLE / 8
 
-                val header = createWavHeader(totalAudioLen, totalDataLen, SAMPLE_RATE, CHANNELS, byteRate)
+                val header = createWavHeader(totalAudioLen, totalDataLen, sampleRate, CHANNELS, byteRate)
                 out.write(header, 0, 44)
                 out.write(pcmData)
             }

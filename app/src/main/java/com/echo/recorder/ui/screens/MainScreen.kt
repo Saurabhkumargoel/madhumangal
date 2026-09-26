@@ -31,7 +31,11 @@ fun MainScreen(
     viewModel: MainViewModel,
     isServiceRunning: Boolean,
     currentAmplitude: Float,
-    createdSegmentsCount: Int
+    currentDb: Int = -60,
+    elapsedSeconds: Long = 0L,
+    liveTranscript: String = "",
+    createdSegmentsCount: Int = 0,
+    onRequestPermission: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
@@ -116,8 +120,12 @@ fun MainScreen(
                 viewModel = viewModel,
                 isServiceRunning = isServiceRunning,
                 currentAmplitude = currentAmplitude,
+                currentDb = currentDb,
+                elapsedSeconds = elapsedSeconds,
+                liveTranscript = liveTranscript,
                 createdSegmentsCount = createdSegmentsCount,
                 userPreferences = userPreferences,
+                onRequestPermission = onRequestPermission,
                 modifier = Modifier.padding(paddingValues)
             )
             2 -> TranscriptsTab(

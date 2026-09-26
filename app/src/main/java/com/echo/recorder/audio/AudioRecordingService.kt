@@ -2,6 +2,7 @@ package com.echo.recorder.audio
 
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -16,16 +17,21 @@ import com.echo.recorder.EchoApplication
 import com.echo.recorder.MainActivity
 import com.echo.recorder.R
 import com.echo.recorder.data.AudioSegment
+import com.echo.recorder.data.UserPreferences
+import com.echo.recorder.stt.LiveSpeechRecognizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.log10
 
 class AudioRecordingService : Service() {
 
@@ -35,14 +41,27 @@ class AudioRecordingService : Service() {
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
     private var recordingThread: Thread? = null
+    private var timerJob: Job? = null
 
     private lateinit var bufferManager: AudioBufferManager
+    private var liveRecognizer: LiveSpeechRecognizer? = null
+
+    private var currentSampleRate = UserPreferences.QUALITY_TINIEST // 8000 Hz default
 
     private val _serviceState = MutableStateFlow(StateIsRunning(false))
     val serviceState: StateFlow<StateIsRunning> = _serviceState.asStateFlow()
 
     private val _currentAmplitude = MutableStateFlow(0f)
     val currentAmplitude: StateFlow<Float> = _currentAmplitude.asStateFlow()
+
+    private val _currentDb = MutableStateFlow(-60)
+    val currentDb: StateFlow<Int> = _currentDb.asStateFlow()
+
+    private val _elapsedSeconds = MutableStateFlow(0L)
+    val elapsedSeconds: StateFlow<Long> = _elapsedSeconds.asStateFlow()
+
+    private val _liveTranscript = MutableStateFlow("")
+    val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
 
     private val _createdSegmentsCount = MutableStateFlow(0)
     val createdSegmentsCount: StateFlow<Int> = _createdSegmentsCount.asStateFlow()
@@ -59,24 +78,39 @@ class AudioRecordingService : Service() {
         super.onCreate()
 
         val audioDir = File(filesDir, "audio_chunks").apply { if (!exists()) mkdirs() }
-
         val app = applicationContext as EchoApplication
         val prefsRepo = app.preferencesRepository
 
         bufferManager = AudioBufferManager(
             outputDirectory = audioDir,
-            bufferLengthSeconds = 60,
-            overlapSeconds = 5,
+            bufferLengthSeconds = 15, // Default to smaller 15s chunks
+            overlapSeconds = 3,
+            sampleRate = UserPreferences.QUALITY_TINIEST,
+            skipSilence = true,
             onSegmentCreated = { file, startTime, endTime, duration, overlap ->
                 onAudioSegmentSaved(file, startTime, endTime, duration, overlap)
             }
         )
+
+        liveRecognizer = LiveSpeechRecognizer(this) { finalSpeech ->
+            _liveTranscript.value = finalSpeech
+        }
+
+        serviceScope.launch {
+            liveRecognizer?.liveTranscript?.collectLatest { text ->
+                _liveTranscript.value = text
+            }
+        }
 
         // Sync preferences
         serviceScope.launch {
             prefsRepo.userPreferencesFlow.collectLatest { prefs ->
                 bufferManager.bufferLengthSeconds = prefs.bufferLengthSeconds
                 bufferManager.overlapSeconds = prefs.overlapSeconds
+                bufferManager.sampleRate = prefs.sampleRate
+                bufferManager.skipSilence = prefs.skipSilence
+                currentSampleRate = prefs.sampleRate
+                liveRecognizer?.setLanguage(prefs.selectedLanguage)
             }
         }
     }
@@ -93,20 +127,25 @@ class AudioRecordingService : Service() {
     fun startRecording() {
         if (isRecording) return
 
-        val sampleRate = AudioBufferManager.SAMPLE_RATE
+        val sampleRate = currentSampleRate
         val channelConfig = AudioFormat.CHANNEL_IN_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
 
         val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-        val bufferSize = (minBufferSize * 2).coerceAtLeast(4096)
+        val bufferSize = (minBufferSize * 2).coerceAtLeast(2048)
 
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            sampleRate,
-            channelConfig,
-            audioFormat,
-            bufferSize
-        )
+        try {
+            audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return
+        }
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord?.release()
@@ -117,17 +156,29 @@ class AudioRecordingService : Service() {
         startForeground(NOTIFICATION_ID, createNotification())
         isRecording = true
         _serviceState.value = StateIsRunning(true)
+        _elapsedSeconds.value = 0L
+
+        // Start ticking timer
+        timerJob = serviceScope.launch {
+            while (isActive && isRecording) {
+                delay(1000)
+                _elapsedSeconds.value = _elapsedSeconds.value + 1
+            }
+        }
+
+        // Start live streaming speech recognizer
+        liveRecognizer?.startListening()
 
         audioRecord?.startRecording()
 
         recordingThread = Thread {
-            val audioBuffer = ByteArray(2048)
+            val audioBuffer = ByteArray(1024)
             while (isRecording && !Thread.currentThread().isInterrupted) {
                 val read = audioRecord?.read(audioBuffer, 0, audioBuffer.size) ?: 0
                 if (read > 0) {
                     bufferManager.appendPcmData(audioBuffer, read)
 
-                    // Calculate peak amplitude for visualization
+                    // Calculate amplitude & decibels
                     var maxAmp = 0
                     for (i in 0 until read - 1 step 2) {
                         val sample = (audioBuffer[i].toInt() and 0xFF) or (audioBuffer[i + 1].toInt() shl 8)
@@ -136,6 +187,10 @@ class AudioRecordingService : Service() {
                     }
                     val normalizedAmp = (maxAmp / 32768f).coerceIn(0f, 1f)
                     _currentAmplitude.value = normalizedAmp
+
+                    // Decibels calculation: 20 * log10(amp)
+                    val db = if (maxAmp > 0) (20 * log10(maxAmp.toDouble() / 32768.0)).toInt().coerceIn(-60, 0) else -60
+                    _currentDb.value = db
                 }
             }
         }.apply { start() }
@@ -147,6 +202,12 @@ class AudioRecordingService : Service() {
         isRecording = false
         _serviceState.value = StateIsRunning(false)
         _currentAmplitude.value = 0f
+        _currentDb.value = -60
+
+        timerJob?.cancel()
+        timerJob = null
+
+        liveRecognizer?.stopListening()
 
         try {
             audioRecord?.stop()
@@ -207,8 +268,8 @@ class AudioRecordingService : Service() {
         )
 
         return NotificationCompat.Builder(this, EchoApplication.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("GoodEcho Active")
-            .setContentText("Continuous listening in background (${bufferManager.bufferLengthSeconds}s cycles, ${bufferManager.overlapSeconds}s overlap)")
+            .setContentTitle("🔴 GoodEcho: Recording Live")
+            .setContentText("Continuous listening active (${bufferManager.bufferLengthSeconds}s chunks, ${bufferManager.sampleRate}Hz)")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)

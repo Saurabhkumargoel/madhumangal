@@ -13,6 +13,7 @@ import com.echo.recorder.audio.AudioRecordingService
 import com.echo.recorder.data.NoteTask
 import com.echo.recorder.data.TranscriptionWithAudio
 import com.echo.recorder.data.UserPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,6 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -40,6 +43,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _audioStorageMb = MutableStateFlow(0f)
+    val audioStorageMb: StateFlow<Float> = _audioStorageMb.asStateFlow()
+
+    init {
+        refreshStorageUsage()
+    }
+
+    fun refreshStorageUsage() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val audioDir = File(app.filesDir, "audio_chunks")
+            if (audioDir.exists()) {
+                val totalBytes = audioDir.listFiles()?.sumOf { it.length() } ?: 0L
+                _audioStorageMb.value = totalBytes / (1024f * 1024f)
+            }
+        }
+    }
+
+    fun clearAudioCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val audioDir = File(app.filesDir, "audio_chunks")
+            if (audioDir.exists()) {
+                audioDir.listFiles()?.forEach { it.delete() }
+            }
+            refreshStorageUsage()
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val transcriptions: StateFlow<List<TranscriptionWithAudio>> = _searchQuery
@@ -68,15 +98,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSampleRate(sampleRate: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateSampleRate(sampleRate)
+        }
+    }
+
+    fun updateLiveTranscribe(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateLiveTranscribe(enabled)
+        }
+    }
+
+    fun updateSkipSilence(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateSkipSilence(enabled)
+        }
+    }
+
     fun updateAutoDelete(autoDelete: Boolean) {
         viewModelScope.launch {
             prefsRepo.updateAutoDeleteAudio(autoDelete)
         }
     }
 
-    fun deleteTranscription(id: Long) {
+    fun updateLanguage(language: String) {
         viewModelScope.launch {
-            transcriptionDao.deleteTranscription(id)
+            prefsRepo.updateLanguage(language)
         }
     }
 
@@ -92,15 +140,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addManualTask(title: String, categoryGroup: String, priority: Int, isLowHangingFruit: Boolean) {
+    fun deleteTranscription(id: Long) {
         viewModelScope.launch {
-            val task = NoteTask(
-                title = title,
-                categoryGroup = categoryGroup,
-                priority = priority,
-                isLowHangingFruit = isLowHangingFruit
-            )
-            noteTaskDao.insertTask(task)
+            transcriptionDao.deleteTranscription(id)
+            refreshStorageUsage()
         }
     }
 

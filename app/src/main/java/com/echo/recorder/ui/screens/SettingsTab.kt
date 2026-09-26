@@ -1,6 +1,7 @@
 package com.echo.recorder.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,12 +17,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -29,6 +35,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +62,7 @@ fun SettingsTab(
 ) {
     val context = LocalContext.current
     val isIgnoringBattery = viewModel.isIgnoringBatteryOptimizations(context)
+    val storageMb by viewModel.audioStorageMb.collectAsState()
 
     Column(
         modifier = modifier
@@ -68,9 +77,85 @@ fun SettingsTab(
             fontWeight = FontWeight.Bold,
             color = TextPrimary
         )
+        Text(
+            text = "Audio quality, small buffer chunks, and Good-Echo controls",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
+        )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 1. Buffer Length Setting Card
+        // 1. Audio Quality Selector (Good-Echo Tiniest Quality as Default)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.GraphicEq, contentDescription = "Quality", tint = PrimaryBlue)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Audio Quality & Sample Rate",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Tiniest quality (8 kHz) drastically reduces file size for all-day ambient listening (~16 KB/sec).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val qualityOptions = listOf(
+                    Triple(UserPreferences.QUALITY_TINIEST, "8 kHz", "Tiniest (Default)"),
+                    Triple(UserPreferences.QUALITY_SPEECH, "16 kHz", "Speech"),
+                    Triple(UserPreferences.QUALITY_STANDARD, "22 kHz", "Standard"),
+                    Triple(UserPreferences.QUALITY_HIGH, "44 kHz", "High")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    qualityOptions.forEach { (rate, label, desc) ->
+                        val isSelected = userPreferences.sampleRate == rate
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.updateSampleRate(rate) }
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) DarkBackground else TextPrimary
+                                )
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSelected) DarkBackground.copy(alpha = 0.8f) else TextMuted
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 2. Buffer Length (Smaller Chunks Setting)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -84,14 +169,18 @@ fun SettingsTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Speed, contentDescription = "Speed", tint = AccentPurple)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Audio File Chunk Length",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                        }
                         Text(
-                            text = "Buffer Length (Chunk Cycle)",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Duration before saving and transcribing audio",
+                            text = "Smaller files transcribe faster with lower latency",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -100,94 +189,17 @@ fun SettingsTab(
                         text = "${userPreferences.bufferLengthSeconds}s",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = PrimaryBlue
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Slider(
-                    value = userPreferences.bufferLengthSeconds.toFloat(),
-                    onValueChange = { viewModel.updateBufferLength(it.toInt()) },
-                    valueRange = 15f..600f,
-                    steps = 38, // steps of ~15s
-                    colors = SliderDefaults.colors(
-                        thumbColor = PrimaryBlue,
-                        activeTrackColor = PrimaryBlue,
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                )
-
-                // Quick Presets
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(30, 60, 120, 300).forEach { preset ->
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (userPreferences.bufferLengthSeconds == preset) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = if (preset >= 60) "${preset / 60}m" else "${preset}s",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (userPreferences.bufferLengthSeconds == preset) DarkBackground else TextPrimary,
-                                modifier = Modifier
-                                    .padding(vertical = 8.dp)
-                                    .fillMaxWidth(),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 2. Overlap Setting Card (5-second overlap requirement)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Audio Overlap Duration",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "Carries over audio from previous slice boundary",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
-                    Text(
-                        text = "${userPreferences.overlapSeconds}s",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
                         color = AccentPurple
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Slider(
-                    value = userPreferences.overlapSeconds.toFloat(),
-                    onValueChange = { viewModel.updateOverlap(it.toInt()) },
-                    valueRange = 1f..15f,
-                    steps = 13,
+                    value = userPreferences.bufferLengthSeconds.toFloat(),
+                    onValueChange = { viewModel.updateBufferLength(it.toInt()) },
+                    valueRange = 5f..60f,
+                    steps = 10,
                     colors = SliderDefaults.colors(
                         thumbColor = AccentPurple,
                         activeTrackColor = AccentPurple,
@@ -195,25 +207,25 @@ fun SettingsTab(
                     )
                 )
 
-                // Quick Presets
+                // Quick Presets: 5s, 10s, 15s (Default), 30s, 60s
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(2, 5, 10).forEach { preset ->
+                    listOf(5, 10, 15, 30, 60).forEach { preset ->
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = if (userPreferences.overlapSeconds == preset) AccentPurple else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.weight(1f)
+                            color = if (userPreferences.bufferLengthSeconds == preset) AccentPurple else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.updateBufferLength(preset) }
                         ) {
                             Text(
-                                text = "${preset}s overlap",
+                                text = "${preset}s",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (userPreferences.overlapSeconds == preset) DarkBackground else TextPrimary,
-                                modifier = Modifier
-                                    .padding(vertical = 8.dp)
-                                    .fillMaxWidth(),
+                                color = if (userPreferences.bufferLengthSeconds == preset) DarkBackground else TextPrimary,
+                                modifier = Modifier.padding(vertical = 8.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
@@ -224,7 +236,54 @@ fun SettingsTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 3. Auto-Delete Audio Card
+        // 3. Live Transcribe Mode
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.RecordVoiceOver, contentDescription = null, tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Live Real-Time Transcribe",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                    }
+                    Text(
+                        text = "Show live speech on screen in real time as you speak",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+
+                Switch(
+                    checked = userPreferences.liveTranscribe,
+                    onCheckedChange = { viewModel.updateLiveTranscribe(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DarkBackground,
+                        checkedTrackColor = PrimaryBlue,
+                        uncheckedThumbColor = TextMuted,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 4. Silence Filter / VAD
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -240,21 +299,21 @@ fun SettingsTab(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Auto-Delete Raw Audio",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "Skip Ambient Silence (VAD)",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                     Text(
-                        text = "Delete WAV files after local transcription completes to save disk space",
+                        text = "Only saves audio files when actual speech is detected, saving disk space",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
                 }
 
                 Switch(
-                    checked = userPreferences.autoDeleteAudio,
-                    onCheckedChange = { viewModel.updateAutoDelete(it) },
+                    checked = userPreferences.skipSilence,
+                    onCheckedChange = { viewModel.updateSkipSilence(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = DarkBackground,
                         checkedTrackColor = PrimaryBlue,
@@ -267,7 +326,48 @@ fun SettingsTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 4. Battery Optimization Card
+        // 5. Storage Monitor & Cleanup
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Storage Usage",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = String.format("%.2f MB cached audio files", storageMb),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.clearAudioCache() },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = null, tint = ActiveRed)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Clear Cache", color = ActiveRed)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 6. Battery Optimization
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -284,33 +384,33 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Battery Optimization",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = if (isIgnoringBattery) {
-                        "GoodEcho is exempted from battery optimizations. Continuous background recording will stay active indefinitely."
+                        "GoodEcho is exempted from Android battery optimizations. Continuous recording will stay alive in background."
                     } else {
-                        "Android may kill background audio recording to save power unless exempted."
+                        "Exempt GoodEcho to prevent Android from stopping continuous ambient listening."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
 
                 if (!isIgnoringBattery) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     Button(
                         onClick = { viewModel.requestBatteryOptimizationExemption(context) },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(text = "Exempt GoodEcho from Battery Optimization", color = DarkBackground)
+                        Text(text = "Exempt from Battery Optimization", color = DarkBackground)
                     }
                 } else {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(imageVector = Icons.Default.Check, contentDescription = "Active", tint = PrimaryBlue)
                         Spacer(modifier = Modifier.width(6.dp))
