@@ -39,6 +39,7 @@ import com.echo.recorder.ui.theme.TextSecondary
 @Composable
 fun TranscriptsTab(
     transcriptions: List<TranscriptionWithAudio>,
+    transcribingIds: Set<Long> = emptySet(),
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onDeleteTranscription: (Long) -> Unit,
@@ -121,6 +122,7 @@ fun TranscriptsTab(
                 ) { item ->
                     AudioPlayerCard(
                         transcription = item,
+                        isTranscribing = transcribingIds.contains(item.id),
                         onDelete = onDeleteTranscription,
                         onRetranscribe = onRetranscribe,
                         onUpdateText = onUpdateText

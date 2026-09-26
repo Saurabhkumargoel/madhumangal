@@ -131,6 +131,8 @@ class AudioRecordingService : Service() {
         }
         isRecording = true
 
+        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording started: TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
+
         // Update centralized state immediately
         AudioRecordingState.isRunning.value = true
         AudioRecordingState.statusMessage.value = "RECORDING LIVE"
@@ -252,6 +254,7 @@ class AudioRecordingService : Service() {
         recordingThread = null
 
         bufferManager.flushSegment()
+        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording stopped and buffer flushed")
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -277,6 +280,8 @@ class AudioRecordingService : Service() {
             )
             val segmentId = app.database.audioSegmentDao().insertSegment(segment)
             AudioRecordingState.createdSegmentsCount.value = AudioRecordingState.createdSegmentsCount.value + 1
+
+            com.echo.recorder.util.AppLogger.i("AUDIO", "Created segment #$segmentId: ${file.name} (${durationSeconds}s, capturedSpeech=\"$speechCaptured\")")
 
             // Trigger transcription and pass live captured speech if available
             app.transcriptionManager.enqueueTranscription(segmentId, speechCaptured.ifBlank { null })

@@ -70,6 +70,7 @@ import java.util.Locale
 @Composable
 fun AudioPlayerCard(
     transcription: TranscriptionWithAudio,
+    isTranscribing: Boolean = false,
     onDelete: (Long) -> Unit,
     onRetranscribe: (Long) -> Unit = {},
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
@@ -78,7 +79,6 @@ fun AudioPlayerCard(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var isPlaying by remember { mutableStateOf(false) }
-    var isTranscribing by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var editTextValue by remember { mutableStateOf(transcription.text) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -349,10 +349,10 @@ fun AudioPlayerCard(
             ) {
                 Button(
                     onClick = {
-                        isTranscribing = true
                         onRetranscribe(transcription.id)
                         Toast.makeText(context, "Transcribing audio chunk...", Toast.LENGTH_SHORT).show()
                     },
+                    enabled = !isTranscribing,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isPlaceholder) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
                     ),
@@ -376,7 +376,7 @@ fun AudioPlayerCard(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = if (isPlaceholder) "Transcribe Audio" else "Re-Transcribe",
+                        text = if (isTranscribing) "Transcribing..." else if (isPlaceholder) "Transcribe Audio" else "Re-Transcribe",
                         fontWeight = FontWeight.Bold,
                         color = if (isPlaceholder) DarkBackground else TextPrimary,
                         fontSize = 13.sp

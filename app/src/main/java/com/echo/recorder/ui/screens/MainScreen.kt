@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -42,6 +43,7 @@ fun MainScreen(
     var selectedTab by remember { mutableIntStateOf(1) } // Default to Recorder Tab for instant clarity!
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
     val transcriptions by viewModel.transcriptions.collectAsState(initial = emptyList())
+    val transcribingIds by viewModel.transcribingIds.collectAsState(initial = emptySet())
     val searchQuery by viewModel.searchQuery.collectAsState(initial = "")
     val noteTasks by viewModel.noteTasks.collectAsState(initial = emptyList())
     val lowHangingFruits by viewModel.lowHangingFruits.collectAsState(initial = emptyList())
@@ -107,6 +109,20 @@ fun MainScreen(
                         unselectedTextColor = TextMuted
                     )
                 )
+
+                NavigationBarItem(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    icon = { Icon(Icons.Default.Terminal, contentDescription = "Logs") },
+                    label = { Text("Logs") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = PrimaryBlue,
+                        selectedTextColor = PrimaryBlue,
+                        indicatorColor = DarkBackground,
+                        unselectedIconColor = TextMuted,
+                        unselectedTextColor = TextMuted
+                    )
+                )
             }
         }
     ) { paddingValues ->
@@ -134,6 +150,7 @@ fun MainScreen(
             )
             2 -> TranscriptsTab(
                 transcriptions = transcriptions,
+                transcribingIds = transcribingIds,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                 onDeleteTranscription = { viewModel.deleteTranscription(it) },
@@ -144,6 +161,9 @@ fun MainScreen(
             3 -> SettingsTab(
                 viewModel = viewModel,
                 userPreferences = userPreferences,
+                modifier = Modifier.padding(paddingValues)
+            )
+            4 -> LogsTab(
                 modifier = Modifier.padding(paddingValues)
             )
         }

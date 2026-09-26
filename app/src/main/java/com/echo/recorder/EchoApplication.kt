@@ -25,6 +25,7 @@ class EchoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.echo.recorder.util.AppLogger.init(this)
         createNotificationChannel()
     }
 

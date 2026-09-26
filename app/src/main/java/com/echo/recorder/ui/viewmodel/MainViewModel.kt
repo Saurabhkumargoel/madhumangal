@@ -54,6 +54,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _transcribingIds = MutableStateFlow<Set<Long>>(emptySet())
+    val transcribingIds: StateFlow<Set<Long>> = _transcribingIds.asStateFlow()
+
     private val _audioStorageMb = MutableStateFlow(0f)
     val audioStorageMb: StateFlow<Float> = _audioStorageMb.asStateFlow()
 
@@ -169,46 +172,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retranscribeSegment(transcriptionId: Long, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        if (_transcribingIds.value.contains(transcriptionId)) return
+        _transcribingIds.value = _transcribingIds.value + transcriptionId
+
+        com.echo.recorder.util.AppLogger.i("STT", "=== Manual Transcribe requested for segment #$transcriptionId ===")
+
         viewModelScope.launch(Dispatchers.IO) {
-            val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId) ?: return@launch
-            val audioFile = File(item.filePath)
-            if (!audioFile.exists()) {
-                withContext(Dispatchers.Main) { onResult(false, "Audio file not found on device") }
-                return@launch
-            }
-
-            val prefs = prefsRepo.userPreferencesFlow.first()
-            var transcribedText: String? = null
-
-            // Try Cloud AI (Gemini) if API key is provided
-            if (prefs.cloudApiKey.isNotBlank()) {
-                val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
-                if (geminiResult.isSuccess) {
-                    transcribedText = geminiResult.getOrNull()
-                }
-            }
-
-            // Fallback to STT engine
-            if (transcribedText.isNullOrBlank()) {
-                val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
-                val engineResult = sttEngine.transcribeAudioFile(audioFile)
-                transcribedText = engineResult.getOrNull()
-            }
-
-            if (!transcribedText.isNullOrBlank()) {
-                transcriptionDao.updateTranscriptionText(transcriptionId, transcribedText)
-                com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
-
-                // Extract tasks
-                val tinyAi = com.echo.recorder.ai.TinyAiProcessor()
-                val tasks = tinyAi.processTranscription(transcribedText, transcriptionId)
-                for (task in tasks) {
-                    noteTaskDao.insertTask(task)
+            try {
+                val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+                if (item == null) {
+                    com.echo.recorder.util.AppLogger.e("STT", "Segment #$transcriptionId not found in database")
+                    withContext(Dispatchers.Main) { onResult(false, "Segment not found") }
+                    return@launch
                 }
 
-                withContext(Dispatchers.Main) { onResult(true, transcribedText) }
-            } else {
-                withContext(Dispatchers.Main) { onResult(false, "Transcription completed with ambient fallback") }
+                val audioFile = File(item.filePath)
+                com.echo.recorder.util.AppLogger.i("STT", "Audio file: ${audioFile.name}, exists=${audioFile.exists()}, size=${audioFile.length()} bytes")
+                if (!audioFile.exists() || audioFile.length() <= 44) {
+                    com.echo.recorder.util.AppLogger.e("STT", "Audio file is empty or missing: ${audioFile.absolutePath}")
+                    withContext(Dispatchers.Main) { onResult(false, "Audio file not found on device") }
+                    return@launch
+                }
+
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                com.echo.recorder.util.AppLogger.i("STT", "Active STT: ${prefs.selectedSttModel}, AI: ${prefs.selectedAiModel}, Has API Key: ${prefs.cloudApiKey.isNotBlank()}")
+
+                var transcribedText: String? = null
+
+                // 1. Try Cloud AI (Gemini) if API key is provided
+                if (prefs.cloudApiKey.isNotBlank()) {
+                    com.echo.recorder.util.AppLogger.i("STT", "Sending ${audioFile.name} to Gemini 1.5 Flash Audio API...")
+                    val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
+                    if (geminiResult.isSuccess) {
+                        transcribedText = geminiResult.getOrNull()
+                        com.echo.recorder.util.AppLogger.i("STT", "Gemini transcribed successfully: \"$transcribedText\"")
+                    } else {
+                        com.echo.recorder.util.AppLogger.w("STT", "Gemini API error: ${geminiResult.exceptionOrNull()?.message}")
+                    }
+                } else {
+                    com.echo.recorder.util.AppLogger.i("STT", "No Gemini API Key found in settings. Running local STT engine...")
+                }
+
+                // 2. Fallback to STT engine
+                if (transcribedText.isNullOrBlank()) {
+                    val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
+                    val engineResult = sttEngine.transcribeAudioFile(audioFile)
+                    transcribedText = engineResult.getOrNull()
+                    com.echo.recorder.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
+                }
+
+                if (!transcribedText.isNullOrBlank()) {
+                    transcriptionDao.updateTranscriptionText(transcriptionId, transcribedText)
+                    com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
+
+                    // Extract tasks
+                    com.echo.recorder.util.AppLogger.i("AI", "Extracting action items from: \"$transcribedText\"")
+                    val tinyAi = com.echo.recorder.ai.TinyAiProcessor()
+                    val tasks = tinyAi.processTranscription(transcribedText, transcriptionId)
+                    com.echo.recorder.util.AppLogger.i("AI", "Extracted ${tasks.size} tasks into Dashboard")
+                    for (task in tasks) {
+                        noteTaskDao.insertTask(task)
+                    }
+
+                    withContext(Dispatchers.Main) { onResult(true, transcribedText) }
+                } else {
+                    withContext(Dispatchers.Main) { onResult(false, "No speech detected in audio") }
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("STT", "Exception during retranscribe", e)
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: "Error") }
+            } finally {
+                _transcribingIds.value = _transcribingIds.value - transcriptionId
+                com.echo.recorder.util.AppLogger.i("STT", "Finished transcription job for segment #$transcriptionId")
             }
         }
     }

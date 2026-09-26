@@ -3,6 +3,7 @@ package com.echo.recorder.stt
 import android.content.Context
 import com.echo.recorder.data.PreferencesRepository
 import com.echo.recorder.data.UserPreferences
+import com.echo.recorder.util.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -17,15 +18,18 @@ class HindiHinglishSTTEngine(
 
     override suspend fun transcribeAudioFile(audioFile: File): Result<String> = withContext(Dispatchers.IO) {
         if (!audioFile.exists() || audioFile.length() <= 44) {
+            AppLogger.w("STT_ENGINE", "Audio file is empty or missing: ${audioFile.absolutePath}")
             return@withContext Result.failure(IllegalArgumentException("Audio file is empty or missing"))
         }
 
         val prefs = prefsRepo?.userPreferencesFlow?.first() ?: UserPreferences()
         val model = prefs.selectedSttModel
         val rms = calculateWavRms(audioFile)
+        AppLogger.i("STT_ENGINE", "Transcribing file: ${audioFile.name}, size: ${audioFile.length()} bytes, RMS: ${String.format(java.util.Locale.US, "%.1f", rms)}, selected model: $model")
 
         // If audio file is purely background ambient noise
         if (rms < 90.0) {
+            AppLogger.i("STT_ENGINE", "File ${audioFile.name} classified as ambient background noise (RMS < 90)")
             return@withContext Result.success("[Ambient background segment - Low noise]")
         }
 
@@ -45,6 +49,7 @@ class HindiHinglishSTTEngine(
             }
         }
 
+        AppLogger.i("STT_ENGINE", "Generated offline segment note: $transcriptText")
         Result.success(transcriptText)
     }
 

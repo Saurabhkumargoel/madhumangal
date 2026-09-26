@@ -34,10 +34,12 @@ class LiveSpeechRecognizer(
 
     fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            com.echo.recorder.util.AppLogger.w("STT", "SpeechRecognizer.isRecognitionAvailable() is FALSE on this device")
             AudioRecordingState.liveTranscript.value = "(Voice recognition service unavailable on device)"
             return
         }
 
+        com.echo.recorder.util.AppLogger.i("STT", "Starting LiveSpeechRecognizer with language: $languageCode")
         isListening = true
         mainHandler.post {
             setupAndStartRecognizer()
@@ -80,6 +82,19 @@ class LiveSpeechRecognizer(
 
                     override fun onError(error: Int) {
                         _isRecognizing.value = false
+                        val errorName = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "ERROR_AUDIO (3: Audio recording error)"
+                            SpeechRecognizer.ERROR_CLIENT -> "ERROR_CLIENT (5: Client side error)"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "ERROR_INSUFFICIENT_PERMISSIONS (9)"
+                            SpeechRecognizer.ERROR_NETWORK -> "ERROR_NETWORK (2)"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "ERROR_NETWORK_TIMEOUT (1)"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "ERROR_NO_MATCH (7: No speech detected in slice)"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "ERROR_RECOGNIZER_BUSY (8)"
+                            SpeechRecognizer.ERROR_SERVER -> "ERROR_SERVER (4)"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "ERROR_SPEECH_TIMEOUT (6)"
+                            else -> "ERROR_CODE_$error"
+                        }
+                        com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer error: $errorName")
                         if (isListening) {
                             val delayMs = when (error) {
                                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 800L
@@ -99,6 +114,7 @@ class LiveSpeechRecognizer(
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val text = matches?.firstOrNull() ?: ""
                         if (text.isNotBlank()) {
+                            com.echo.recorder.util.AppLogger.i("STT", "LiveSpeechRecognizer captured final text: \"$text\"")
                             _liveTranscript.value = text
                             AudioRecordingState.liveTranscript.value = text
                             onFinalResult(text)
@@ -116,6 +132,7 @@ class LiveSpeechRecognizer(
                         val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val partial = matches?.firstOrNull() ?: ""
                         if (partial.isNotBlank()) {
+                            com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer partial: \"$partial\"")
                             _liveTranscript.value = partial
                             AudioRecordingState.liveTranscript.value = partial
                         }
