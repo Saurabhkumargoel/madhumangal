@@ -120,7 +120,15 @@ class AudioRecordingService : Service() {
         bufferManager.sampleRate = targetSampleRate
         AudioRecordingState.actualSampleRate.value = targetSampleRate
 
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                createNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         isRecording = true
 
         // Update centralized state immediately

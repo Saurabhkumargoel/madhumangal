@@ -137,6 +137,8 @@ fun MainScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                 onDeleteTranscription = { viewModel.deleteTranscription(it) },
+                onRetranscribe = { id -> viewModel.retranscribeSegment(id) },
+                onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },
                 modifier = Modifier.padding(paddingValues)
             )
             3 -> SettingsTab(

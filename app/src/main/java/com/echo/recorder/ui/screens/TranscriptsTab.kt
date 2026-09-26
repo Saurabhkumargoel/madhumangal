@@ -42,6 +42,8 @@ fun TranscriptsTab(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onDeleteTranscription: (Long) -> Unit,
+    onRetranscribe: (Long) -> Unit = {},
+    onUpdateText: (Long, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -119,7 +121,9 @@ fun TranscriptsTab(
                 ) { item ->
                     AudioPlayerCard(
                         transcription = item,
-                        onDelete = onDeleteTranscription
+                        onDelete = onDeleteTranscription,
+                        onRetranscribe = onRetranscribe,
+                        onUpdateText = onUpdateText
                     )
                 }
             }

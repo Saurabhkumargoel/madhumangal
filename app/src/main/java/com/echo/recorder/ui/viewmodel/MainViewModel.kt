@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -140,6 +141,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateSttModel(modelId: String) {
         viewModelScope.launch {
             prefsRepo.updateSttModel(modelId)
+        }
+    }
+
+    fun updateAiModel(modelId: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAiModel(modelId)
+        }
+    }
+
+    fun updateCloudApiKey(apiKey: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCloudApiKey(apiKey)
+        }
+    }
+
+    fun updateTranscriptionText(transcriptionId: Long, newText: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            transcriptionDao.updateTranscriptionText(transcriptionId, newText)
+            // Re-run Tiny AI processor on updated text
+            val tinyAiProcessor = com.echo.recorder.ai.TinyAiProcessor()
+            val tasks = tinyAiProcessor.processTranscription(newText, transcriptionId)
+            for (task in tasks) {
+                noteTaskDao.insertTask(task)
+            }
+        }
+    }
+
+    fun retranscribeSegment(transcriptionId: Long, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId) ?: return@launch
+            val audioFile = File(item.filePath)
+            if (!audioFile.exists()) {
+                withContext(Dispatchers.Main) { onResult(false, "Audio file not found on device") }
+                return@launch
+            }
+
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            var transcribedText: String? = null
+
+            // Try Cloud AI (Gemini) if API key is provided
+            if (prefs.cloudApiKey.isNotBlank()) {
+                val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
+                if (geminiResult.isSuccess) {
+                    transcribedText = geminiResult.getOrNull()
+                }
+            }
+
+            // Fallback to STT engine
+            if (transcribedText.isNullOrBlank()) {
+                val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
+                val engineResult = sttEngine.transcribeAudioFile(audioFile)
+                transcribedText = engineResult.getOrNull()
+            }
+
+            if (!transcribedText.isNullOrBlank()) {
+                transcriptionDao.updateTranscriptionText(transcriptionId, transcribedText)
+                com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
+
+                // Extract tasks
+                val tinyAi = com.echo.recorder.ai.TinyAiProcessor()
+                val tasks = tinyAi.processTranscription(transcribedText, transcriptionId)
+                for (task in tasks) {
+                    noteTaskDao.insertTask(task)
+                }
+
+                withContext(Dispatchers.Main) { onResult(true, transcribedText) }
+            } else {
+                withContext(Dispatchers.Main) { onResult(false, "Transcription completed with ambient fallback") }
+            }
         }
     }
 

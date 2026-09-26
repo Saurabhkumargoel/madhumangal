@@ -27,6 +27,15 @@ interface TranscriptionDao {
     @Query("SELECT t.id, t.segmentId, t.text, t.timestampMillis, t.durationSeconds, a.filePath, a.overlapSeconds FROM transcriptions t INNER JOIN audio_segments a ON t.segmentId = a.id WHERE t.text LIKE '%' || :query || '%' ORDER BY t.timestampMillis DESC")
     fun searchTranscriptions(query: String): Flow<List<TranscriptionWithAudio>>
 
+    @Query("SELECT t.id, t.segmentId, t.text, t.timestampMillis, t.durationSeconds, a.filePath, a.overlapSeconds FROM transcriptions t INNER JOIN audio_segments a ON t.segmentId = a.id WHERE t.id = :id LIMIT 1")
+    suspend fun getTranscriptionWithAudioById(id: Long): TranscriptionWithAudio?
+
+    @Query("SELECT * FROM transcriptions WHERE id = :id LIMIT 1")
+    suspend fun getTranscriptionById(id: Long): Transcription?
+
+    @Query("UPDATE transcriptions SET text = :text WHERE id = :id")
+    suspend fun updateTranscriptionText(id: Long, text: String)
+
     @Query("DELETE FROM transcriptions WHERE id = :id")
     suspend fun deleteTranscription(id: Long)
 }

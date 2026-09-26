@@ -24,6 +24,8 @@ class PreferencesRepository(private val context: Context) {
         val AUTO_DELETE_AUDIO = booleanPreferencesKey("auto_delete_audio")
         val SELECTED_LANGUAGE = stringPreferencesKey("selected_language")
         val SELECTED_STT_MODEL = stringPreferencesKey("selected_stt_model")
+        val SELECTED_AI_MODEL = stringPreferencesKey("selected_ai_model")
+        val CLOUD_API_KEY = stringPreferencesKey("cloud_api_key")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -35,7 +37,9 @@ class PreferencesRepository(private val context: Context) {
             skipSilence = preferences[PreferencesKeys.SKIP_SILENCE] ?: true,
             autoDeleteAudio = preferences[PreferencesKeys.AUTO_DELETE_AUDIO] ?: false,
             selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN",
-            selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_GOOGLE_SPEECH
+            selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_GOOGLE_SPEECH,
+            selectedAiModel = preferences[PreferencesKeys.SELECTED_AI_MODEL] ?: UserPreferences.AI_MODEL_LOCAL_TINY,
+            cloudApiKey = preferences[PreferencesKeys.CLOUD_API_KEY] ?: ""
         )
     }
 
@@ -84,6 +88,18 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateSttModel(modelId: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SELECTED_STT_MODEL] = modelId
+        }
+    }
+
+    suspend fun updateAiModel(modelId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SELECTED_AI_MODEL] = modelId
+        }
+    }
+
+    suspend fun updateCloudApiKey(apiKey: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CLOUD_API_KEY] = apiKey.trim()
         }
     }
 }
