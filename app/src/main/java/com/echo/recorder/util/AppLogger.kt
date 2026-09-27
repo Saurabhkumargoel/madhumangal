@@ -19,18 +19,34 @@ data class LogEntry(
 )
 
 object AppLogger {
-    private const val MAX_IN_MEMORY_LOGS = 400
+    private const val MAX_IN_MEMORY_LOGS = 500
     private val logList = mutableListOf<LogEntry>()
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     val logsFlow: StateFlow<List<LogEntry>> = _logsFlow.asStateFlow()
 
-    private var logFile: File? = null
+    private var appLogFile: File? = null
+    private var sessionLogFile: File? = null
+    private var sessionLogsDir: File? = null
+
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val fileDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val sessionDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
-    fun init(context: Context) {
-        logFile = File(context.filesDir, "app_logs.txt")
-        i("SYSTEM", "GoodEcho Logger initialized. Log file: ${logFile?.absolutePath}")
+    fun init(context: Context, customLogsDir: String? = null) {
+        sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDir)
+        appLogFile = File(context.filesDir, "app_logs.txt")
+
+        val sessionTimestamp = sessionDateFormat.format(Date())
+        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.log")
+
+        i("SYSTEM", "GoodEcho Logger initialized. Active session file: ${sessionLogFile?.absolutePath}")
+    }
+
+    fun startNewSession(context: Context, customLogsDir: String? = null) {
+        sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDir)
+        val sessionTimestamp = sessionDateFormat.format(Date())
+        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.log")
+        i("SYSTEM", "=== New Session Started: ${sessionLogFile?.name} ===")
     }
 
     @Synchronized
@@ -59,11 +75,24 @@ object AppLogger {
         }
         _logsFlow.value = logList.toList()
 
-        // Append to persistent log file
-        logFile?.let { file ->
+        val logLine = "[$fileTimeStr] [$level] [$tag] $fullMsg\n"
+
+        // Append to current session log file in user-configured folder
+        sessionLogFile?.let { file ->
             try {
                 FileWriter(file, true).use { writer ->
-                    writer.write("[$fileTimeStr] [$level] [$tag] $fullMsg\n")
+                    writer.write(logLine)
+                }
+            } catch (e: Exception) {
+                // Ignore file write error
+            }
+        }
+
+        // Also append to main internal app log file
+        appLogFile?.let { file ->
+            try {
+                FileWriter(file, true).use { writer ->
+                    writer.write(logLine)
                 }
             } catch (e: Exception) {
                 // Ignore file write error
@@ -80,14 +109,24 @@ object AppLogger {
         return logList.joinToString("\n") { "[${it.timestamp}] [${it.level}] [${it.tag}] ${it.message}" }
     }
 
-    fun getLogFile(): File? = logFile
+    fun getLogFile(): File? = sessionLogFile ?: appLogFile
+
+    fun getCurrentSessionFile(): File? = sessionLogFile
+
+    fun getSessionFiles(context: Context, customLogsDir: String? = null): List<File> {
+        val dir = sessionLogsDir ?: AppStorageManager.getLogsDirectory(context, customLogsDir)
+        return dir.listFiles { f -> f.extension == "log" || f.extension == "txt" }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+    }
 
     @Synchronized
     fun clearLogs() {
         logList.clear()
         _logsFlow.value = emptyList()
         try {
-            logFile?.writeText("")
+            appLogFile?.writeText("")
+            sessionLogFile?.writeText("")
         } catch (e: Exception) {
             // Ignore
         }

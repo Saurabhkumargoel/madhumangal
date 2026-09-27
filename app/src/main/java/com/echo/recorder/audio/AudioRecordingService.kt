@@ -57,11 +57,9 @@ class AudioRecordingService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {
-        super.onCreate()
-
-        val audioDir = File(filesDir, "audio_chunks").apply { if (!exists()) mkdirs() }
         val app = applicationContext as EchoApplication
         val prefsRepo = app.preferencesRepository
+        val audioDir = com.echo.recorder.util.AppStorageManager.getAudioDirectory(applicationContext)
 
         bufferManager = AudioBufferManager(
             outputDirectory = audioDir,
@@ -82,6 +80,7 @@ class AudioRecordingService : Service() {
         // Sync preferences
         serviceScope.launch {
             prefsRepo.userPreferencesFlow.collectLatest { prefs ->
+                bufferManager.outputDirectory = com.echo.recorder.util.AppStorageManager.getAudioDirectory(applicationContext, prefs.audioFolderPath)
                 bufferManager.bufferLengthSeconds = prefs.bufferLengthSeconds
                 bufferManager.overlapSeconds = prefs.overlapSeconds
                 if (targetSampleRate != prefs.sampleRate) {
@@ -131,7 +130,8 @@ class AudioRecordingService : Service() {
         }
         isRecording = true
 
-        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording started: TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
+        com.echo.recorder.util.AppLogger.startNewSession(applicationContext)
+        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording session started: TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
 
         // Update centralized state immediately
         AudioRecordingState.isRunning.value = true

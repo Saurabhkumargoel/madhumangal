@@ -14,21 +14,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -53,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.echo.recorder.data.TranscriptionWithAudio
+import com.echo.recorder.data.UserPreferences
 import com.echo.recorder.ui.theme.AccentPurple
 import com.echo.recorder.ui.theme.ActiveRed
 import com.echo.recorder.ui.theme.CardBorder
@@ -62,6 +72,7 @@ import com.echo.recorder.ui.theme.SurfaceDark
 import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.theme.TextPrimary
 import com.echo.recorder.ui.theme.TextSecondary
+import com.echo.recorder.util.AppStorageManager
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -73,6 +84,7 @@ fun AudioPlayerCard(
     isTranscribing: Boolean = false,
     onDelete: (Long) -> Unit,
     onRetranscribe: (Long) -> Unit = {},
+    onRetranscribeWithModel: (Long, String) -> Unit = { _, _ -> },
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -80,6 +92,8 @@ fun AudioPlayerCard(
     val clipboardManager = LocalClipboardManager.current
     var isPlaying by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showModelMenu by remember { mutableStateOf(false) }
+    var showFileViewerDialog by remember { mutableStateOf(false) }
     var editTextValue by remember { mutableStateOf(transcription.text) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
@@ -92,6 +106,7 @@ fun AudioPlayerCard(
     }
 
     val isPlaceholder = transcription.text.startsWith("[") && transcription.text.contains("chunk_")
+    val hasValidTranscript = transcription.text.isNotBlank() && !isPlaceholder && !transcription.text.startsWith("[Pending:")
 
     fun togglePlay() {
         if (!audioExists) {
@@ -196,25 +211,27 @@ fun AudioPlayerCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // File Tag Info
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            ) {
-                Text(
-                    text = "📁 $fileName",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+            // File Tag Info & Path chip
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Text(
+                        text = "📁 $fileName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
             // Main Transcription Body
-            if (!isPlaceholder && transcription.text.isNotBlank()) {
+            if (hasValidTranscript) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -261,14 +278,14 @@ fun AudioPlayerCard(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "Audio slice captured (${transcription.durationSeconds}s)",
+                            text = if (transcription.text.startsWith("[Pending:")) transcription.text else "Audio slice captured (${transcription.durationSeconds}s)",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary
+                            color = if (transcription.text.startsWith("[Pending:")) Color(0xFFF59E0B) else TextSecondary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tap 'Transcribe Audio' below to convert this audio chunk into Hindi/Hinglish text.",
+                            text = "Tap 'Transcribe Audio' below or choose a model via 'Transcribe With' to convert this chunk into Hindi/Hinglish text.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted
                         )
@@ -339,14 +356,15 @@ fun AudioPlayerCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Manual Action Bar: Transcribe / Re-Transcribe Button
+            // Action Buttons Row 1: Transcribe / Transcribe Again + Tini "Transcribe With"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Main Transcribe button
                 Button(
                     onClick = {
                         onRetranscribe(transcription.id)
@@ -354,7 +372,7 @@ fun AudioPlayerCard(
                     },
                     enabled = !isTranscribing,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isPlaceholder) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = if (!hasValidTranscript) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
@@ -368,21 +386,110 @@ fun AudioPlayerCard(
                         Spacer(modifier = Modifier.width(8.dp))
                     } else {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            imageVector = if (!hasValidTranscript) Icons.Default.AutoAwesome else Icons.Default.Refresh,
                             contentDescription = null,
-                            tint = if (isPlaceholder) DarkBackground else PrimaryBlue,
+                            tint = if (!hasValidTranscript) DarkBackground else PrimaryBlue,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = if (isTranscribing) "Transcribing..." else if (isPlaceholder) "Transcribe Audio" else "Re-Transcribe",
+                        text = if (isTranscribing) "Transcribing..." else if (!hasValidTranscript) "Transcribe Audio" else "Transcribe Again",
                         fontWeight = FontWeight.Bold,
-                        color = if (isPlaceholder) DarkBackground else TextPrimary,
+                        color = if (!hasValidTranscript) DarkBackground else TextPrimary,
                         fontSize = 13.sp
                     )
                 }
 
+                // Tini "Transcribe With" Model Selector Button
+                Box {
+                    OutlinedButton(
+                        onClick = { showModelMenu = true },
+                        enabled = !isTranscribing,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Model", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Select Model",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showModelMenu,
+                        onDismissRequest = { showModelMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud)") },
+                            onClick = {
+                                showModelMenu = false
+                                onRetranscribeWithModel(transcription.id, "cloud_gemini")
+                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🤖 Whisper Base (High Precision)") },
+                            onClick = {
+                                showModelMenu = false
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_BASE)
+                                Toast.makeText(context, "Transcribing with Whisper Base...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("⚡ Whisper Tiny (Fast Offline)") },
+                            onClick = {
+                                showModelMenu = false
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_TINY)
+                                Toast.makeText(context, "Transcribing with Whisper Tiny...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🇮🇳 IndicConformer (AI4Bharat)") },
+                            onClick = {
+                                showModelMenu = false
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
+                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🎙️ Android Speech Recognizer") },
+                            onClick = {
+                                showModelMenu = false
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_GOOGLE_SPEECH)
+                                Toast.makeText(context, "Transcribing with Speech Recognizer...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Action Buttons Row 2: "Open Transcription" file viewer & "Edit" button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // "Open Transcription" Button (opens versioned transcription file)
+                OutlinedButton(
+                    onClick = { showFileViewerDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = AccentPurple,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "Open Transcription", color = AccentPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Edit Button
                 OutlinedButton(
                     onClick = {
                         editTextValue = transcription.text
@@ -397,10 +504,94 @@ fun AudioPlayerCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Edit", color = TextSecondary, fontSize = 13.sp)
+                    Text(text = "Edit", color = TextSecondary, fontSize = 12.sp)
                 }
             }
         }
+    }
+
+    // "Open Transcription" File Viewer & Intent Dialog
+    if (showFileViewerDialog) {
+        val latestFile = remember(fileName) {
+            AppStorageManager.getLatestTranscriptionFile(context, fileName)
+        }
+        val fileContent = remember(latestFile) {
+            if (latestFile != null && latestFile.exists()) {
+                latestFile.readText()
+            } else {
+                "Transcription file will be generated at:\nDownload/App data/poc/yesboss/transcriptions/transcription_${fileName.substringBeforeLast(".")}.md\n\nTranscript Content:\n${transcription.text}"
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showFileViewerDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Description, contentDescription = null, tint = AccentPurple)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Transcription File", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "File Path: ${latestFile?.absolutePath ?: "Download/App data/poc/yesboss/transcriptions/"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = fileContent,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (latestFile != null && latestFile.exists()) {
+                    Button(
+                        onClick = {
+                            val opened = AppStorageManager.openFileWithIntent(context, latestFile)
+                            if (!opened) {
+                                Toast.makeText(context, "No app available to open markdown. Content copied to clipboard.", Toast.LENGTH_SHORT).show()
+                                clipboardManager.setText(AnnotatedString(fileContent))
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Open in App", color = DarkBackground, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(fileContent))
+                            Toast.makeText(context, "Copied content to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Text("Copy Text", color = DarkBackground, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFileViewerDialog = false }) {
+                    Text("Close", color = TextMuted)
+                }
+            }
+        )
     }
 
     // Edit Transcription Dialog

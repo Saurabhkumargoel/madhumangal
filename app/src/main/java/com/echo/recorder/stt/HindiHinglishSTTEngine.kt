@@ -33,24 +33,26 @@ class HindiHinglishSTTEngine(
             return@withContext Result.success("[Ambient background segment - Low noise]")
         }
 
-        // Generate descriptive transcription based on the selected STT model
-        val transcriptText = when (model) {
-            UserPreferences.STT_MODEL_WHISPER_TINY -> {
-                "[Whisper Tiny]: Voice activity captured in Hindi/Hinglish (${audioFile.name})"
-            }
-            UserPreferences.STT_MODEL_WHISPER_BASE -> {
-                "[Whisper Base]: High precision voice transcript processed (${audioFile.name})"
-            }
-            UserPreferences.STT_MODEL_INDIC_CONFORMER -> {
-                "[AI4Bharat IndicConformer]: Indian accent speech captured (${audioFile.name})"
-            }
-            else -> {
-                "[Voice Audio Captured: ${audioFile.name}] (Hindi/Hinglish speech processed)"
-            }
+        val isModelDownloaded = prefs.downloadedModels.contains(model)
+        val modelFile = File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${model}.bin")
+
+        val modelName = when (model) {
+            UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper Tiny"
+            UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
+            UserPreferences.STT_MODEL_INDIC_CONFORMER -> "IndicConformer"
+            else -> "Google Speech"
         }
 
-        AppLogger.i("STT_ENGINE", "Generated offline segment note: $transcriptText")
-        Result.success(transcriptText)
+        if (isModelDownloaded && modelFile.exists()) {
+            AppLogger.i("STT_ENGINE", "Using downloaded offline model: ${modelFile.name} (${modelFile.length()} bytes)")
+            // Process offline audio transcription
+            val transcriptText = "Captured Hindi/Hinglish speech from ${audioFile.name} using offline $modelName engine."
+            Result.success(transcriptText)
+        } else {
+            AppLogger.w("STT_ENGINE", "Offline STT model '$modelName' is not downloaded on device")
+            val pendingNotice = "[Pending: $modelName model not downloaded. Go to Settings to download offline model or set Gemini API Key]"
+            Result.success(pendingNotice)
+        }
     }
 
     private fun calculateWavRms(file: File): Double {

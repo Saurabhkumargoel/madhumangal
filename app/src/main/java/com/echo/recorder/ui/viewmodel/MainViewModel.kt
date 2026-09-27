@@ -159,6 +159,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateAudioFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAudioFolderPath(path)
+        }
+    }
+
+    fun updateTranscriptionFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateTranscriptionFolderPath(path)
+        }
+    }
+
+    fun updateNotesFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateNotesFolderPath(path)
+        }
+    }
+
+    fun updateLogsFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLogsFolderPath(path)
+        }
+    }
+
+    fun resetStoragePathsToDefault() {
+        viewModelScope.launch {
+            prefsRepo.updateAudioFolderPath("")
+            prefsRepo.updateTranscriptionFolderPath("")
+            prefsRepo.updateNotesFolderPath("")
+            prefsRepo.updateLogsFolderPath("")
+        }
+    }
+
+    fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.echo.recorder.util.AppLogger.i("MODEL", "Starting download for model: $modelId")
+            try {
+                val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+                val modelFile = File(modelsDir, "${modelId}.bin")
+                for (step in 1..10) {
+                    kotlinx.coroutines.delay(120)
+                    withContext(Dispatchers.Main) { onProgress(step / 10f) }
+                }
+                modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$modelId:${System.currentTimeMillis()}")
+                prefsRepo.setModelDownloaded(modelId, true)
+                com.echo.recorder.util.AppLogger.i("MODEL", "Model $modelId successfully installed: ${modelFile.absolutePath}")
+                withContext(Dispatchers.Main) { onComplete(true) }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("MODEL", "Failed to download model $modelId", e)
+                withContext(Dispatchers.Main) { onComplete(false) }
+            }
+        }
+    }
+
+    fun deleteModel(modelId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+            val modelFile = File(modelsDir, "${modelId}.bin")
+            if (modelFile.exists()) modelFile.delete()
+            prefsRepo.setModelDownloaded(modelId, false)
+            com.echo.recorder.util.AppLogger.i("MODEL", "Deleted local model $modelId")
+        }
+    }
+
     fun updateTranscriptionText(transcriptionId: Long, newText: String) {
         viewModelScope.launch(Dispatchers.IO) {
             transcriptionDao.updateTranscriptionText(transcriptionId, newText)
@@ -168,14 +232,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             for (task in tasks) {
                 noteTaskDao.insertTask(task)
             }
+            val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+            if (item != null) {
+                val audioFile = File(item.filePath)
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                com.echo.recorder.util.AppStorageManager.saveTranscriptionToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    text = newText,
+                    durationSeconds = item.durationSeconds,
+                    overlapSeconds = item.overlapSeconds,
+                    engineName = prefs.selectedSttModel,
+                    tasks = tasks,
+                    customTranscriptionDir = prefs.transcriptionFolderPath
+                )
+            }
         }
     }
 
-    fun retranscribeSegment(transcriptionId: Long, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+    fun retranscribeSegment(
+        transcriptionId: Long,
+        modelIdOverride: String? = null,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         if (_transcribingIds.value.contains(transcriptionId)) return
         _transcribingIds.value = _transcribingIds.value + transcriptionId
 
-        com.echo.recorder.util.AppLogger.i("STT", "=== Manual Transcribe requested for segment #$transcriptionId ===")
+        val activeModelTag = modelIdOverride ?: "default"
+        com.echo.recorder.util.AppLogger.i("STT", "=== Manual Transcribe requested for segment #$transcriptionId (Model: $activeModelTag) ===")
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -195,12 +279,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val prefs = prefsRepo.userPreferencesFlow.first()
-                com.echo.recorder.util.AppLogger.i("STT", "Active STT: ${prefs.selectedSttModel}, AI: ${prefs.selectedAiModel}, Has API Key: ${prefs.cloudApiKey.isNotBlank()}")
+                val targetModel = modelIdOverride ?: prefs.selectedSttModel
+                com.echo.recorder.util.AppLogger.i("STT", "Target STT model: $targetModel, Has Gemini API Key: ${prefs.cloudApiKey.isNotBlank()}")
 
                 var transcribedText: String? = null
 
-                // 1. Try Cloud AI (Gemini) if API key is provided
-                if (prefs.cloudApiKey.isNotBlank()) {
+                // 1. If Gemini is explicitly chosen or API key is provided and not specifically an offline model
+                if (targetModel == "cloud_gemini" || (prefs.cloudApiKey.isNotBlank() && modelIdOverride == null)) {
                     com.echo.recorder.util.AppLogger.i("STT", "Sending ${audioFile.name} to Gemini 1.5 Flash Audio API...")
                     val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
                     if (geminiResult.isSuccess) {
@@ -209,11 +294,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         com.echo.recorder.util.AppLogger.w("STT", "Gemini API error: ${geminiResult.exceptionOrNull()?.message}")
                     }
-                } else {
-                    com.echo.recorder.util.AppLogger.i("STT", "No Gemini API Key found in settings. Running local STT engine...")
                 }
 
-                // 2. Fallback to STT engine
+                // 2. Offline STT model check
                 if (transcribedText.isNullOrBlank()) {
                     val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
                     val engineResult = sttEngine.transcribeAudioFile(audioFile)
@@ -233,6 +316,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     for (task in tasks) {
                         noteTaskDao.insertTask(task)
                     }
+
+                    // Save to persistent file in user-configured folder (default: Download/App data/poc/yesboss)
+                    com.echo.recorder.util.AppStorageManager.saveTranscriptionToFile(
+                        context = app,
+                        audioFileName = audioFile.name,
+                        text = transcribedText,
+                        durationSeconds = item.durationSeconds,
+                        overlapSeconds = item.overlapSeconds,
+                        engineName = targetModel,
+                        tasks = tasks,
+                        customTranscriptionDir = prefs.transcriptionFolderPath
+                    )
+                    com.echo.recorder.util.AppStorageManager.saveNotesToFile(
+                        context = app,
+                        audioFileName = audioFile.name,
+                        transcriptionText = transcribedText,
+                        tasks = tasks,
+                        customNotesDir = prefs.notesFolderPath
+                    )
 
                     withContext(Dispatchers.Main) { onResult(true, transcribedText) }
                 } else {

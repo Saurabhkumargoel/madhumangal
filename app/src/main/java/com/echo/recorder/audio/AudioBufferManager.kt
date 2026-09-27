@@ -10,7 +10,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 class AudioBufferManager(
-    private val outputDirectory: File,
+    var outputDirectory: File,
     bufferLengthSeconds: Int = 15,
     overlapSeconds: Int = 3,
     var sampleRate: Int = 8000,

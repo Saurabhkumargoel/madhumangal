@@ -75,11 +75,35 @@ class TranscriptionManager(
             noteTaskDao.insertTask(task)
         }
 
+        val prefs = prefsRepo.userPreferencesFlow.first()
+
+        // Save transcription and AI notes files to user configured folders (default: Download/App data/poc/yesboss)
+        try {
+            com.echo.recorder.util.AppStorageManager.saveTranscriptionToFile(
+                context = context,
+                audioFileName = audioFile.name,
+                text = textToUse,
+                durationSeconds = segment.durationSeconds,
+                overlapSeconds = segment.overlapSeconds,
+                engineName = prefs.selectedSttModel,
+                tasks = extractedTasks,
+                customTranscriptionDir = prefs.transcriptionFolderPath
+            )
+            com.echo.recorder.util.AppStorageManager.saveNotesToFile(
+                context = context,
+                audioFileName = audioFile.name,
+                transcriptionText = textToUse,
+                tasks = extractedTasks,
+                customNotesDir = prefs.notesFolderPath
+            )
+        } catch (e: Exception) {
+            com.echo.recorder.util.AppLogger.e("STORAGE", "Error saving transcript/note file", e)
+        }
+
         // Mark segment COMPLETED
         audioSegmentDao.updateSegment(segment.copy(status = AudioSegment.STATUS_COMPLETED))
 
         // Check auto-delete setting
-        val prefs = prefsRepo.userPreferencesFlow.first()
         if (prefs.autoDeleteAudio && audioFile.exists()) {
             try {
                 audioFile.delete()

@@ -26,6 +26,11 @@ class PreferencesRepository(private val context: Context) {
         val SELECTED_STT_MODEL = stringPreferencesKey("selected_stt_model")
         val SELECTED_AI_MODEL = stringPreferencesKey("selected_ai_model")
         val CLOUD_API_KEY = stringPreferencesKey("cloud_api_key")
+        val AUDIO_FOLDER_PATH = stringPreferencesKey("audio_folder_path")
+        val TRANSCRIPTION_FOLDER_PATH = stringPreferencesKey("transcription_folder_path")
+        val NOTES_FOLDER_PATH = stringPreferencesKey("notes_folder_path")
+        val LOGS_FOLDER_PATH = stringPreferencesKey("logs_folder_path")
+        val DOWNLOADED_MODELS = androidx.datastore.preferences.core.stringSetPreferencesKey("downloaded_models")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -39,7 +44,12 @@ class PreferencesRepository(private val context: Context) {
             selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN",
             selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_GOOGLE_SPEECH,
             selectedAiModel = preferences[PreferencesKeys.SELECTED_AI_MODEL] ?: UserPreferences.AI_MODEL_LOCAL_TINY,
-            cloudApiKey = preferences[PreferencesKeys.CLOUD_API_KEY] ?: ""
+            cloudApiKey = preferences[PreferencesKeys.CLOUD_API_KEY] ?: "",
+            audioFolderPath = preferences[PreferencesKeys.AUDIO_FOLDER_PATH] ?: "",
+            transcriptionFolderPath = preferences[PreferencesKeys.TRANSCRIPTION_FOLDER_PATH] ?: "",
+            notesFolderPath = preferences[PreferencesKeys.NOTES_FOLDER_PATH] ?: "",
+            logsFolderPath = preferences[PreferencesKeys.LOGS_FOLDER_PATH] ?: "",
+            downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
         )
     }
 
@@ -100,6 +110,37 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateCloudApiKey(apiKey: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.CLOUD_API_KEY] = apiKey.trim()
+        }
+    }
+
+    suspend fun updateAudioFolderPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUDIO_FOLDER_PATH] = path.trim()
+        }
+    }
+
+    suspend fun updateTranscriptionFolderPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TRANSCRIPTION_FOLDER_PATH] = path.trim()
+        }
+    }
+
+    suspend fun updateNotesFolderPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.NOTES_FOLDER_PATH] = path.trim()
+        }
+    }
+
+    suspend fun updateLogsFolderPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOGS_FOLDER_PATH] = path.trim()
+        }
+    }
+
+    suspend fun setModelDownloaded(modelId: String, isDownloaded: Boolean) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
+            preferences[PreferencesKeys.DOWNLOADED_MODELS] = if (isDownloaded) current + modelId else current - modelId
         }
     }
 }

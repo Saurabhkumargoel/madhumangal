@@ -22,6 +22,10 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -29,6 +33,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.echo.recorder.data.NoteTask
 import com.echo.recorder.ui.theme.AccentPurple
 import com.echo.recorder.ui.theme.ActiveRed
@@ -59,6 +65,9 @@ fun DashboardTab(
     lowHangingFruits: List<NoteTask>,
     onToggleCompletion: (Long, Boolean) -> Unit,
     onDeleteTask: (Long) -> Unit,
+    isRecording: Boolean = false,
+    elapsedSeconds: Long = 0L,
+    onToggleRecording: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedCategory by remember { mutableStateOf("All") }
@@ -68,24 +77,84 @@ fun DashboardTab(
         if (selectedCategory == "All") tasks else tasks.filter { it.categoryGroup == selectedCategory }
     }
 
+    val timerMinutes = elapsedSeconds / 60
+    val timerSeconds = elapsedSeconds % 60
+    val timerStr = String.format(java.util.Locale.US, "%02d:%02d", timerMinutes, timerSeconds)
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBackground)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Dashboard Title
-        Text(
-            text = "AI Task Dashboard",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary
-        )
-        Text(
-            text = "Grouped & sorted by priority from Hindi/Hinglish audio analysis",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
+        // Top Header Row: Dashboard Title on Left, Recorder Toggle on Right
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "AI Task Dashboard",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "Grouped & sorted by priority from Hindi/Hinglish audio analysis",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Dashboard Top-Right Recorder Toggle
+            if (isRecording) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = ActiveRed.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed),
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🔴 $timerStr",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ActiveRed
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Button(
+                            onClick = onToggleRecording,
+                            colors = ButtonDefaults.buttonColors(containerColor = ActiveRed),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Stop", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onToggleRecording,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = "Record", tint = DarkBackground, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Record", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

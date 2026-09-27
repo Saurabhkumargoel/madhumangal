@@ -30,7 +30,12 @@ data class UserPreferences(
     val selectedSttModel: String = STT_MODEL_GOOGLE_SPEECH,
     val selectedAiModel: String = AI_MODEL_LOCAL_TINY,
     val cloudApiKey: String = "",
-    val cloudModelName: String = "gemini-1.5-flash"
+    val cloudModelName: String = "gemini-1.5-flash",
+    val audioFolderPath: String = "",
+    val transcriptionFolderPath: String = "",
+    val notesFolderPath: String = "",
+    val logsFolderPath: String = "",
+    val downloadedModels: Set<String> = emptySet()
 ) {
     companion object {
         const val QUALITY_TINIEST = 8000    // 8 kHz (lowest file size, speech optimized)

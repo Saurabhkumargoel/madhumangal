@@ -134,7 +134,32 @@ fun LogsTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Session Log File Banner
+        val sessionFile = remember(logs.size) { AppLogger.getCurrentSessionFile() }
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(
+                    text = "📄 Active Session: ${sessionFile?.name ?: "session_active.log"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryBlue
+                )
+                Text(
+                    text = sessionFile?.absolutePath ?: "Download/App data/poc/yesboss/logs/",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
+                    fontSize = 10.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Action Buttons: Copy All, Share Log File, Clear
         Row(

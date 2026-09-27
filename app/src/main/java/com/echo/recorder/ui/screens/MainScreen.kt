@@ -7,6 +7,8 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.PermMedia
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -40,6 +42,7 @@ fun MainScreen(
     statusMessage: String = "STANDBY",
     onRequestPermission: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(1) } // Default to Recorder Tab for instant clarity!
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
     val transcriptions by viewModel.transcriptions.collectAsState(initial = emptyList())
@@ -85,8 +88,8 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.Description, contentDescription = "Transcripts") },
-                    label = { Text("Transcripts") },
+                    icon = { Icon(Icons.Default.PermMedia, contentDescription = "Media") },
+                    label = { Text("Media") },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = PrimaryBlue,
                         selectedTextColor = PrimaryBlue,
@@ -132,6 +135,15 @@ fun MainScreen(
                 lowHangingFruits = lowHangingFruits,
                 onToggleCompletion = { id, done -> viewModel.toggleTaskCompletion(id, done) },
                 onDeleteTask = { id -> viewModel.deleteTask(id) },
+                isRecording = isServiceRunning,
+                elapsedSeconds = elapsedSeconds,
+                onToggleRecording = {
+                    if (isServiceRunning) {
+                        viewModel.stopRecordingService(context)
+                    } else {
+                        viewModel.startRecordingService(context)
+                    }
+                },
                 modifier = Modifier.padding(paddingValues)
             )
             1 -> RecorderTab(
@@ -155,6 +167,7 @@ fun MainScreen(
                 onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                 onDeleteTranscription = { viewModel.deleteTranscription(it) },
                 onRetranscribe = { id -> viewModel.retranscribeSegment(id) },
+                onRetranscribeWithModel = { id, modelId -> viewModel.retranscribeSegment(id, modelId) },
                 onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },
                 modifier = Modifier.padding(paddingValues)
             )

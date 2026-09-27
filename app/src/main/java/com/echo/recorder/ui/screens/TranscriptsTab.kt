@@ -44,6 +44,7 @@ fun TranscriptsTab(
     onSearchQueryChange: (String) -> Unit,
     onDeleteTranscription: (Long) -> Unit,
     onRetranscribe: (Long) -> Unit = {},
+    onRetranscribeWithModel: (Long, String) -> Unit = { _, _ -> },
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -54,10 +55,15 @@ fun TranscriptsTab(
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(
-            text = "Transcription History",
+            text = "Recordings & Media",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = TextPrimary
+        )
+        Text(
+            text = "All audio chunks, speech transcriptions & saved markdown files",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
         )
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -125,6 +131,7 @@ fun TranscriptsTab(
                         isTranscribing = transcribingIds.contains(item.id),
                         onDelete = onDeleteTranscription,
                         onRetranscribe = onRetranscribe,
+                        onRetranscribeWithModel = onRetranscribeWithModel,
                         onUpdateText = onUpdateText
                     )
                 }
