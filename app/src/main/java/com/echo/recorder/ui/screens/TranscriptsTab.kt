@@ -5,16 +5,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +49,7 @@ fun TranscriptsTab(
     onRetranscribe: (Long) -> Unit = {},
     onRetranscribeWithModel: (Long, String) -> Unit = { _, _ -> },
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
+    onExportMedia: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -54,17 +58,39 @@ fun TranscriptsTab(
             .background(DarkBackground)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Text(
-            text = "Recordings & Media",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary
-        )
-        Text(
-            text = "All audio chunks, speech transcriptions & saved markdown files",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Recordings & Media",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "All audio chunks, speech transcriptions & saved markdown files",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
+
+            IconButton(
+                onClick = onExportMedia,
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(PrimaryBlue.copy(alpha = 0.15f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DriveFileMove,
+                    contentDescription = "Export All Media",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         // Search Bar

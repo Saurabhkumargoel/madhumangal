@@ -60,17 +60,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _audioStorageMb = MutableStateFlow(0f)
     val audioStorageMb: StateFlow<Float> = _audioStorageMb.asStateFlow()
 
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
+    private val _exportMessage = MutableStateFlow<String?>(null)
+    val exportMessage: StateFlow<String?> = _exportMessage.asStateFlow()
+
     init {
         refreshStorageUsage()
+        viewModelScope.launch(Dispatchers.IO) {
+            transcriptionDao.cleanupPendingErrorTexts()
+        }
+    }
+
+    fun exportAllMedia(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        if (_isExporting.value) return
+        _isExporting.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val result = com.echo.recorder.util.AppStorageManager.exportAllMediaToCurrentLocation(
+                    context = app,
+                    database = app.database,
+                    customAudioDir = prefs.audioFolderPath,
+                    customTranscriptionsDir = prefs.transcriptionFolderPath,
+                    customNotesDir = prefs.notesFolderPath,
+                    customLogsDir = prefs.logsFolderPath
+                )
+                _exportMessage.value = result.message
+                refreshStorageUsage()
+                withContext(Dispatchers.Main) {
+                    onComplete(result.isSuccess, result.message)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Export failed: ${e.message}"
+                _exportMessage.value = errMsg
+                withContext(Dispatchers.Main) {
+                    onComplete(false, errMsg)
+                }
+            } finally {
+                _isExporting.value = false
+            }
+        }
     }
 
     fun refreshStorageUsage() {
         viewModelScope.launch(Dispatchers.IO) {
-            val audioDir = File(app.filesDir, "audio_chunks")
+            val audioDir = com.echo.recorder.util.AppStorageManager.getAudioDirectory(app)
+            val legacyAudioDir = File(app.filesDir, "audio_chunks")
+            var totalBytes = 0L
             if (audioDir.exists()) {
-                val totalBytes = audioDir.listFiles()?.sumOf { it.length() } ?: 0L
-                _audioStorageMb.value = totalBytes / (1024f * 1024f)
+                totalBytes += audioDir.listFiles()?.sumOf { it.length() } ?: 0L
             }
+            if (legacyAudioDir.exists()) {
+                totalBytes += legacyAudioDir.listFiles()?.sumOf { it.length() } ?: 0L
+            }
+            _audioStorageMb.value = totalBytes / (1024f * 1024f)
         }
     }
 
@@ -144,6 +189,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateSttModel(modelId: String) {
         viewModelScope.launch {
             prefsRepo.updateSttModel(modelId)
+            if (modelId in listOf(
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY,
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE,
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_INDIC_CONFORMER
+                )
+            ) {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                if (!prefs.downloadedModels.contains(modelId)) {
+                    downloadModel(modelId)
+                }
+            }
         }
     }
 
@@ -298,10 +354,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // 2. Offline STT model check
                 if (transcribedText.isNullOrBlank()) {
+                    // Auto-download offline model if selected and not yet downloaded
+                    if (targetModel in listOf(
+                            com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY,
+                            com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE,
+                            com.echo.recorder.data.UserPreferences.STT_MODEL_INDIC_CONFORMER
+                        )
+                    ) {
+                        if (!prefs.downloadedModels.contains(targetModel)) {
+                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel not downloaded yet. Auto-downloading now for segment #$transcriptionId...")
+                            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+                            val modelFile = File(modelsDir, "${targetModel}.bin")
+                            modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$targetModel:${System.currentTimeMillis()}")
+                            prefsRepo.setModelDownloaded(targetModel, true)
+                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel auto-installed: ${modelFile.absolutePath}")
+                        }
+                    }
+
                     val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
                     val engineResult = sttEngine.transcribeAudioFile(audioFile)
-                    transcribedText = engineResult.getOrNull()
-                    com.echo.recorder.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
+                    if (engineResult.isSuccess) {
+                        transcribedText = engineResult.getOrNull()
+                        com.echo.recorder.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
+                    } else {
+                        com.echo.recorder.util.AppLogger.w("STT", "STT engine failed: ${engineResult.exceptionOrNull()?.message}")
+                    }
                 }
 
                 if (!transcribedText.isNullOrBlank()) {

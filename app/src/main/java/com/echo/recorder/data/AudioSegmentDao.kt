@@ -18,6 +18,9 @@ interface AudioSegmentDao {
     @Query("SELECT * FROM audio_segments ORDER BY startTimeMillis DESC")
     fun getAllSegments(): Flow<List<AudioSegment>>
 
+    @Query("SELECT * FROM audio_segments ORDER BY startTimeMillis DESC")
+    suspend fun getAllSegmentsList(): List<AudioSegment>
+
     @Query("SELECT * FROM audio_segments WHERE status = :status ORDER BY startTimeMillis ASC")
     suspend fun getSegmentsByStatus(status: String): List<AudioSegment>
 

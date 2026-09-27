@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
@@ -250,6 +251,44 @@ fun SettingsTab(
                         Text("Open Folder", fontSize = 12.sp, color = PrimaryBlue)
                     }
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Export / Migrate Media Button
+                val isExporting by viewModel.isExporting.collectAsState()
+
+                Button(
+                    onClick = {
+                        viewModel.exportAllMedia { success, message ->
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !isExporting,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = DarkBackground
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Exporting & Moving Media...", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    } else {
+                        Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp), tint = DarkBackground)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Export All Previous Media to Selected Location", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Moves all previously recorded audio chunks (.wav), transcriptions (.md), notes, and logs from internal storage to the currently configured folder.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
             }
         }
 
@@ -574,6 +613,22 @@ fun SettingsTab(
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = AccentPurple.copy(alpha = 0.15f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "💡 Note: This AI engine parses your speech transcriptions into categorized todo tasks and notes. To change voice recognition (STT) models, configure Section 3 above.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(10.dp),
+                        fontSize = 11.sp
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 

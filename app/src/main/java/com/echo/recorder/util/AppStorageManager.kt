@@ -260,4 +260,219 @@ object AppStorageManager {
             false
         }
     }
+
+    data class ExportResult(
+        val totalAudioMoved: Int,
+        val totalTranscriptsMoved: Int,
+        val totalNotesMoved: Int,
+        val totalLogsMoved: Int,
+        val targetBasePath: String,
+        val isSuccess: Boolean,
+        val message: String
+    )
+
+    /**
+     * Scans and exports/migrates all existing media (audio WAV chunks, transcriptions, notes, logs)
+     * to the user's currently configured destination folders, updating Room database paths.
+     */
+    suspend fun exportAllMediaToCurrentLocation(
+        context: Context,
+        database: com.echo.recorder.data.AppDatabase,
+        customAudioDir: String? = null,
+        customTranscriptionsDir: String? = null,
+        customNotesDir: String? = null,
+        customLogsDir: String? = null
+    ): ExportResult {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            var audioMoved = 0
+            var transcriptsMoved = 0
+            var notesMoved = 0
+            var logsMoved = 0
+
+            val targetAudioDir = getAudioDirectory(context, customAudioDir)
+            val targetTranscriptionsDir = getTranscriptionsDirectory(context, customTranscriptionsDir)
+            val targetNotesDir = getNotesDirectory(context, customNotesDir)
+            val targetLogsDir = getLogsDirectory(context, customLogsDir)
+
+            try {
+                // 1. Move all audio segments tracked in database
+                val allSegments = database.audioSegmentDao().getAllSegmentsList()
+                for (segment in allSegments) {
+                    val oldFile = File(segment.filePath)
+                    if (oldFile.exists()) {
+                        val isAlreadyInTarget = try {
+                            oldFile.parentFile?.canonicalPath == targetAudioDir.canonicalPath
+                        } catch (e: Exception) {
+                            oldFile.parentFile?.absolutePath == targetAudioDir.absolutePath
+                        }
+
+                        if (!isAlreadyInTarget) {
+                            val newFile = File(targetAudioDir, oldFile.name)
+                            oldFile.copyTo(newFile, overwrite = true)
+                            if (newFile.exists() && newFile.length() == oldFile.length()) {
+                                if (oldFile.absolutePath != newFile.absolutePath) {
+                                    oldFile.delete()
+                                }
+                                database.audioSegmentDao().updateSegment(segment.copy(filePath = newFile.absolutePath))
+                                audioMoved++
+                                AppLogger.d("STORAGE", "Migrated audio segment #${segment.id}: ${oldFile.name} -> ${newFile.absolutePath}")
+                            }
+                        }
+                    }
+                }
+
+                // 2. Scan internal audio dirs (e.g. files/audio_chunks or cacheDir) for untracked WAV files
+                val internalDirsToScan = listOf(
+                    context.filesDir,
+                    File(context.filesDir, "audio_chunks"),
+                    File(context.filesDir, "poc/yesboss/audio"),
+                    context.cacheDir
+                )
+
+                for (scanDir in internalDirsToScan) {
+                    if (scanDir.exists() && scanDir.isDirectory) {
+                        scanDir.listFiles()?.forEach { file ->
+                            if (file.isFile && file.extension.lowercase(Locale.ROOT) == "wav") {
+                                val isAlreadyInTarget = try {
+                                    file.parentFile?.canonicalPath == targetAudioDir.canonicalPath
+                                } catch (e: Exception) {
+                                    file.parentFile?.absolutePath == targetAudioDir.absolutePath
+                                }
+
+                                if (!isAlreadyInTarget) {
+                                    val newFile = File(targetAudioDir, file.name)
+                                    file.copyTo(newFile, overwrite = true)
+                                    if (newFile.exists() && newFile.length() == file.length()) {
+                                        if (file.absolutePath != newFile.absolutePath) {
+                                            file.delete()
+                                        }
+                                        audioMoved++
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. Migrate Markdown transcription files
+                val transcriptScanDirs = listOf(
+                    context.filesDir,
+                    File(context.filesDir, "transcriptions"),
+                    File(context.filesDir, "poc/yesboss/transcriptions"),
+                    getBaseDirectory(context)
+                )
+
+                for (scanDir in transcriptScanDirs) {
+                    if (scanDir.exists() && scanDir.isDirectory) {
+                        scanDir.listFiles()?.forEach { file ->
+                            if (file.isFile && file.name.startsWith("transcription_") && file.extension.lowercase(Locale.ROOT) == "md") {
+                                val isAlreadyInTarget = try {
+                                    file.parentFile?.canonicalPath == targetTranscriptionsDir.canonicalPath
+                                } catch (e: Exception) {
+                                    file.parentFile?.absolutePath == targetTranscriptionsDir.absolutePath
+                                }
+
+                                if (!isAlreadyInTarget) {
+                                    val newFile = File(targetTranscriptionsDir, file.name)
+                                    file.copyTo(newFile, overwrite = true)
+                                    if (newFile.exists() && file.absolutePath != newFile.absolutePath) {
+                                        file.delete()
+                                    }
+                                    transcriptsMoved++
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Migrate AI Notes files (.md and .html)
+                val notesScanDirs = listOf(
+                    context.filesDir,
+                    File(context.filesDir, "notes"),
+                    File(context.filesDir, "poc/yesboss/notes"),
+                    getBaseDirectory(context)
+                )
+
+                for (scanDir in notesScanDirs) {
+                    if (scanDir.exists() && scanDir.isDirectory) {
+                        scanDir.listFiles()?.forEach { file ->
+                            if (file.isFile && file.name.startsWith("notes_") &&
+                                (file.extension.lowercase(Locale.ROOT) in listOf("md", "html"))
+                            ) {
+                                val isAlreadyInTarget = try {
+                                    file.parentFile?.canonicalPath == targetNotesDir.canonicalPath
+                                } catch (e: Exception) {
+                                    file.parentFile?.absolutePath == targetNotesDir.absolutePath
+                                }
+
+                                if (!isAlreadyInTarget) {
+                                    val newFile = File(targetNotesDir, file.name)
+                                    file.copyTo(newFile, overwrite = true)
+                                    if (newFile.exists() && file.absolutePath != newFile.absolutePath) {
+                                        file.delete()
+                                    }
+                                    notesMoved++
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 5. Migrate Session Logs (.log and app_logs.txt)
+                val logScanDirs = listOf(
+                    context.filesDir,
+                    File(context.filesDir, "logs"),
+                    File(context.filesDir, "poc/yesboss/logs")
+                )
+
+                for (scanDir in logScanDirs) {
+                    if (scanDir.exists() && scanDir.isDirectory) {
+                        scanDir.listFiles()?.forEach { file ->
+                            if (file.isFile && (file.extension.lowercase(Locale.ROOT) == "log" || file.name == "app_logs.txt")) {
+                                val isAlreadyInTarget = try {
+                                    file.parentFile?.canonicalPath == targetLogsDir.canonicalPath
+                                } catch (e: Exception) {
+                                    file.parentFile?.absolutePath == targetLogsDir.absolutePath
+                                }
+
+                                if (!isAlreadyInTarget) {
+                                    val newFile = File(targetLogsDir, file.name)
+                                    file.copyTo(newFile, overwrite = true)
+                                    logsMoved++
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 6. Clean up any previous broken [Pending: error strings from the database
+                database.transcriptionDao().cleanupPendingErrorTexts()
+
+                val baseTargetPath = targetAudioDir.parentFile?.absolutePath ?: targetAudioDir.absolutePath
+                val summaryMsg = "Successfully exported $audioMoved audio recordings, $transcriptsMoved transcriptions, $notesMoved notes, and $logsMoved log files to: $baseTargetPath"
+                AppLogger.i("STORAGE", summaryMsg)
+
+                ExportResult(
+                    totalAudioMoved = audioMoved,
+                    totalTranscriptsMoved = transcriptsMoved,
+                    totalNotesMoved = notesMoved,
+                    totalLogsMoved = logsMoved,
+                    targetBasePath = baseTargetPath,
+                    isSuccess = true,
+                    message = summaryMsg
+                )
+            } catch (e: Exception) {
+                AppLogger.e("STORAGE", "Error during media export", e)
+                ExportResult(
+                    totalAudioMoved = audioMoved,
+                    totalTranscriptsMoved = transcriptsMoved,
+                    totalNotesMoved = notesMoved,
+                    totalLogsMoved = logsMoved,
+                    targetBasePath = targetAudioDir.absolutePath,
+                    isSuccess = false,
+                    message = "Export error: ${e.message}"
+                )
+            }
+        }
+    }
 }

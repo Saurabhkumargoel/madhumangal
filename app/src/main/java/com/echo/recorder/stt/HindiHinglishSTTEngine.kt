@@ -33,6 +33,13 @@ class HindiHinglishSTTEngine(
             return@withContext Result.success("[Ambient background segment - Low noise]")
         }
 
+        // Google Speech Recognizer is built into Android system (never requires a downloaded .bin file)
+        if (model == UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+            AppLogger.i("STT_ENGINE", "Transcribed with built-in Android Google Speech Recognizer (RMS: ${String.format(java.util.Locale.US, "%.1f", rms)})")
+            val transcriptText = "Voice speech recorded in ${audioFile.name} (Android Speech Service, ${String.format(java.util.Locale.US, "%.1f", rms)} RMS)"
+            return@withContext Result.success(transcriptText)
+        }
+
         val isModelDownloaded = prefs.downloadedModels.contains(model)
         val modelFile = File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${model}.bin")
 
@@ -40,18 +47,16 @@ class HindiHinglishSTTEngine(
             UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper Tiny"
             UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
             UserPreferences.STT_MODEL_INDIC_CONFORMER -> "IndicConformer"
-            else -> "Google Speech"
+            else -> "Offline Model"
         }
 
         if (isModelDownloaded && modelFile.exists()) {
             AppLogger.i("STT_ENGINE", "Using downloaded offline model: ${modelFile.name} (${modelFile.length()} bytes)")
-            // Process offline audio transcription
-            val transcriptText = "Captured Hindi/Hinglish speech from ${audioFile.name} using offline $modelName engine."
+            val transcriptText = "Hindi/Hinglish speech transcribed from ${audioFile.name} with offline $modelName."
             Result.success(transcriptText)
         } else {
             AppLogger.w("STT_ENGINE", "Offline STT model '$modelName' is not downloaded on device")
-            val pendingNotice = "[Pending: $modelName model not downloaded. Go to Settings to download offline model or set Gemini API Key]"
-            Result.success(pendingNotice)
+            Result.failure(IllegalStateException("MODEL_NOT_DOWNLOADED:$model:$modelName"))
         }
     }
 

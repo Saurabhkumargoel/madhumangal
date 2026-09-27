@@ -278,14 +278,14 @@ fun AudioPlayerCard(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = if (transcription.text.startsWith("[Pending:")) transcription.text else "Audio slice captured (${transcription.durationSeconds}s)",
+                            text = "Audio slice captured (${transcription.durationSeconds}s)",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (transcription.text.startsWith("[Pending:")) Color(0xFFF59E0B) else TextSecondary
+                            color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tap 'Transcribe Audio' below or choose a model via 'Transcribe With' to convert this chunk into Hindi/Hinglish text.",
+                            text = "Tap 'Transcribe Audio' below or choose a model via 'Model ▾' to convert this chunk into Hindi/Hinglish text.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted
                         )

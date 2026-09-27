@@ -169,6 +169,11 @@ fun MainScreen(
                 onRetranscribe = { id -> viewModel.retranscribeSegment(id) },
                 onRetranscribeWithModel = { id, modelId -> viewModel.retranscribeSegment(id, modelId) },
                 onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },
+                onExportMedia = {
+                    viewModel.exportAllMedia { success, message ->
+                        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
                 modifier = Modifier.padding(paddingValues)
             )
             3 -> SettingsTab(
