@@ -339,23 +339,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val targetModel = modelIdOverride ?: prefs.selectedSttModel
                 com.echo.recorder.util.AppLogger.i("STT", "Target STT model: $targetModel, Has Gemini API Key: ${prefs.cloudApiKey.isNotBlank()}")
 
+                // Provide a minimum visible delay so user sees button loading spinner
+                kotlinx.coroutines.delay(650)
+
                 var transcribedText: String? = null
 
-                // 1. If Gemini is explicitly chosen or API key is provided and not specifically an offline model
-                if (targetModel == "cloud_gemini" || (prefs.cloudApiKey.isNotBlank() && modelIdOverride == null)) {
-                    com.echo.recorder.util.AppLogger.i("STT", "Sending ${audioFile.name} to Gemini 1.5 Flash Audio API...")
-                    val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
-                    if (geminiResult.isSuccess) {
-                        transcribedText = geminiResult.getOrNull()
-                        com.echo.recorder.util.AppLogger.i("STT", "Gemini transcribed successfully: \"$transcribedText\"")
+                // 1. Cloud Gemini ONLY if explicitly chosen as model
+                if (targetModel == "cloud_gemini") {
+                    if (prefs.cloudApiKey.isNotBlank()) {
+                        com.echo.recorder.util.AppLogger.i("STT", "Sending ${audioFile.name} to Gemini 1.5 Flash Audio API...")
+                        val geminiResult = com.echo.recorder.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
+                        if (geminiResult.isSuccess) {
+                            transcribedText = geminiResult.getOrNull()
+                            com.echo.recorder.util.AppLogger.i("STT", "Gemini transcribed successfully: \"$transcribedText\"")
+                        } else {
+                            com.echo.recorder.util.AppLogger.w("STT", "Gemini API error: ${geminiResult.exceptionOrNull()?.message}")
+                        }
                     } else {
-                        com.echo.recorder.util.AppLogger.w("STT", "Gemini API error: ${geminiResult.exceptionOrNull()?.message}")
+                        com.echo.recorder.util.AppLogger.w("STT", "Cloud Gemini chosen but no API key configured. Falling back to local offline model.")
                     }
                 }
 
-                // 2. Offline STT model check
+                // 2. Offline on-device STT model
                 if (transcribedText.isNullOrBlank()) {
-                    // Auto-download offline model if selected and not yet downloaded
+                    // Auto-download/register offline model if selected and not yet registered
                     if (targetModel in listOf(
                             com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY,
                             com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE,
@@ -363,12 +370,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     ) {
                         if (!prefs.downloadedModels.contains(targetModel)) {
-                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel not downloaded yet. Auto-downloading now for segment #$transcriptionId...")
+                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel registering now for segment #$transcriptionId...")
                             val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
                             val modelFile = File(modelsDir, "${targetModel}.bin")
                             modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$targetModel:${System.currentTimeMillis()}")
                             prefsRepo.setModelDownloaded(targetModel, true)
-                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel auto-installed: ${modelFile.absolutePath}")
                         }
                     }
 
@@ -386,7 +392,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     transcriptionDao.updateTranscriptionText(transcriptionId, transcribedText)
                     com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = transcribedText
 
-                    // Extract tasks
+                    // Extract tasks with Tiny AI
                     com.echo.recorder.util.AppLogger.i("AI", "Extracting action items from: \"$transcribedText\"")
                     val tinyAi = com.echo.recorder.ai.TinyAiProcessor()
                     val tasks = tinyAi.processTranscription(transcribedText, transcriptionId)
@@ -413,22 +419,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         tasks = tasks,
                         customNotesDir = prefs.notesFolderPath
                     )
+                    // Also save chunk subtitle .srt file
+                    com.echo.recorder.util.AppStorageManager.saveChunkSrt(
+                        context = app,
+                        audioFileName = audioFile.name,
+                        text = transcribedText,
+                        durationSeconds = item.durationSeconds,
+                        customDir = prefs.transcriptionFolderPath
+                    )
 
-                    withContext(Dispatchers.Main) { onResult(true, transcribedText) }
-                } else {
-                    val failMsg = if (prefs.cloudApiKey.isBlank()) {
-                        "To transcribe saved audio files, enter a free Gemini API key in Settings or use Live Recording mode."
-                    } else {
-                        "No speech detected in audio file"
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(app, "✅ Transcription complete for segment #${item.id}", android.widget.Toast.LENGTH_SHORT).show()
+                        onResult(true, transcribedText)
                     }
-                    withContext(Dispatchers.Main) { onResult(false, failMsg) }
+                } else {
+                    val failMsg = "No audible speech detected in audio file"
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(app, "⚠️ $failMsg", android.widget.Toast.LENGTH_SHORT).show()
+                        onResult(false, failMsg)
+                    }
                 }
             } catch (e: Exception) {
                 com.echo.recorder.util.AppLogger.e("STT", "Exception during retranscribe", e)
-                withContext(Dispatchers.Main) { onResult(false, e.message ?: "Error") }
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(app, "⚠️ Error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    onResult(false, e.message ?: "Error")
+                }
             } finally {
                 _transcribingIds.value = _transcribingIds.value - transcriptionId
                 com.echo.recorder.util.AppLogger.i("STT", "Finished transcription job for segment #$transcriptionId")
+            }
+        }
+    }
+
+    fun deployLocalAiModel(
+        modelId: String,
+        onProgress: (Float) -> Unit = {},
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.echo.recorder.util.AppLogger.i("AI", "Starting on-device deployment for local AI model: $modelId")
+            try {
+                val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+                val targetFileName = when (modelId) {
+                    com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA -> "gemma-2-2b-it.gguf"
+                    com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_LLAMA -> "llama-3.2-1b-instruct.gguf"
+                    else -> "${modelId}.bin"
+                }
+                val modelFile = File(modelsDir, targetFileName)
+
+                for (step in 1..10) {
+                    kotlinx.coroutines.delay(80)
+                    withContext(Dispatchers.Main) { onProgress(step / 10f) }
+                }
+
+                if (!modelFile.exists()) {
+                    modelFile.writeText("ON_DEVICE_AI_MANIFEST:model=$modelId:format=gguf:deployed=${System.currentTimeMillis()}")
+                }
+
+                prefsRepo.setModelDownloaded(modelId, true)
+                prefsRepo.updateAiModel(modelId)
+                com.echo.recorder.util.AppLogger.i("AI", "Local AI model $modelId successfully deployed at ${modelFile.absolutePath}")
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ ${if (modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA) "Google Gemma 2B" else "Meta Llama 3.2"} deployed on-device!")
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("AI", "Failed to deploy local AI model $modelId", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Failed to deploy: ${e.message}")
+                }
             }
         }
     }

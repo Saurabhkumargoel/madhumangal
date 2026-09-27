@@ -50,6 +50,11 @@ class AudioRecordingService : Service() {
     private val currentCycleSpeech = StringBuilder()
     private val speechLock = Any()
 
+    private var sessionTimestamp: String = ""
+    private var sessionStartMillis: Long = 0L
+    private var subtitleSequence: Int = 0
+    private var customTranscriptionDir: String? = null
+
     inner class LocalBinder : Binder() {
         fun getService(): AudioRecordingService = this@AudioRecordingService
     }
@@ -81,6 +86,7 @@ class AudioRecordingService : Service() {
         serviceScope.launch {
             prefsRepo.userPreferencesFlow.collectLatest { prefs ->
                 bufferManager.outputDirectory = com.echo.recorder.util.AppStorageManager.getAudioDirectory(applicationContext, prefs.audioFolderPath)
+                customTranscriptionDir = prefs.transcriptionFolderPath
                 bufferManager.bufferLengthSeconds = prefs.bufferLengthSeconds
                 bufferManager.overlapSeconds = prefs.overlapSeconds
                 if (targetSampleRate != prefs.sampleRate) {
@@ -130,8 +136,12 @@ class AudioRecordingService : Service() {
         }
         isRecording = true
 
+        sessionTimestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+        sessionStartMillis = System.currentTimeMillis()
+        subtitleSequence = 0
+
         com.echo.recorder.util.AppLogger.startNewSession(applicationContext)
-        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording session started: TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
+        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording session started ($sessionTimestamp): TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
 
         // Update centralized state immediately
         AudioRecordingState.isRunning.value = true
@@ -150,6 +160,22 @@ class AudioRecordingService : Service() {
         // Initialize and start live speech recognizer on Main Thread
         mainHandler.post {
             liveSpeechRecognizer = LiveSpeechRecognizer(applicationContext) { text ->
+                val now = System.currentTimeMillis()
+                val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
+                val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
+                subtitleSequence++
+
+                // Save live speech to timestamped subtitle SRT file
+                com.echo.recorder.util.AppStorageManager.appendLiveSessionSrt(
+                    context = applicationContext,
+                    sessionTimestamp = sessionTimestamp,
+                    entryIndex = subtitleSequence,
+                    startMs = utteranceStartMs,
+                    endMs = utteranceEndMs,
+                    text = text,
+                    customDir = customTranscriptionDir
+                )
+
                 synchronized(speechLock) {
                     if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
                     currentCycleSpeech.append(text)
@@ -282,6 +308,16 @@ class AudioRecordingService : Service() {
             AudioRecordingState.createdSegmentsCount.value = AudioRecordingState.createdSegmentsCount.value + 1
 
             com.echo.recorder.util.AppLogger.i("AUDIO", "Created segment #$segmentId: ${file.name} (${durationSeconds}s, capturedSpeech=\"$speechCaptured\")")
+
+            if (speechCaptured.isNotBlank()) {
+                com.echo.recorder.util.AppStorageManager.saveChunkSrt(
+                    context = applicationContext,
+                    audioFileName = file.name,
+                    text = speechCaptured,
+                    durationSeconds = durationSeconds,
+                    customDir = customTranscriptionDir
+                )
+            }
 
             // Trigger transcription and pass live captured speech if available
             app.transcriptionManager.enqueueTranscription(segmentId, speechCaptured.ifBlank { null })

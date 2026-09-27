@@ -572,10 +572,16 @@ fun SettingsTab(
                                 } else {
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = "Status: Built-in Android Speech Service (Ready)",
+                                        text = "Status: Live Mic Streaming (Real-Time Only) 🎙️",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Color(0xFF10B981),
                                         fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Google Speech streams live microphone voice. For transcribing saved chunk files offline, select Whisper or IndicConformer above.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextMuted,
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
@@ -753,36 +759,312 @@ fun SettingsTab(
 
                                             // Unique UI for Local Gemma 2B
                                             UserPreferences.AI_MODEL_LOCAL_GEMMA -> {
-                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("Size: 1.6 GB GGUF", fontSize = 11.sp, color = TextMuted)
-                                                    OutlinedButton(
-                                                        onClick = {
-                                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/google/gemma-2-2b-it"))
-                                                            context.startActivity(intent)
-                                                        },
-                                                        shape = RoundedCornerShape(8.dp)
+                                                val isDeployed = userPreferences.downloadedModels.contains(modelOption.id)
+                                                val isDeploying = downloadingProgress.containsKey(modelOption.id)
+                                                val deployProgress = downloadingProgress[modelOption.id] ?: 0f
+                                                val modelsDir = AppStorageManager.getModelsDirectory(context)
+
+                                                Column(modifier = Modifier.padding(top = 4.dp)) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = DarkBackground,
+                                                        modifier = Modifier.fillMaxWidth()
                                                     ) {
-                                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("HuggingFace Repo", fontSize = 11.sp, color = AccentPurple)
+                                                        Column(modifier = Modifier.padding(12.dp)) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("Google Gemma 2B (Local LLM)", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(6.dp),
+                                                                    color = if (isDeployed) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = if (isDeployed) "✅ Deployed & Active" else "🟡 Ready to Deploy",
+                                                                        color = if (isDeployed) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 11.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            Text(
+                                                                text = "📖 On-Device Deployment Instructions:",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = AccentPurple
+                                                            )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = "1. Download the quantized weights: gemma-2-2b-it-Q4_K_M.gguf (~1.6 GB) from the official HuggingFace repository.\n" +
+                                                                        "2. Place the .gguf file into your device models folder:\n" +
+                                                                        "   Download/App data/poc/yesboss/models/gemma-2-2b-it.gguf\n" +
+                                                                        "3. Tap 'Auto-Deploy On-Device Engine' below to mount and initialize the local weights for 100% offline task intelligence.",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                fontSize = 11.sp,
+                                                                color = TextSecondary,
+                                                                lineHeight = 16.sp
+                                                            )
+
+                                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                                            if (!isDeployed && !isDeploying) {
+                                                                Button(
+                                                                    onClick = {
+                                                                        downloadingProgress[modelOption.id] = 0.1f
+                                                                        viewModel.deployLocalAiModel(
+                                                                            modelId = modelOption.id,
+                                                                            onProgress = { p -> downloadingProgress[modelOption.id] = p },
+                                                                            onComplete = { success, msg ->
+                                                                                downloadingProgress.remove(modelOption.id)
+                                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                            }
+                                                                        )
+                                                                    },
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    shape = RoundedCornerShape(10.dp),
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                                                                ) {
+                                                                    Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                                    Text("📥 Auto-Deploy On-Device Engine", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                                }
+                                                            } else if (isDeploying) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.Center
+                                                                ) {
+                                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentPurple)
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Text("Deploying Gemma on device ${(deployProgress * 100).toInt()}%...", fontSize = 12.sp, color = AccentPurple)
+                                                                }
+                                                            } else {
+                                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(8.dp),
+                                                                        color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                                                        modifier = Modifier.weight(1f)
+                                                                    ) {
+                                                                        Text(
+                                                                            text = "⚡ Local Gemma engine running offline with zero API calls.",
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            color = Color(0xFF10B981),
+                                                                            modifier = Modifier.padding(8.dp),
+                                                                            fontSize = 11.sp
+                                                                        )
+                                                                    }
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    OutlinedButton(
+                                                                        onClick = {
+                                                                            viewModel.deleteModel(modelOption.id)
+                                                                            Toast.makeText(context, "Undeployed Gemma 2B", Toast.LENGTH_SHORT).show()
+                                                                        },
+                                                                        shape = RoundedCornerShape(8.dp),
+                                                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                    ) {
+                                                                        Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                        Text("Reset", fontSize = 11.sp, color = ActiveRed)
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        val opened = AppStorageManager.openFileWithIntent(context, modelsDir)
+                                                                        if (!opened) {
+                                                                            Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
+                                                                        }
+                                                                    },
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("Open Models Folder", fontSize = 11.sp, color = TextSecondary)
+                                                                }
+
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/google/gemma-2-2b-it"))
+                                                                        context.startActivity(intent)
+                                                                    },
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("HuggingFace Repo", fontSize = 11.sp, color = AccentPurple)
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
 
                                             // Unique UI for Local Llama 3.2 1B
                                             UserPreferences.AI_MODEL_LOCAL_LLAMA -> {
-                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("Size: 1.1 GB GGUF", fontSize = 11.sp, color = TextMuted)
-                                                    OutlinedButton(
-                                                        onClick = {
-                                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct"))
-                                                            context.startActivity(intent)
-                                                        },
-                                                        shape = RoundedCornerShape(8.dp)
+                                                val isDeployed = userPreferences.downloadedModels.contains(modelOption.id)
+                                                val isDeploying = downloadingProgress.containsKey(modelOption.id)
+                                                val deployProgress = downloadingProgress[modelOption.id] ?: 0f
+                                                val modelsDir = AppStorageManager.getModelsDirectory(context)
+
+                                                Column(modifier = Modifier.padding(top = 4.dp)) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = DarkBackground,
+                                                        modifier = Modifier.fillMaxWidth()
                                                     ) {
-                                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Meta HF Repo", fontSize = 11.sp, color = AccentPurple)
+                                                        Column(modifier = Modifier.padding(12.dp)) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("Meta Llama 3.2 1B (Local LLM)", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(6.dp),
+                                                                    color = if (isDeployed) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = if (isDeployed) "✅ Deployed & Active" else "🟡 Ready to Deploy",
+                                                                        color = if (isDeployed) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 11.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            Text(
+                                                                text = "📖 On-Device Deployment Instructions:",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = AccentPurple
+                                                            )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = "1. Download the quantized weights: Llama-3.2-1B-Instruct-Q4_K_M.gguf (~1.1 GB) from Meta's HuggingFace repository.\n" +
+                                                                        "2. Place the .gguf file into your device models folder:\n" +
+                                                                        "   Download/App data/poc/yesboss/models/llama-3.2-1b-instruct.gguf\n" +
+                                                                        "3. Tap 'Auto-Deploy On-Device Engine' below to mount and initialize the local weights for 100% offline task intelligence.",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                fontSize = 11.sp,
+                                                                color = TextSecondary,
+                                                                lineHeight = 16.sp
+                                                            )
+
+                                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                                            if (!isDeployed && !isDeploying) {
+                                                                Button(
+                                                                    onClick = {
+                                                                        downloadingProgress[modelOption.id] = 0.1f
+                                                                        viewModel.deployLocalAiModel(
+                                                                            modelId = modelOption.id,
+                                                                            onProgress = { p -> downloadingProgress[modelOption.id] = p },
+                                                                            onComplete = { success, msg ->
+                                                                                downloadingProgress.remove(modelOption.id)
+                                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                            }
+                                                                        )
+                                                                    },
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    shape = RoundedCornerShape(10.dp),
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                                                                ) {
+                                                                    Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                                    Text("📥 Auto-Deploy On-Device Engine", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                                }
+                                                            } else if (isDeploying) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.Center
+                                                                ) {
+                                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentPurple)
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    Text("Deploying Llama on device ${(deployProgress * 100).toInt()}%...", fontSize = 12.sp, color = AccentPurple)
+                                                                }
+                                                            } else {
+                                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(8.dp),
+                                                                        color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                                                        modifier = Modifier.weight(1f)
+                                                                    ) {
+                                                                        Text(
+                                                                            text = "⚡ Local Llama 3.2 engine running offline with zero API calls.",
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            color = Color(0xFF10B981),
+                                                                            modifier = Modifier.padding(8.dp),
+                                                                            fontSize = 11.sp
+                                                                        )
+                                                                    }
+                                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                                    OutlinedButton(
+                                                                        onClick = {
+                                                                            viewModel.deleteModel(modelOption.id)
+                                                                            Toast.makeText(context, "Undeployed Llama 3.2", Toast.LENGTH_SHORT).show()
+                                                                        },
+                                                                        shape = RoundedCornerShape(8.dp),
+                                                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                    ) {
+                                                                        Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                        Text("Reset", fontSize = 11.sp, color = ActiveRed)
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        val opened = AppStorageManager.openFileWithIntent(context, modelsDir)
+                                                                        if (!opened) {
+                                                                            Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
+                                                                        }
+                                                                    },
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("Open Models Folder", fontSize = 11.sp, color = TextSecondary)
+                                                                }
+
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct"))
+                                                                        context.startActivity(intent)
+                                                                    },
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("Meta HF Repo", fontSize = 11.sp, color = AccentPurple)
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }

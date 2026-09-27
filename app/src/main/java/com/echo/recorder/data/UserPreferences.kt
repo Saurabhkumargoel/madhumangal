@@ -60,79 +60,82 @@ data class UserPreferences(
             SttModelOption(
                 id = STT_MODEL_GOOGLE_SPEECH,
                 name = "Google Speech Recognizer",
-                tag = "REAL-TIME STREAMING",
-                description = "Native Android speech service with real-time streaming for Hindi (hi-IN) & Hinglish (en-IN).",
-                isRecommended = true,
+                tag = "LIVE STREAMING ONLY (Real-Time Mic)",
+                description = "Native Android speech service for real-time live microphone stream (Hindi & Hinglish). For transcribing saved files offline, select an on-device model below.",
+                isRecommended = false,
                 sizeText = "Built-in"
             ),
             SttModelOption(
                 id = STT_MODEL_WHISPER_TINY,
                 name = "Whisper Tiny (On-Device)",
-                tag = "OFFLINE 39MB",
-                description = "OpenAI Whisper Tiny multilingual model running 100% on-device. Private & fast for Hindi/English.",
-                isRecommended = false,
+                tag = "RECOMMENDED • OFFLINE 39MB",
+                description = "OpenAI Whisper Tiny multilingual model running 100% on-device. Fast, private transcription of saved audio chunks without internet.",
+                isRecommended = true,
                 sizeText = "39 MB"
             ),
             SttModelOption(
                 id = STT_MODEL_WHISPER_BASE,
                 name = "Whisper Base (High Precision)",
                 tag = "OFFLINE 74MB",
-                description = "Enhanced multilingual transformer with higher accuracy for complex Hinglish vocabulary.",
+                description = "Enhanced multilingual transformer running on-device with higher accuracy for complex Hinglish vocabulary.",
                 isRecommended = false,
                 sizeText = "74 MB"
             ),
             SttModelOption(
                 id = STT_MODEL_INDIC_CONFORMER,
                 name = "AI4Bharat IndicConformer",
-                tag = "HINDI OPTIMIZED",
-                description = "Conformer-CTC neural model fine-tuned specifically on Indian accents and regional Hindi dialects.",
-                isRecommended = false,
+                tag = "RECOMMENDED • HINDI OPTIMIZED",
+                description = "Conformer-CTC neural model fine-tuned specifically on Indian accents and regional Hindi dialects. 100% offline.",
+                isRecommended = true,
                 sizeText = "55 MB"
             )
         )
 
         val AVAILABLE_AI_MODELS = listOf(
             AiModelOption(
+                id = AI_MODEL_LOCAL_GEMMA,
+                name = "Google Gemma 2B (On-Device LLM)",
+                tag = "RECOMMENDED • LOCAL LLM • 1.6 GB",
+                description = "Google DeepMind open weights for advanced on-device task intelligence and reasoning. Zero cloud API needed.",
+                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
+                isApi = false,
+                isRecommended = true
+            ),
+            AiModelOption(
                 id = AI_MODEL_LOCAL_TINY,
                 name = "On-Device Tiny AI (Built-in)",
-                tag = "BUILT-IN • OFFLINE",
+                tag = "RECOMMENDED • OFFLINE 0MB",
                 description = "Lightweight on-device semantic parser. Categorizes into Work, Shopping, Personal & flags Low-Hanging Fruits.",
                 downloadUrl = null,
                 isApi = false,
                 isRecommended = true
             ),
             AiModelOption(
-                id = AI_MODEL_CLOUD_GEMINI,
-                name = "Google Gemini 1.5 Flash (Cloud API)",
-                tag = "RECOMMENDED • CLOUD AI",
-                description = "Transcribes audio and extracts comprehensive summaries and actionable todos using your free Gemini API key.",
-                downloadUrl = "https://aistudio.google.com/app/apikey",
-                isApi = true,
-                isRecommended = true
-            ),
-            AiModelOption(
-                id = AI_MODEL_LOCAL_GEMMA,
-                name = "Google Gemma 2B (On-Device LLM)",
-                tag = "LOCAL LLM • 1.6 GB",
-                description = "Google DeepMind open model for advanced on-device task intelligence. Download via official HuggingFace repository.",
-                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
-                isApi = false
-            ),
-            AiModelOption(
                 id = AI_MODEL_LOCAL_LLAMA,
                 name = "Meta Llama 3.2 1B (On-Device LLM)",
                 tag = "LOCAL LLM • 1.1 GB",
-                description = "Meta high-efficiency on-device model for edge reasoning. Download via official Meta HuggingFace repository.",
+                description = "Meta high-efficiency on-device model for edge reasoning. 100% local on-device inference.",
                 downloadUrl = "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
-                isApi = false
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = AI_MODEL_CLOUD_GEMINI,
+                name = "Google Gemini 1.5 Flash (Cloud API)",
+                tag = "CLOUD API • OPTIONAL",
+                description = "Optional cloud transcription and summarization if an external Gemini API key is provided.",
+                downloadUrl = "https://aistudio.google.com/app/apikey",
+                isApi = true,
+                isRecommended = false
             ),
             AiModelOption(
                 id = AI_MODEL_CLOUD_OPENAI,
                 name = "OpenAI GPT-4o-mini (Cloud API)",
-                tag = "CLOUD API • ADVANCED",
-                description = "OpenAI API for fast and highly nuanced Hindi/English task extraction with an OpenAI API key.",
+                tag = "CLOUD API • OPTIONAL",
+                description = "Optional cloud API for task extraction with an OpenAI API key.",
                 downloadUrl = "https://platform.openai.com/api-keys",
-                isApi = true
+                isApi = true,
+                isRecommended = false
             )
         )
     }

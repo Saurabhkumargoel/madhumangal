@@ -157,15 +157,111 @@ object AppStorageManager {
             }
         }
 
+        val srtFile = File(dir, "${baseName}.srt")
+        val srtContent = generateSrtContent(text, durationSeconds)
+
         try {
             versionedFile.writeText(content)
             latestFile.writeText(content)
-            AppLogger.i("STORAGE", "Saved transcription file: ${versionedFile.name} (${versionedFile.length()} bytes)")
+            if (srtContent.isNotBlank()) {
+                srtFile.writeText(srtContent)
+            }
+            AppLogger.i("STORAGE", "Saved transcription: ${versionedFile.name}, Subtitles: ${srtFile.name}")
         } catch (e: Exception) {
             AppLogger.e("STORAGE", "Failed to write transcription file", e)
         }
 
         return latestFile
+    }
+
+    /**
+     * Generates standard SubRip (.srt) subtitle format with HH:mm:ss,SSS timestamps
+     */
+    fun generateSrtContent(text: String, durationSeconds: Int): String {
+        val clean = text.trim()
+        if (clean.isBlank() || clean.startsWith("[") || clean.startsWith("Voice speech recorded") || clean.startsWith("Audio slice")) {
+            return ""
+        }
+
+        val parts = clean.split(Regex("(?<=[.!?।])\\s+|\n+")).filter { it.isNotBlank() }
+        if (parts.isEmpty()) return ""
+
+        val totalMs = (durationSeconds.coerceAtLeast(1) * 1000L)
+        val sliceMs = totalMs / parts.size
+
+        val sb = StringBuilder()
+        for (i in parts.indices) {
+            val startMs = i * sliceMs
+            val endMs = ((i + 1) * sliceMs).coerceAtMost(totalMs)
+            sb.appendLine("${i + 1}")
+            sb.appendLine("${formatSrtTimestamp(startMs)} --> ${formatSrtTimestamp(endMs)}")
+            sb.appendLine(parts[i].trim())
+            sb.appendLine()
+        }
+        return sb.toString().trimEnd() + "\n"
+    }
+
+    fun formatSrtTimestamp(ms: Long): String {
+        val hours = ms / 3600000
+        val minutes = (ms % 3600000) / 60000
+        val seconds = (ms % 60000) / 1000
+        val millis = ms % 1000
+        return String.format(Locale.US, "%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
+    }
+
+    /**
+     * Appends a live real-time speech subtitle entry to the session .srt file
+     */
+    fun appendLiveSessionSrt(
+        context: Context,
+        sessionTimestamp: String,
+        entryIndex: Int,
+        startMs: Long,
+        endMs: Long,
+        text: String,
+        customDir: String? = null
+    ): File {
+        val dir = getTranscriptionsDirectory(context, customDir)
+        val srtFile = File(dir, "subtitles_session_${sessionTimestamp}.srt")
+        val entry = buildString {
+            appendLine("$entryIndex")
+            appendLine("${formatSrtTimestamp(startMs)} --> ${formatSrtTimestamp(endMs)}")
+            appendLine(text.trim())
+            appendLine()
+        }
+        try {
+            srtFile.appendText(entry)
+            AppLogger.d("STORAGE", "Appended live subtitle #$entryIndex to ${srtFile.name}")
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed appending live subtitle", e)
+        }
+        return srtFile
+    }
+
+    /**
+     * Saves a chunk-specific .srt subtitle file alongside the .wav audio file
+     */
+    fun saveChunkSrt(
+        context: Context,
+        audioFileName: String,
+        text: String,
+        durationSeconds: Int,
+        customDir: String? = null
+    ): File? {
+        val baseName = audioFileName.substringBeforeLast(".")
+        val srtContent = generateSrtContent(text, durationSeconds)
+        if (srtContent.isBlank()) return null
+
+        val dir = getTranscriptionsDirectory(context, customDir)
+        val srtFile = File(dir, "${baseName}.srt")
+        try {
+            srtFile.writeText(srtContent)
+            AppLogger.i("STORAGE", "Saved chunk subtitle file: ${srtFile.name}")
+            return srtFile
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed to save chunk subtitle file", e)
+            return null
+        }
     }
 
     /**
@@ -234,6 +330,17 @@ object AppStorageManager {
         return files?.maxByOrNull { it.lastModified() }
     }
 
+    fun getLatestSubtitleFile(context: Context, audioFileName: String, customPath: String? = null): File? {
+        val dir = getTranscriptionsDirectory(context, customPath)
+        val baseName = audioFileName.substringBeforeLast(".")
+        val srt = File(dir, "${baseName}.srt")
+        if (srt.exists()) return srt
+        val transSrt = File(dir, "transcription_${baseName}.srt")
+        if (transSrt.exists()) return transSrt
+        val files = dir.listFiles { f -> f.name.startsWith(baseName) && f.name.endsWith(".srt") }
+        return files?.maxByOrNull { it.lastModified() }
+    }
+
     fun openFileWithIntent(context: Context, file: File): Boolean {
         return try {
             if (!file.exists()) return false
@@ -243,7 +350,7 @@ object AppStorageManager {
                 file
             )
             val mimeType = when (file.extension.lowercase(Locale.ROOT)) {
-                "md", "txt", "log" -> "text/plain"
+                "md", "txt", "log", "srt", "vtt" -> "text/plain"
                 "html" -> "text/html"
                 "wav", "mp3" -> "audio/*"
                 else -> "*/*"

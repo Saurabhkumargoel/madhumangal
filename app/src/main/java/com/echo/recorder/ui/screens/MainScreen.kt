@@ -166,8 +166,16 @@ fun MainScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                 onDeleteTranscription = { viewModel.deleteTranscription(it) },
-                onRetranscribe = { id -> viewModel.retranscribeSegment(id) },
-                onRetranscribeWithModel = { id, modelId -> viewModel.retranscribeSegment(id, modelId) },
+                onRetranscribe = { id ->
+                    viewModel.retranscribeSegment(id) { success, msg ->
+                        android.widget.Toast.makeText(context, if (success) "✅ Segment #$id transcribed successfully!" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
+                onRetranscribeWithModel = { id, modelId ->
+                    viewModel.retranscribeSegment(id, modelId) { success, msg ->
+                        android.widget.Toast.makeText(context, if (success) "✅ Segment #$id transcribed!" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
                 onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },
                 onExportMedia = {
                     viewModel.exportAllMedia { success, message ->

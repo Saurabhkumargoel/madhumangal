@@ -372,8 +372,8 @@ fun AudioPlayerCard(
                 // Main Transcribe button
                 Button(
                     onClick = {
-                        onRetranscribe(transcription.id)
                         Toast.makeText(context, "Transcribing audio chunk...", Toast.LENGTH_SHORT).show()
+                        onRetranscribe(transcription.id)
                     },
                     enabled = !isTranscribing,
                     colors = ButtonDefaults.buttonColors(
@@ -385,8 +385,8 @@ fun AudioPlayerCard(
                     if (isTranscribing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = DarkBackground
+                            strokeWidth = 2.5.dp,
+                            color = if (!hasValidTranscript) DarkBackground else PrimaryBlue
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     } else {
@@ -427,43 +427,35 @@ fun AudioPlayerCard(
                         onDismissRequest = { showModelMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud)") },
+                            text = { Text("⚡ Whisper Tiny (Fast On-Device)") },
                             onClick = {
                                 showModelMenu = false
-                                onRetranscribeWithModel(transcription.id, "cloud_gemini")
-                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Transcribing with Whisper Tiny...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_TINY)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🇮🇳 IndicConformer (AI4Bharat Hindi)") },
+                            onClick = {
+                                showModelMenu = false
+                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("🤖 Whisper Base (High Precision)") },
                             onClick = {
                                 showModelMenu = false
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_BASE)
                                 Toast.makeText(context, "Transcribing with Whisper Base...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_BASE)
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("⚡ Whisper Tiny (Fast Offline)") },
+                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud API)") },
                             onClick = {
                                 showModelMenu = false
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_TINY)
-                                Toast.makeText(context, "Transcribing with Whisper Tiny...", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("🇮🇳 IndicConformer (AI4Bharat)") },
-                            onClick = {
-                                showModelMenu = false
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
-                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("🎙️ Android Speech Recognizer") },
-                            onClick = {
-                                showModelMenu = false
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_GOOGLE_SPEECH)
-                                Toast.makeText(context, "Transcribing with Speech Recognizer...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, "cloud_gemini")
                             }
                         )
                     }
@@ -472,13 +464,13 @@ fun AudioPlayerCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Action Buttons Row 2: "Open Transcription" file viewer & "Edit" button
+            // Action Buttons Row 2: "Open Transcription & Subtitles" file viewer & "Edit" button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // "Open Transcription" Button (opens versioned transcription file)
+                // "Open Transcription" Button (opens versioned transcription & SRT file)
                 OutlinedButton(
                     onClick = { showFileViewerDialog = true },
                     shape = RoundedCornerShape(12.dp),
@@ -491,7 +483,7 @@ fun AudioPlayerCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Open Transcription", color = AccentPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "View Notes & SRT Subtitles", color = AccentPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Edit Button
@@ -515,18 +507,36 @@ fun AudioPlayerCard(
         }
     }
 
-    // "Open Transcription" File Viewer & Intent Dialog
+    // "Open Transcription & Subtitles" File Viewer & Intent Dialog
     if (showFileViewerDialog) {
-        val latestFile = remember(fileName) {
+        var viewerTab by remember { mutableStateOf(0) } // 0 = Markdown Notes (.md), 1 = Subtitles (.srt)
+
+        val latestMdFile = remember(fileName) {
             AppStorageManager.getLatestTranscriptionFile(context, fileName)
         }
-        val fileContent = remember(latestFile) {
-            if (latestFile != null && latestFile.exists()) {
-                latestFile.readText()
+        val latestSrtFile = remember(fileName) {
+            AppStorageManager.getLatestSubtitleFile(context, fileName)
+        }
+
+        val mdContent = remember(latestMdFile, transcription.text) {
+            if (latestMdFile != null && latestMdFile.exists()) {
+                latestMdFile.readText()
             } else {
-                "Transcription file will be generated at:\nDownload/App data/poc/yesboss/transcriptions/transcription_${fileName.substringBeforeLast(".")}.md\n\nTranscript Content:\n${transcription.text}"
+                "Transcription file (.md):\nDownload/App data/poc/yesboss/transcriptions/transcription_${fileName.substringBeforeLast(".")}.md\n\nTranscript Content:\n${transcription.text}"
             }
         }
+
+        val srtContent = remember(latestSrtFile, transcription.text) {
+            if (latestSrtFile != null && latestSrtFile.exists()) {
+                latestSrtFile.readText()
+            } else {
+                val generated = AppStorageManager.generateSrtContent(transcription.text, transcription.durationSeconds)
+                if (generated.isNotBlank()) generated else "1\n00:00:00,000 --> 00:00:${String.format(Locale.US, "%02d", transcription.durationSeconds)},000\n${transcription.text}\n"
+            }
+        }
+
+        val currentActiveFile = if (viewerTab == 0) latestMdFile else latestSrtFile
+        val currentContent = if (viewerTab == 0) mdContent else srtContent
 
         AlertDialog(
             onDismissRequest = { showFileViewerDialog = false },
@@ -534,7 +544,7 @@ fun AudioPlayerCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Description, contentDescription = null, tint = AccentPurple)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Transcription File", fontWeight = FontWeight.Bold)
+                    Text(if (viewerTab == 0) "Transcription Notes (.md)" else "Subtitle Timestamps (.srt)", fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -543,19 +553,63 @@ fun AudioPlayerCard(
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                 ) {
+                    // Tab switch between Markdown and Subtitles SRT
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (viewerTab == 0) AccentPurple else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewerTab = 0 }
+                        ) {
+                            Text(
+                                text = "📝 Notes (.md)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (viewerTab == 0) DarkBackground else TextPrimary,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (viewerTab == 1) AccentPurple else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewerTab = 1 }
+                        ) {
+                            Text(
+                                text = "⏱️ Subtitles (.srt)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (viewerTab == 1) DarkBackground else TextPrimary,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Text(
-                        text = "File Path: ${latestFile?.absolutePath ?: "Download/App data/poc/yesboss/transcriptions/"}",
+                        text = "File Path: ${currentActiveFile?.absolutePath ?: "Download/App data/poc/yesboss/transcriptions/"}",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = fileContent,
+                            text = currentContent,
                             style = MaterialTheme.typography.bodySmall,
                             color = TextPrimary,
                             modifier = Modifier.padding(12.dp)
@@ -564,25 +618,25 @@ fun AudioPlayerCard(
                 }
             },
             confirmButton = {
-                if (latestFile != null && latestFile.exists()) {
+                if (currentActiveFile != null && currentActiveFile.exists()) {
                     Button(
                         onClick = {
-                            val opened = AppStorageManager.openFileWithIntent(context, latestFile)
+                            val opened = AppStorageManager.openFileWithIntent(context, currentActiveFile)
                             if (!opened) {
-                                Toast.makeText(context, "No app available to open markdown. Content copied to clipboard.", Toast.LENGTH_SHORT).show()
-                                clipboardManager.setText(AnnotatedString(fileContent))
+                                Toast.makeText(context, "Copied content to clipboard.", Toast.LENGTH_SHORT).show()
+                                clipboardManager.setText(AnnotatedString(currentContent))
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
                         Icon(Icons.Default.OpenInNew, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Open in App", color = DarkBackground, fontWeight = FontWeight.Bold)
+                        Text("Open File in App", color = DarkBackground, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
                         onClick = {
-                            clipboardManager.setText(AnnotatedString(fileContent))
+                            clipboardManager.setText(AnnotatedString(currentContent))
                             Toast.makeText(context, "Copied content to clipboard", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
