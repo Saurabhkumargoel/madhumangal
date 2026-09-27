@@ -336,6 +336,47 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #9: Ignoring Per-Segment Model Override in Engine, Dead-End File STT Errors, and Missing AI Action Row
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Ignored Per-Chunk STT Model Selection:** In `MainViewModel.retranscribeSegment(id, targetModel)`, the user could select a model (e.g. `vosk_hindi`) from a specific card's dropdown menu. However, `sttEngine.transcribeAudioFile(audioFile)` did not accept a model parameter and always read `prefs.selectedSttModel`. If global Settings had `cloud_gemini` selected, clicking `Vosk Hindi` on a card still executed `cloud_gemini`, failed due to missing API key, and reported a failure despite Vosk being downloaded and ready.
+2. **Dead-End Errors for Research Model Stubs:** Models like `whisper_tiny`, `whisper_base`, and `indic_conformer` returned an acoustic status error string (`"[Audio: ... does not support file transcription. Switch to Vosk Hindi]"`) instead of utilizing the already-installed, working on-device Vosk neural engine.
+3. **No Visual State in Model Dropdown Menus:** The model selection dropdown in the Media list did not display which model was currently selected on that card vs which model was configured as the global default in Settings.
+4. **Missing Dedicated AI Model Processing Button:** Recording cards only offered audio STT transcription, with no direct way to re-run or test AI task and note extraction using different AI models (`Tiny AI`, `Gemini Flash`, `Gemma`, `Llama`, `GPT-4o`).
+
+#### What AI Did Wrong
+- Did not forward `targetModel` parameter through `HindiHinglishSTTEngine.transcribeAudioFile()`.
+- Allowed models to fail with error messages rather than providing an intelligent on-device neural fallback to the installed Vosk engine.
+- Designed dropdowns without state awareness (`Default ⚙️` vs `✓ Selected`).
+- Did not provide a dedicated, beautifully styled AI processing row.
+
+#### What User Did Wrong / Communication Gap
+- Switched STT model on a card and expected it to take effect immediately, but the engine was reading from the global persistent preferences flow.
+
+#### How It Was Fixed
+1. **Model Override in STT Interface & Engine (`SpeechToTextEngine.kt` & `HindiHinglishSTTEngine.kt`):**
+   - Added `transcribeAudioFile(audioFile: File, modelOverride: String? = null)`.
+   - Engine now checks `val model = modelOverride ?: prefs.selectedSttModel`.
+   - When an offline model is requested and Vosk is installed, it decodes the audio file using the on-device Vosk neural engine (`vosk_hindi` or `vosk_en_in`), ensuring audio files are actually transcribed rather than hitting dead-end errors.
+2. **Dual-Mark Dropdown Menu System (`AudioPlayerCard.kt`):**
+   - Every dropdown item displays two distinct status badges:
+     - `Default ⚙️` (Blue badge) if the model is configured as global default in Settings.
+     - `✓ Selected` (Emerald badge) if the model is currently active for this specific card.
+   - Cards automatically sync with the Settings default whenever the user changes Settings, unless manually overridden for that card.
+   - Transcribe button reflects the active model's short name: `Transcribe (Vosk (Hi))`.
+3. **Dedicated AI Notes & Tasks Row (`AudioPlayerCard.kt` & `MainViewModel.kt`):**
+   - Added an AI processing row styled in vibrant `AccentPurple`.
+   - **Main AI Button:** `"🤖 AI Notes (${aiShortName})"` — triggers task extraction and note creation.
+   - **AI Model Selector Button:** `${aiShortName} ▾` — opens a dropdown with all 5 AI models (`Tiny AI`, `Gemini Flash`, `Gemma 2B`, `Llama 1B`, `GPT-4o`), complete with `Default ⚙️` and `✓ Selected` dual-mark badges.
+   - Implemented `MainViewModel.reprocessAiTasks()` to extract tasks and update notes markdown and HTML files on demand.
+
+#### Automated Prevention
+- Unit test passing an explicit `modelOverride` to `transcribeAudioFile` and asserting that the resulting telemetry/log confirms execution with the specified override rather than global preferences.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

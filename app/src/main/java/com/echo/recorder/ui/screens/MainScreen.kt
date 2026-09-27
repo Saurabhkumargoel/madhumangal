@@ -47,6 +47,7 @@ fun MainScreen(
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
     val transcriptions by viewModel.transcriptions.collectAsState(initial = emptyList())
     val transcribingIds by viewModel.transcribingIds.collectAsState(initial = emptySet())
+    val processingAiIds by viewModel.processingAiIds.collectAsState(initial = emptySet())
     val searchQuery by viewModel.searchQuery.collectAsState(initial = "")
     val noteTasks by viewModel.noteTasks.collectAsState(initial = emptyList())
     val lowHangingFruits by viewModel.lowHangingFruits.collectAsState(initial = emptyList())
@@ -163,6 +164,9 @@ fun MainScreen(
             2 -> TranscriptsTab(
                 transcriptions = transcriptions,
                 transcribingIds = transcribingIds,
+                processingAiIds = processingAiIds,
+                defaultSttModel = userPreferences.selectedSttModel,
+                defaultAiModel = userPreferences.selectedAiModel,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { viewModel.updateSearchQuery(it) },
                 onDeleteTranscription = { viewModel.deleteTranscription(it) },
@@ -174,6 +178,11 @@ fun MainScreen(
                 onRetranscribeWithModel = { id, modelId ->
                     viewModel.retranscribeSegment(id, modelId) { success, msg ->
                         android.widget.Toast.makeText(context, if (success) "✅ Segment #$id transcribed!" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
+                onReprocessAiWithModel = { id, aiModelId ->
+                    viewModel.reprocessAiTasks(id, aiModelId) { success, msg ->
+                        android.widget.Toast.makeText(context, if (success) "✅ $msg" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
                     }
                 },
                 onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },

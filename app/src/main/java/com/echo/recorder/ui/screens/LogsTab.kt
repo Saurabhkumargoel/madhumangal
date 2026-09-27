@@ -166,16 +166,43 @@ fun LogsTab(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        AppLogger.startNewSession(context)
-                        Toast.makeText(context, "Started new session log file!", Toast.LENGTH_SHORT).show()
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
-                ) {
-                    Text("➕ New Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            AppLogger.startNewSession(context)
+                            Toast.makeText(context, "Started new session log file!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
+                    ) {
+                        Text("➕ New Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val activeFile = AppLogger.getCurrentSessionFile()
+                            val textToExport = if (activeFile != null && activeFile.exists()) {
+                                activeFile.readText()
+                            } else {
+                                AppLogger.getAllLogsText()
+                            }
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, textToExport)
+                                type = "text/plain"
+                            }
+                            val shareIntent = Intent.createChooser(sendIntent, "Export Active Session (${activeFile?.name ?: "active"})")
+                            context.startActivity(shareIntent)
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981))
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("Export", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -306,7 +333,10 @@ fun LogsTab(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(filteredLogs) { entry ->
-                        if (entry.message.contains("=== New Session Started:")) {
+                        val isSessionHeader = entry.message.contains("=== New Session Started:") ||
+                                entry.message.contains("Active session file:") ||
+                                entry.message.contains("rolled over to new session:")
+                        if (isSessionHeader) {
                             SessionDividerRow(entry)
                         } else {
                             LogItemRow(entry)
@@ -332,7 +362,7 @@ fun SessionDividerRow(entry: LogEntry) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("⚡", fontSize = 12.sp)
@@ -346,10 +376,17 @@ fun SessionDividerRow(entry: LogEntry) {
             )
 
             // Small export button for this specific session file
-            IconButton(
+            Button(
                 onClick = {
-                    val sessionName = entry.message.substringAfter("=== New Session Started: ")
-                        .substringBefore(" ===").trim()
+                    val sessionName = when {
+                        entry.message.contains("=== New Session Started: ") ->
+                            entry.message.substringAfter("=== New Session Started: ").substringBefore(" ===").trim()
+                        entry.message.contains("Active session file: ") ->
+                            java.io.File(entry.message.substringAfter("Active session file: ").trim()).name
+                        entry.message.contains("rolled over to new session: ") ->
+                            entry.message.substringAfter("rolled over to new session: ").trim()
+                        else -> "session.log"
+                    }
                     val files = AppLogger.getSessionFiles(context)
                     val targetFile = files.find { it.name == sessionName }
                     val contentToShare = if (targetFile != null && targetFile.exists()) {
@@ -365,14 +402,18 @@ fun SessionDividerRow(entry: LogEntry) {
                     val shareIntent = Intent.createChooser(sendIntent, "Export Session ($sessionName)")
                     context.startActivity(shareIntent)
                 },
-                modifier = Modifier.size(24.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
             ) {
                 Icon(
                     imageVector = Icons.Default.Share,
                     contentDescription = "Export Session",
-                    tint = PrimaryBlue,
-                    modifier = Modifier.size(13.dp)
+                    tint = DarkBackground,
+                    modifier = Modifier.size(11.dp)
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Export", color = DarkBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.width(4.dp))

@@ -82,9 +82,13 @@ import java.util.Locale
 fun AudioPlayerCard(
     transcription: TranscriptionWithAudio,
     isTranscribing: Boolean = false,
+    isProcessingAi: Boolean = false,
+    defaultSttModel: String = UserPreferences.STT_MODEL_VOSK_HINDI,
+    defaultAiModel: String = UserPreferences.AI_MODEL_LOCAL_TINY,
     onDelete: (Long) -> Unit,
     onRetranscribe: (Long) -> Unit = {},
     onRetranscribeWithModel: (Long, String) -> Unit = { _, _ -> },
+    onReprocessAiWithModel: (Long, String) -> Unit = { _, _ -> },
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -92,8 +96,13 @@ fun AudioPlayerCard(
     val clipboardManager = LocalClipboardManager.current
     var isPlaying by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
-    var showModelMenu by remember { mutableStateOf(false) }
-    var selectedModelShortName by remember { mutableStateOf("Vosk (Hi)") }
+    var showSttModelMenu by remember { mutableStateOf(false) }
+    var showAiModelMenu by remember { mutableStateOf(false) }
+
+    // Initialized from Settings default; updates automatically when Settings default changes unless overridden!
+    var selectedSttModel by remember(defaultSttModel) { mutableStateOf(defaultSttModel) }
+    var selectedAiModel by remember(defaultAiModel) { mutableStateOf(defaultAiModel) }
+
     var showFileViewerDialog by remember { mutableStateOf(false) }
     var editTextValue by remember { mutableStateOf(transcription.text) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -364,7 +373,29 @@ fun AudioPlayerCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Action Buttons Row 1: Transcribe / Transcribe Again + Tini "Transcribe With"
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val sttShortName = when (selectedSttModel) {
+                UserPreferences.STT_MODEL_VOSK_HINDI -> "Vosk (Hi)"
+                UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk (En)"
+                UserPreferences.STT_MODEL_CLOUD_GEMINI -> "Gemini"
+                UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper (T)"
+                UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper (B)"
+                UserPreferences.STT_MODEL_INDIC_CONFORMER -> "Indic"
+                UserPreferences.STT_MODEL_GOOGLE_SPEECH -> "Google"
+                else -> "Vosk"
+            }
+
+            val aiShortName = when (selectedAiModel) {
+                UserPreferences.AI_MODEL_LOCAL_TINY -> "Tiny AI"
+                UserPreferences.AI_MODEL_CLOUD_GEMINI -> "Gemini"
+                UserPreferences.AI_MODEL_LOCAL_GEMMA -> "Gemma 2B"
+                UserPreferences.AI_MODEL_LOCAL_LLAMA -> "Llama 1B"
+                UserPreferences.AI_MODEL_CLOUD_OPENAI -> "GPT-4o"
+                else -> "Tiny AI"
+            }
+
+            // ── Action Buttons Row 1: STT Transcription ──────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -373,8 +404,8 @@ fun AudioPlayerCard(
                 // Main Transcribe button
                 Button(
                     onClick = {
-                        Toast.makeText(context, "Transcribing audio chunk...", Toast.LENGTH_SHORT).show()
-                        onRetranscribe(transcription.id)
+                        Toast.makeText(context, "Transcribing with $sttShortName...", Toast.LENGTH_SHORT).show()
+                        onRetranscribeWithModel(transcription.id, selectedSttModel)
                     },
                     enabled = !isTranscribing,
                     colors = ButtonDefaults.buttonColors(
@@ -400,97 +431,218 @@ fun AudioPlayerCard(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = if (isTranscribing) "Transcribing..." else if (!hasValidTranscript) "Transcribe ($selectedModelShortName)" else "Transcribe Again ($selectedModelShortName)",
+                        text = if (isTranscribing) "Transcribing..." else if (!hasValidTranscript) "Transcribe ($sttShortName)" else "Transcribe Again ($sttShortName)",
                         fontWeight = FontWeight.Bold,
                         color = if (!hasValidTranscript) DarkBackground else TextPrimary,
                         fontSize = 12.sp
                     )
                 }
 
-                // Tini "Transcribe With" Model Selector Button - shows current model short name!
+                // STT Model Selector Button with current short name
                 Box {
                     OutlinedButton(
-                        onClick = { showModelMenu = true },
+                        onClick = { showSttModelMenu = true },
                         enabled = !isTranscribing,
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(selectedModelShortName, color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(sttShortName, color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(2.dp))
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select Model",
+                            contentDescription = "Select STT Model",
                             tint = PrimaryBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
 
                     DropdownMenu(
-                        expanded = showModelMenu,
-                        onDismissRequest = { showModelMenu = false }
+                        expanded = showSttModelMenu,
+                        onDismissRequest = { showSttModelMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("🎙️ Vosk Hindi (Offline)") },
-                            onClick = {
-                                selectedModelShortName = "Vosk (Hi)"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Vosk Hindi...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_VOSK_HINDI)
-                            }
+                        UserPreferences.AVAILABLE_STT_MODELS.forEach { modelOpt ->
+                            val isDefault = modelOpt.id == defaultSttModel
+                            val isSelected = modelOpt.id == selectedSttModel
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                                            Text(
+                                                text = modelOpt.name,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) PrimaryBlue else TextPrimary,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (isDefault) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = PrimaryBlue.copy(alpha = 0.15f)
+                                                ) {
+                                                    Text(
+                                                        text = "Default ⚙️",
+                                                        color = PrimaryBlue,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "✓ Selected",
+                                                        color = Color(0xFF10B981),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    selectedSttModel = modelOpt.id
+                                    showSttModelMenu = false
+                                    Toast.makeText(context, "Selected for chunk: ${modelOpt.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ── Action Buttons Row 2: AI Notes & Task Extraction (Vibrant Purple) ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Main AI Processing Button
+                Button(
+                    onClick = {
+                        Toast.makeText(context, "Extracting notes & tasks via $aiShortName...", Toast.LENGTH_SHORT).show()
+                        onReprocessAiWithModel(transcription.id, selectedAiModel)
+                    },
+                    enabled = !isProcessingAi && hasValidTranscript,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentPurple.copy(alpha = 0.2f),
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isProcessingAi) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.5.dp,
+                            color = AccentPurple
                         )
-                        DropdownMenuItem(
-                            text = { Text("🇮🇳 Vosk Indian English (Offline)") },
-                            onClick = {
-                                selectedModelShortName = "Vosk (En)"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Vosk Indian English...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_VOSK_EN_IN)
-                            }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Text("🤖", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = if (isProcessingAi) "Extracting Tasks..." else "AI Notes ($aiShortName)",
+                        fontWeight = FontWeight.Bold,
+                        color = AccentPurple,
+                        fontSize = 12.sp
+                    )
+                }
+
+                // AI Model Selector Button
+                Box {
+                    OutlinedButton(
+                        onClick = { showAiModelMenu = true },
+                        enabled = !isProcessingAi,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f))
+                    ) {
+                        Text(aiShortName, color = AccentPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Select AI Model",
+                            tint = AccentPurple,
+                            modifier = Modifier.size(16.dp)
                         )
-                        DropdownMenuItem(
-                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud API)") },
-                            onClick = {
-                                selectedModelShortName = "Gemini"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_CLOUD_GEMINI)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("⚡ Whisper Tiny (Multi-lingual)") },
-                            onClick = {
-                                selectedModelShortName = "Whisper (T)"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Whisper Tiny...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_TINY)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("🤖 Whisper Base (High Precision)") },
-                            onClick = {
-                                selectedModelShortName = "Whisper (B)"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Whisper Base...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_BASE)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("🇮🇳 IndicConformer (AI4Bharat)") },
-                            onClick = {
-                                selectedModelShortName = "Indic"
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("🗣️ Google Speech (Live Mic)") },
-                            onClick = {
-                                selectedModelShortName = "Google"
-                                showModelMenu = false
-                                Toast.makeText(context, "Selected Google Speech", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_GOOGLE_SPEECH)
-                            }
-                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showAiModelMenu,
+                        onDismissRequest = { showAiModelMenu = false }
+                    ) {
+                        UserPreferences.AVAILABLE_AI_MODELS.forEach { aiOpt ->
+                            val isDefault = aiOpt.id == defaultAiModel
+                            val isSelected = aiOpt.id == selectedAiModel
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                                            Text(
+                                                text = aiOpt.name,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) AccentPurple else TextPrimary,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (isDefault) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = AccentPurple.copy(alpha = 0.15f)
+                                                ) {
+                                                    Text(
+                                                        text = "Default ⚙️",
+                                                        color = AccentPurple,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "✓ Selected",
+                                                        color = Color(0xFF10B981),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    selectedAiModel = aiOpt.id
+                                    showAiModelMenu = false
+                                    Toast.makeText(context, "Selected AI: ${aiOpt.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
                 }
             }

@@ -57,6 +57,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _transcribingIds = MutableStateFlow<Set<Long>>(emptySet())
     val transcribingIds: StateFlow<Set<Long>> = _transcribingIds.asStateFlow()
 
+    private val _processingAiIds = MutableStateFlow<Set<Long>>(emptySet())
+    val processingAiIds: StateFlow<Set<Long>> = _processingAiIds.asStateFlow()
+
     private val _audioStorageMb = MutableStateFlow(0f)
     val audioStorageMb: StateFlow<Float> = _audioStorageMb.asStateFlow()
 
@@ -500,7 +503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     val sttEngine = com.echo.recorder.stt.HindiHinglishSTTEngine(app, prefsRepo)
-                    val engineResult = sttEngine.transcribeAudioFile(audioFile)
+                    val engineResult = sttEngine.transcribeAudioFile(audioFile, targetModel)
                     if (engineResult.isSuccess) {
                         transcribedText = engineResult.getOrNull()
                         com.echo.recorder.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
@@ -573,6 +576,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _transcribingIds.value = _transcribingIds.value - transcriptionId
                 com.echo.recorder.util.AppLogger.i("STT", "Finished transcription job for segment #$transcriptionId")
+            }
+        }
+    }
+
+    fun reprocessAiTasks(
+        transcriptionId: Long,
+        aiModelOverride: String? = null,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (_processingAiIds.value.contains(transcriptionId)) return
+        _processingAiIds.value = _processingAiIds.value + transcriptionId
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+                if (item == null) {
+                    withContext(Dispatchers.Main) { onResult(false, "Segment not found") }
+                    return@launch
+                }
+                val text = item.text
+                if (text.isBlank() || text.startsWith("[Ambient") || text.startsWith("[Silence") || text.startsWith("[Audio:")) {
+                    withContext(Dispatchers.Main) { onResult(false, "No valid transcript yet. Please transcribe audio first.") }
+                    return@launch
+                }
+
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val targetAiModel = aiModelOverride ?: prefs.selectedAiModel
+                com.echo.recorder.util.AppLogger.i("AI", "=== Manual AI task extraction requested for segment #$transcriptionId (Model: $targetAiModel) ===")
+
+                kotlinx.coroutines.delay(400) // Small visual feedback
+
+                val extractedTasks: List<com.echo.recorder.data.NoteTask> = if (targetAiModel == com.echo.recorder.data.UserPreferences.AI_MODEL_CLOUD_GEMINI && prefs.cloudApiKey.isNotBlank()) {
+                    com.echo.recorder.util.AppLogger.i("AI", "Running Gemini Flash task extraction...")
+                    val geminiResult = com.echo.recorder.ai.GeminiApiService.extractTasksWithGemini(text, prefs.cloudApiKey)
+                    if (geminiResult.isSuccess && geminiResult.getOrNull()?.isNotEmpty() == true) {
+                        geminiResult.getOrNull()!!.map {
+                            com.echo.recorder.data.NoteTask(
+                                transcriptionId = transcriptionId,
+                                title = it.title,
+                                description = it.description,
+                                categoryGroup = it.group,
+                                priority = it.priority,
+                                isLowHangingFruit = it.isLowHangingFruit,
+                                isCompleted = false
+                            )
+                        }
+                    } else {
+                        com.echo.recorder.ai.TinyAiProcessor().processTranscription(text, transcriptionId)
+                    }
+                } else {
+                    com.echo.recorder.ai.TinyAiProcessor().processTranscription(text, transcriptionId)
+                }
+
+                for (task in extractedTasks) {
+                    noteTaskDao.insertTask(task)
+                }
+
+                val audioFile = File(item.filePath)
+                com.echo.recorder.util.AppStorageManager.saveNotesToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    transcriptionText = text,
+                    tasks = extractedTasks,
+                    customNotesDir = prefs.notesFolderPath
+                )
+
+                com.echo.recorder.util.AppLogger.i("AI", "Extracted ${extractedTasks.size} tasks using $targetAiModel")
+                withContext(Dispatchers.Main) {
+                    onResult(true, "Extracted ${extractedTasks.size} tasks using $targetAiModel")
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("AI", "Error in reprocessAiTasks", e)
+                withContext(Dispatchers.Main) {
+                    onResult(false, e.message ?: "Task extraction failed")
+                }
+            } finally {
+                _processingAiIds.value = _processingAiIds.value - transcriptionId
             }
         }
     }

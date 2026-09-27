@@ -38,16 +38,21 @@ import com.echo.recorder.ui.theme.SurfaceDark
 import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.theme.TextPrimary
 import com.echo.recorder.ui.theme.TextSecondary
+import com.echo.recorder.data.UserPreferences
 
 @Composable
 fun TranscriptsTab(
     transcriptions: List<TranscriptionWithAudio>,
     transcribingIds: Set<Long> = emptySet(),
+    processingAiIds: Set<Long> = emptySet(),
+    defaultSttModel: String = UserPreferences.STT_MODEL_VOSK_HINDI,
+    defaultAiModel: String = UserPreferences.AI_MODEL_LOCAL_TINY,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onDeleteTranscription: (Long) -> Unit,
     onRetranscribe: (Long) -> Unit = {},
     onRetranscribeWithModel: (Long, String) -> Unit = { _, _ -> },
+    onReprocessAiWithModel: (Long, String) -> Unit = { _, _ -> },
     onUpdateText: (Long, String) -> Unit = { _, _ -> },
     onExportMedia: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -155,9 +160,13 @@ fun TranscriptsTab(
                     AudioPlayerCard(
                         transcription = item,
                         isTranscribing = transcribingIds.contains(item.id),
+                        isProcessingAi = processingAiIds.contains(item.id),
+                        defaultSttModel = defaultSttModel,
+                        defaultAiModel = defaultAiModel,
                         onDelete = onDeleteTranscription,
                         onRetranscribe = onRetranscribe,
                         onRetranscribeWithModel = onRetranscribeWithModel,
+                        onReprocessAiWithModel = onReprocessAiWithModel,
                         onUpdateText = onUpdateText
                     )
                 }
