@@ -239,7 +239,7 @@ fun SettingsTab(
 
                     OutlinedButton(
                         onClick = {
-                            val opened = AppStorageManager.openFileWithIntent(context, baseDir)
+                            val opened = AppStorageManager.openFolderWithIntent(context, baseDir)
                             if (!opened) {
                                 Toast.makeText(context, "Path: ${baseDir.absolutePath}", Toast.LENGTH_LONG).show()
                             }
@@ -882,7 +882,7 @@ fun SettingsTab(
                                                             ) {
                                                                 OutlinedButton(
                                                                     onClick = {
-                                                                        val opened = AppStorageManager.openFileWithIntent(context, modelsDir)
+                                                                        val opened = AppStorageManager.openFolderWithIntent(context, modelsDir)
                                                                         if (!opened) {
                                                                             Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
                                                                         }
@@ -1038,7 +1038,7 @@ fun SettingsTab(
                                                             ) {
                                                                 OutlinedButton(
                                                                     onClick = {
-                                                                        val opened = AppStorageManager.openFileWithIntent(context, modelsDir)
+                                                                        val opened = AppStorageManager.openFolderWithIntent(context, modelsDir)
                                                                         if (!opened) {
                                                                             Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
                                                                         }

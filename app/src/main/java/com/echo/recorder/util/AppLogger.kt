@@ -60,12 +60,16 @@ object AppLogger {
             message
         }
 
-        when (level) {
-            "DEBUG" -> Log.d(tag, fullMsg)
-            "INFO" -> Log.i(tag, fullMsg)
-            "WARN" -> Log.w(tag, fullMsg)
-            "ERROR" -> Log.e(tag, fullMsg)
-            else -> Log.v(tag, fullMsg)
+        try {
+            when (level) {
+                "DEBUG" -> Log.d(tag, fullMsg)
+                "INFO" -> Log.i(tag, fullMsg)
+                "WARN" -> Log.w(tag, fullMsg)
+                "ERROR" -> Log.e(tag, fullMsg)
+                else -> Log.v(tag, fullMsg)
+            }
+        } catch (_: Throwable) {
+            println("[$level] [$tag] $fullMsg")
         }
 
         val entry = LogEntry(timeStr, level, tag, fullMsg)

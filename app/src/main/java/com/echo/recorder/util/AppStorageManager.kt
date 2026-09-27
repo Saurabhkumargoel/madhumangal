@@ -20,7 +20,7 @@ object AppStorageManager {
     private const val FOLDER_LOGS = "logs"
     private const val FOLDER_MODELS = "models"
 
-    fun getBaseDirectory(context: Context, customBasePath: String? = null): File {
+    fun getBaseDirectory(context: Context? = null, customBasePath: String? = null): File {
         if (!customBasePath.isNullOrBlank()) {
             val custom = File(customBasePath)
             if (custom.isAbsolute) {
@@ -29,6 +29,7 @@ object AppStorageManager {
             }
         }
 
+        val ctx = context
         // Try primary public Downloads folder: "Download/App data/poc/yesboss"
         return try {
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -38,11 +39,13 @@ object AppStorageManager {
             }
             if (baseDir.exists() && (baseDir.canWrite() || baseDir.isDirectory)) {
                 baseDir
+            } else if (ctx != null) {
+                getAppSpecificBaseDir(ctx)
             } else {
-                getAppSpecificBaseDir(context)
+                baseDir
             }
         } catch (e: Exception) {
-            getAppSpecificBaseDir(context)
+            if (ctx != null) getAppSpecificBaseDir(ctx) else File("Download/App data/poc/yesboss").apply { mkdirs() }
         }
     }
 
@@ -57,7 +60,7 @@ object AppStorageManager {
         return dir
     }
 
-    fun getAudioDirectory(context: Context, customPath: String? = null): File {
+    fun getAudioDirectory(context: Context? = null, customPath: String? = null): File {
         if (!customPath.isNullOrBlank()) {
             val f = File(customPath)
             if (!f.exists()) f.mkdirs()
@@ -66,7 +69,7 @@ object AppStorageManager {
         return File(getBaseDirectory(context), FOLDER_AUDIO).apply { if (!exists()) mkdirs() }
     }
 
-    fun getTranscriptionsDirectory(context: Context, customPath: String? = null): File {
+    fun getTranscriptionsDirectory(context: Context? = null, customPath: String? = null): File {
         if (!customPath.isNullOrBlank()) {
             val f = File(customPath)
             if (!f.exists()) f.mkdirs()
@@ -75,7 +78,7 @@ object AppStorageManager {
         return File(getBaseDirectory(context), FOLDER_TRANSCRIPTIONS).apply { if (!exists()) mkdirs() }
     }
 
-    fun getNotesDirectory(context: Context, customPath: String? = null): File {
+    fun getNotesDirectory(context: Context? = null, customPath: String? = null): File {
         if (!customPath.isNullOrBlank()) {
             val f = File(customPath)
             if (!f.exists()) f.mkdirs()
@@ -84,7 +87,7 @@ object AppStorageManager {
         return File(getBaseDirectory(context), FOLDER_NOTES).apply { if (!exists()) mkdirs() }
     }
 
-    fun getLogsDirectory(context: Context, customPath: String? = null): File {
+    fun getLogsDirectory(context: Context? = null, customPath: String? = null): File {
         if (!customPath.isNullOrBlank()) {
             val f = File(customPath)
             if (!f.exists()) f.mkdirs()
@@ -93,16 +96,39 @@ object AppStorageManager {
         return File(getBaseDirectory(context), FOLDER_LOGS).apply { if (!exists()) mkdirs() }
     }
 
-    fun getModelsDirectory(context: Context): File {
-        return File(context.filesDir, FOLDER_MODELS).apply { if (!exists()) mkdirs() }
+    fun getModelsDirectory(context: Context? = null, customBasePath: String? = null): File {
+        val baseDir = getBaseDirectory(context, customBasePath)
+        val modelsDir = File(baseDir, FOLDER_MODELS).apply { if (!exists()) mkdirs() }
+
+        // Auto-migrate any existing models from legacy internal app storage (context.filesDir/models) to public storage
+        try {
+            val ctx = context
+            if (ctx != null) {
+                val legacyDir = File(ctx.filesDir, FOLDER_MODELS)
+                if (legacyDir.exists() && legacyDir.isDirectory) {
+                    val legacyFiles = legacyDir.listFiles()
+                    legacyFiles?.forEach { legacyFile ->
+                        val dest = File(modelsDir, legacyFile.name)
+                        if (!dest.exists() || dest.length() < legacyFile.length()) {
+                            legacyFile.copyTo(dest, overwrite = true)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed to migrate legacy models from filesDir", e)
+        }
+
+        return modelsDir
     }
 
     /**
      * Saves transcription text to a persistent, versioned Markdown (.md) file.
      * Retains history of all transcriptions even when re-transcribed.
+     * Always writes a new versioned file (vYYYYMMDD_HHmmss.md) and updates the latest file.
      */
     fun saveTranscriptionToFile(
-        context: Context,
+        context: Context? = null,
         audioFileName: String,
         text: String,
         durationSeconds: Int,
@@ -123,10 +149,10 @@ object AppStorageManager {
             appendLine("# 🎙️ Audio Transcription: $baseName")
             appendLine()
             appendLine("- **Audio Source:** `$audioFileName`")
-            appendLine("- **Timestamp:** $dateStr")
+            appendLine("- **Timestamp:** $dateStr (Version: $timestamp)")
             appendLine("- **Duration:** ${durationSeconds}s (Overlap: ${overlapSeconds}s)")
             appendLine("- **STT Engine:** $engineName")
-            appendLine("- **Saved Path:** `${versionedFile.absolutePath}`")
+            appendLine("- **Versioned File:** `${versionedFile.name}`")
             appendLine()
             appendLine("---")
             appendLine()
@@ -157,16 +183,18 @@ object AppStorageManager {
             }
         }
 
-        val srtFile = File(dir, "${baseName}.srt")
+        val versionedSrtFile = File(dir, "${baseName}_v${timestamp}.srt")
+        val latestSrtFile = File(dir, "${baseName}.srt")
         val srtContent = generateSrtContent(text, durationSeconds)
 
         try {
             versionedFile.writeText(content)
             latestFile.writeText(content)
             if (srtContent.isNotBlank()) {
-                srtFile.writeText(srtContent)
+                versionedSrtFile.writeText(srtContent)
+                latestSrtFile.writeText(srtContent)
             }
-            AppLogger.i("STORAGE", "Saved transcription: ${versionedFile.name}, Subtitles: ${srtFile.name}")
+            AppLogger.i("STORAGE", "Saved transcription: ${versionedFile.name} (Latest updated: ${latestFile.name})")
         } catch (e: Exception) {
             AppLogger.e("STORAGE", "Failed to write transcription file", e)
         }
@@ -239,10 +267,11 @@ object AppStorageManager {
     }
 
     /**
-     * Saves a chunk-specific .srt subtitle file alongside the .wav audio file
+     * Saves a chunk-specific .srt subtitle file alongside the .wav audio file.
+     * Always writes a new versioned file (vYYYYMMDD_HHmmss.srt) and updates latest.
      */
     fun saveChunkSrt(
-        context: Context,
+        context: Context? = null,
         audioFileName: String,
         text: String,
         durationSeconds: Int,
@@ -253,11 +282,14 @@ object AppStorageManager {
         if (srtContent.isBlank()) return null
 
         val dir = getTranscriptionsDirectory(context, customDir)
-        val srtFile = File(dir, "${baseName}.srt")
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val versionedSrt = File(dir, "${baseName}_v${timestamp}.srt")
+        val latestSrt = File(dir, "${baseName}.srt")
         try {
-            srtFile.writeText(srtContent)
-            AppLogger.i("STORAGE", "Saved chunk subtitle file: ${srtFile.name}")
-            return srtFile
+            versionedSrt.writeText(srtContent)
+            latestSrt.writeText(srtContent)
+            AppLogger.i("STORAGE", "Saved chunk subtitle files: ${versionedSrt.name} & ${latestSrt.name}")
+            return latestSrt
         } catch (e: Exception) {
             AppLogger.e("STORAGE", "Failed to save chunk subtitle file", e)
             return null
@@ -265,10 +297,11 @@ object AppStorageManager {
     }
 
     /**
-     * Saves extracted notes & action items to a dedicated notes file (.md and .html)
+     * Saves extracted notes & action items to dedicated notes files (.md and .html).
+     * Always writes new versioned files (vYYYYMMDD_HHmmss) and updates latest files.
      */
     fun saveNotesToFile(
-        context: Context,
+        context: Context? = null,
         audioFileName: String,
         transcriptionText: String,
         tasks: List<NoteTask>,
@@ -276,12 +309,16 @@ object AppStorageManager {
     ): Pair<File, File?> {
         val dir = getNotesDirectory(context, customNotesDir)
         val baseName = audioFileName.substringBeforeLast(".")
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-        val mdFile = File(dir, "notes_${baseName}.md")
-        val htmlFile = File(dir, "notes_${baseName}.html")
+
+        val versionedMd = File(dir, "notes_${baseName}_v${timestamp}.md")
+        val latestMd = File(dir, "notes_${baseName}.md")
+        val versionedHtml = File(dir, "notes_${baseName}_v${timestamp}.html")
+        val latestHtml = File(dir, "notes_${baseName}.html")
 
         val mdContent = buildString {
-            appendLine("# 🧠 AI Notes & Tasks: $baseName")
+            appendLine("# 🧠 AI Notes & Tasks: $baseName (v$timestamp)")
             appendLine("- **Generated:** $dateStr")
             appendLine("- **Source File:** `$audioFileName`")
             appendLine()
@@ -295,13 +332,13 @@ object AppStorageManager {
         }
 
         val htmlContent = buildString {
-            appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Notes - $baseName</title>")
+            appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Notes - $baseName (v$timestamp)</title>")
             appendLine("<style>body{font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:24px;max-width:800px;margin:auto;}")
             appendLine("h1{color:#58a6ff;}h2{color:#79c0ff;border-bottom:1px solid #30363d;padding-bottom:6px;}")
             appendLine(".task{background:#161b22;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #30363d;}")
             appendLine(".badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;margin-right:8px;background:#1f6feb;color:#fff;}")
             appendLine("</style></head><body>")
-            appendLine("<h1>🧠 AI Notes & Tasks</h1><p><strong>Source:</strong> $audioFileName | <strong>Date:</strong> $dateStr</p>")
+            appendLine("<h1>🧠 AI Notes & Tasks</h1><p><strong>Source:</strong> $audioFileName | <strong>Date:</strong> $dateStr | <strong>Version:</strong> $timestamp</p>")
             appendLine("<h2>Transcription</h2><p>$transcriptionText</p>")
             appendLine("<h2>Action Items (${tasks.size})</h2>")
             for (t in tasks) {
@@ -311,14 +348,16 @@ object AppStorageManager {
         }
 
         try {
-            mdFile.writeText(mdContent)
-            htmlFile.writeText(htmlContent)
-            AppLogger.i("STORAGE", "Saved AI notes: ${mdFile.name} and ${htmlFile.name}")
+            versionedMd.writeText(mdContent)
+            latestMd.writeText(mdContent)
+            versionedHtml.writeText(htmlContent)
+            latestHtml.writeText(htmlContent)
+            AppLogger.i("STORAGE", "Saved AI notes: ${versionedMd.name} & ${versionedHtml.name} (Latest updated)")
         } catch (e: Exception) {
             AppLogger.e("STORAGE", "Failed to write notes files", e)
         }
 
-        return Pair(mdFile, htmlFile)
+        return Pair(latestMd, latestHtml)
     }
 
     fun getLatestTranscriptionFile(context: Context, audioFileName: String, customPath: String? = null): File? {
@@ -341,9 +380,97 @@ object AppStorageManager {
         return files?.maxByOrNull { it.lastModified() }
     }
 
+    fun openFolderWithIntent(context: Context, folder: File): Boolean {
+        try {
+            if (!folder.exists()) folder.mkdirs()
+
+            // 1. Copy absolute path to clipboard so user can always paste in file explorer
+            copyPathToClipboard(context, folder.absolutePath)
+
+            // 2. Try launching system DocumentsUI / SAF viewer for external storage
+            val relativePath = if (folder.absolutePath.contains("/storage/emulated/0/")) {
+                folder.absolutePath.substringAfter("/storage/emulated/0/")
+            } else {
+                folder.name
+            }
+            val encodedPath = relativePath.replace("/", "%2F")
+            val docUri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3A$encodedPath")
+
+            val intentDocuments = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(docUri, "vnd.android.document/directory")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (tryStartActivity(context, intentDocuments)) {
+                android.widget.Toast.makeText(context, "📁 Opening folder: ${folder.name}", android.widget.Toast.LENGTH_SHORT).show()
+                return true
+            }
+
+            // 3. Try standard folder mime types with FileProvider
+            try {
+                val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", folder)
+                val folderIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(contentUri, "resource/folder")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (tryStartActivity(context, folderIntent)) {
+                    android.widget.Toast.makeText(context, "📁 Opening folder: ${folder.name}", android.widget.Toast.LENGTH_SHORT).show()
+                    return true
+                }
+            } catch (_: Exception) {}
+
+            // 4. Try Downloads intent
+            val dlIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (tryStartActivity(context, dlIntent)) {
+                android.widget.Toast.makeText(context, "📁 Opening Downloads (Path copied to clipboard)", android.widget.Toast.LENGTH_SHORT).show()
+                return true
+            }
+
+            // 5. Toast path copied
+            android.widget.Toast.makeText(
+                context,
+                "📁 Path copied to clipboard: ${folder.absolutePath}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return true
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed to open folder: ${folder.absolutePath}", e)
+            android.widget.Toast.makeText(
+                context,
+                "Path copied: ${folder.name}",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return false
+        }
+    }
+
+    private fun tryStartActivity(context: Context, intent: Intent): Boolean {
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun copyPathToClipboard(context: Context, path: String) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("Folder Path", path)
+            clipboard?.setPrimaryClip(clip)
+            AppLogger.i("STORAGE", "Copied path to clipboard: $path")
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed to copy to clipboard", e)
+        }
+    }
+
     fun openFileWithIntent(context: Context, file: File): Boolean {
         return try {
             if (!file.exists()) return false
+            if (file.isDirectory) {
+                return openFolderWithIntent(context, file)
+            }
             val uri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",

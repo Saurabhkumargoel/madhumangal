@@ -303,6 +303,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     tasks = tasks,
                     customTranscriptionDir = prefs.transcriptionFolderPath
                 )
+                com.echo.recorder.util.AppStorageManager.saveNotesToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    transcriptionText = newText,
+                    tasks = tasks,
+                    customNotesDir = prefs.notesFolderPath
+                )
+                com.echo.recorder.util.AppStorageManager.saveChunkSrt(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    text = newText,
+                    durationSeconds = item.durationSeconds,
+                    customDir = prefs.transcriptionFolderPath
+                )
             }
         }
     }
