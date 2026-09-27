@@ -33,11 +33,10 @@ class HindiHinglishSTTEngine(
             return@withContext Result.success("[Ambient background segment - Low noise]")
         }
 
-        // Google Speech Recognizer is built into Android system (never requires a downloaded .bin file)
+        // Google Speech Recognizer is built into Android system for real-time live mic streaming
         if (model == UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
-            AppLogger.i("STT_ENGINE", "Transcribed with built-in Android Google Speech Recognizer (RMS: ${String.format(java.util.Locale.US, "%.1f", rms)})")
-            val transcriptText = "Voice speech recorded in ${audioFile.name} (Android Speech Service, ${String.format(java.util.Locale.US, "%.1f", rms)} RMS)"
-            return@withContext Result.success(transcriptText)
+            AppLogger.w("STT_ENGINE", "Google Speech Recognizer requires live microphone input. For transcribing recorded audio files, use Gemini 1.5 Flash.")
+            return@withContext Result.failure(IllegalStateException("To transcribe recorded audio chunks, enter a free Gemini API key in Settings or use Live Recording mode."))
         }
 
         val isModelDownloaded = prefs.downloadedModels.contains(model)
@@ -52,8 +51,7 @@ class HindiHinglishSTTEngine(
 
         if (isModelDownloaded && modelFile.exists()) {
             AppLogger.i("STT_ENGINE", "Using downloaded offline model: ${modelFile.name} (${modelFile.length()} bytes)")
-            val transcriptText = "Hindi/Hinglish speech transcribed from ${audioFile.name} with offline $modelName."
-            Result.success(transcriptText)
+            Result.failure(IllegalStateException("On-device offline transformer engine requires Gemini 1.5 Flash for verbatim speech transcription of saved files."))
         } else {
             AppLogger.w("STT_ENGINE", "Offline STT model '$modelName' is not downloaded on device")
             Result.failure(IllegalStateException("MODEL_NOT_DOWNLOADED:$model:$modelName"))

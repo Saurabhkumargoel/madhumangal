@@ -29,4 +29,7 @@ interface NoteTaskDao {
 
     @Query("UPDATE note_tasks SET isCompleted = :isCompleted WHERE id = :id")
     suspend fun updateTaskCompletion(id: Long, isCompleted: Boolean)
+
+    @Query("DELETE FROM note_tasks WHERE title LIKE 'Voice speech recorded in%' OR title LIKE '[Whisper Base]:%' OR title LIKE '[Pending:%'")
+    suspend fun cleanupDummyTasks()
 }

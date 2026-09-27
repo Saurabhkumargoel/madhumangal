@@ -70,6 +70,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshStorageUsage()
         viewModelScope.launch(Dispatchers.IO) {
             transcriptionDao.cleanupPendingErrorTexts()
+            noteTaskDao.cleanupDummyTasks()
         }
     }
 
@@ -415,7 +416,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     withContext(Dispatchers.Main) { onResult(true, transcribedText) }
                 } else {
-                    withContext(Dispatchers.Main) { onResult(false, "No speech detected in audio") }
+                    val failMsg = if (prefs.cloudApiKey.isBlank()) {
+                        "To transcribe saved audio files, enter a free Gemini API key in Settings or use Live Recording mode."
+                    } else {
+                        "No speech detected in audio file"
+                    }
+                    withContext(Dispatchers.Main) { onResult(false, failMsg) }
                 }
             } catch (e: Exception) {
                 com.echo.recorder.util.AppLogger.e("STT", "Exception during retranscribe", e)

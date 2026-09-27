@@ -36,7 +36,7 @@ interface TranscriptionDao {
     @Query("UPDATE transcriptions SET text = :text WHERE id = :id")
     suspend fun updateTranscriptionText(id: Long, text: String)
 
-    @Query("UPDATE transcriptions SET text = :defaultText WHERE text LIKE '[Pending:%'")
+    @Query("UPDATE transcriptions SET text = :defaultText WHERE text LIKE '[Pending:%' OR text LIKE 'Voice speech recorded in%' OR text LIKE '[Whisper Base]:%'")
     suspend fun cleanupPendingErrorTexts(defaultText: String = "Audio slice ready for transcription")
 
     @Query("DELETE FROM transcriptions WHERE id = :id")

@@ -18,7 +18,13 @@ class TinyAiProcessor {
      */
     fun processTranscription(text: String, transcriptionId: Long): List<NoteTask> {
         val cleanedText = text.trim()
-        if (cleanedText.isBlank() || cleanedText.startsWith("[")) {
+        if (cleanedText.isBlank() || 
+            cleanedText.startsWith("[") ||
+            cleanedText.startsWith("Voice speech recorded in") ||
+            cleanedText.startsWith("Captured Hindi/Hinglish speech from") ||
+            cleanedText.startsWith("Audio slice ready") ||
+            cleanedText.startsWith("Audio chunk recorded")
+        ) {
             return emptyList()
         }
 

@@ -105,8 +105,13 @@ fun AudioPlayerCard(
         SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date(transcription.timestampMillis))
     }
 
-    val isPlaceholder = transcription.text.startsWith("[") && transcription.text.contains("chunk_")
-    val hasValidTranscript = transcription.text.isNotBlank() && !isPlaceholder && !transcription.text.startsWith("[Pending:")
+    val isPlaceholder = (transcription.text.startsWith("[") && transcription.text.contains("chunk_")) ||
+            transcription.text.startsWith("Voice speech recorded in") ||
+            transcription.text.startsWith("Captured Hindi/Hinglish speech from") ||
+            transcription.text.startsWith("Audio chunk recorded") ||
+            transcription.text.startsWith("Audio slice ready") ||
+            transcription.text.startsWith("[Pending:")
+    val hasValidTranscript = transcription.text.isNotBlank() && !isPlaceholder
 
     fun togglePlay() {
         if (!audioExists) {

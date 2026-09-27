@@ -532,12 +532,12 @@ fun SettingsTab(
                                                     )
                                                 },
                                                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.height(30.dp)
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                                             ) {
-                                                Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(14.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Download Model", fontSize = 11.sp, color = DarkBackground, fontWeight = FontWeight.Bold)
+                                                Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Download Model", fontSize = 12.sp, color = DarkBackground, fontWeight = FontWeight.Bold)
                                             }
                                         } else if (isDownloading) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -551,12 +551,12 @@ fun SettingsTab(
                                                     viewModel.deleteModel(modelOption.id)
                                                     Toast.makeText(context, "Deleted ${modelOption.name}", Toast.LENGTH_SHORT).show()
                                                 },
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.height(30.dp)
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                             ) {
-                                                Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
+                                                Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(16.dp))
                                                 Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Delete", fontSize = 11.sp, color = ActiveRed)
+                                                Text("Delete", fontSize = 12.sp, color = ActiveRed, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
