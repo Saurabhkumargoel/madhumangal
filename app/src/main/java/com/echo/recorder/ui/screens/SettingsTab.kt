@@ -65,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -109,6 +110,7 @@ fun SettingsTab(
 
     // Download progress tracking per model
     val downloadingProgress = remember { mutableStateMapOf<String, Float>() }
+    var showAllModels by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -446,19 +448,85 @@ fun SettingsTab(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Select your voice-to-text model. Download offline models directly to device for offline inference.",
+                    text = "Select your voice-to-text model. Models are automatically filtered based on your recording mode (Live vs File).",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Mode-Aware Filter Banner
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (userPreferences.liveTranscribe) PrimaryBlue.copy(alpha = 0.12f) else AccentPurple.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = if (userPreferences.liveTranscribe) PrimaryBlue.copy(alpha = 0.4f) else AccentPurple.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (userPreferences.liveTranscribe) "🎙️ Live Mode Active" else "📁 Audio File Mode Active",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (userPreferences.liveTranscribe) PrimaryBlue else AccentPurple
+                            )
+                            Text(
+                                text = if (showAllModels) {
+                                    "Showing all ${UserPreferences.AVAILABLE_STT_MODELS.size} models (Filter bypassed)"
+                                } else if (userPreferences.liveTranscribe) {
+                                    "Showing models that support real-time live streaming (Live Only & Both)"
+                                } else {
+                                    "Showing models that transcribe saved audio files (Offline & Cloud)"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextMuted
+                            )
+                        }
+                        TextButton(onClick = { showAllModels = !showAllModels }) {
+                            Text(
+                                text = if (showAllModels) "Filter Mode" else "All (${UserPreferences.AVAILABLE_STT_MODELS.size})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (userPreferences.liveTranscribe) PrimaryBlue else AccentPurple
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
 
+                val displayedSttModels = remember(userPreferences.liveTranscribe, showAllModels) {
+                    if (showAllModels) {
+                        UserPreferences.AVAILABLE_STT_MODELS
+                    } else if (userPreferences.liveTranscribe) {
+                        UserPreferences.AVAILABLE_STT_MODELS.filter {
+                            it.capability == com.echo.recorder.data.SttCapability.LIVE_ONLY ||
+                            it.capability == com.echo.recorder.data.SttCapability.BOTH
+                        }
+                    } else {
+                        UserPreferences.AVAILABLE_STT_MODELS.filter {
+                            it.capability == com.echo.recorder.data.SttCapability.FILE_ONLY ||
+                            it.capability == com.echo.recorder.data.SttCapability.BOTH
+                        }
+                    }
+                }
+
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    UserPreferences.AVAILABLE_STT_MODELS.forEach { modelOption ->
+                    displayedSttModels.forEach { modelOption ->
                         val isSelected = userPreferences.selectedSttModel == modelOption.id
                         val isDownloaded = userPreferences.downloadedModels.contains(modelOption.id) ||
                             (modelOption.id == UserPreferences.STT_MODEL_VOSK_HINDI &&
-                                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context))
+                                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)) ||
+                            (modelOption.id == UserPreferences.STT_MODEL_VOSK_EN_IN &&
+                                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)) ||
+                            File(AppStorageManager.getModelsDirectory(context), "${modelOption.id}.bin").exists()
                         val isDownloading = downloadingProgress.containsKey(modelOption.id)
                         val progress = downloadingProgress[modelOption.id] ?: 0f
 
@@ -482,23 +550,34 @@ fun SettingsTab(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             Text(text = modelOption.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                            Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
                                                 shape = RoundedCornerShape(4.dp),
-                                                color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
+                                                color = when (modelOption.capability) {
+                                                    com.echo.recorder.data.SttCapability.LIVE_ONLY -> PrimaryBlue.copy(alpha = 0.2f)
+                                                    com.echo.recorder.data.SttCapability.FILE_ONLY -> AccentPurple.copy(alpha = 0.2f)
+                                                    com.echo.recorder.data.SttCapability.BOTH -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                                }
                                             ) {
                                                 Text(
-                                                    text = modelOption.tag,
+                                                    text = modelOption.capability.label.uppercase(),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isSelected) DarkBackground else TextMuted,
+                                                    color = when (modelOption.capability) {
+                                                        com.echo.recorder.data.SttCapability.LIVE_ONLY -> PrimaryBlue
+                                                        com.echo.recorder.data.SttCapability.FILE_ONLY -> AccentPurple
+                                                        com.echo.recorder.data.SttCapability.BOTH -> Color(0xFF10B981)
+                                                    },
                                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                    fontSize = 10.sp
+                                                    fontSize = 9.sp
                                                 )
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(text = modelOption.description, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                                     }
                                 }

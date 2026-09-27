@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class LiveSpeechRecognizer(
     private val context: Context,
+    private val onPartialResult: ((String) -> Unit)? = null,
     private val onFinalResult: (String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -135,6 +136,7 @@ class LiveSpeechRecognizer(
                             com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer partial: \"$partial\"")
                             _liveTranscript.value = partial
                             AudioRecordingState.liveTranscript.value = partial
+                            onPartialResult?.invoke(partial)
                         }
                     }
 

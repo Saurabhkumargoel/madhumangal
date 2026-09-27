@@ -5,6 +5,12 @@ import java.util.Locale
 
 class TinyAiProcessor {
 
+    companion object {
+        // Rolling cache of recently extracted task titles to prevent duplication across overlapping audio chunks
+        private val recentTaskTitles = java.util.Collections.synchronizedList(mutableListOf<String>())
+        private const val MAX_RECENT_HISTORY = 30
+    }
+
     data class ExtractedTask(
         val title: String,
         val description: String,
@@ -37,17 +43,31 @@ class TinyAiProcessor {
 
             val extracted = analyzeSentence(sentence)
             if (extracted != null) {
-                tasks.add(
-                    NoteTask(
-                        transcriptionId = transcriptionId,
-                        title = extracted.title,
-                        description = extracted.description,
-                        categoryGroup = extracted.group,
-                        priority = extracted.priority,
-                        isLowHangingFruit = extracted.isLowHangingFruit,
-                        timestampMillis = System.currentTimeMillis()
+                val normTitle = extracted.title.lowercase(Locale.ROOT).trim()
+                val isDuplicate = synchronized(recentTaskTitles) {
+                    recentTaskTitles.any { existing ->
+                        existing == normTitle || (existing.length > 8 && normTitle.length > 8 && (existing.contains(normTitle) || normTitle.contains(existing)))
+                    }
+                }
+                if (!isDuplicate) {
+                    synchronized(recentTaskTitles) {
+                        if (recentTaskTitles.size >= MAX_RECENT_HISTORY) {
+                            recentTaskTitles.removeAt(0)
+                        }
+                        recentTaskTitles.add(normTitle)
+                    }
+                    tasks.add(
+                        NoteTask(
+                            transcriptionId = transcriptionId,
+                            title = extracted.title,
+                            description = extracted.description,
+                            categoryGroup = extracted.group,
+                            priority = extracted.priority,
+                            isLowHangingFruit = extracted.isLowHangingFruit,
+                            timestampMillis = System.currentTimeMillis()
+                        )
                     )
-                )
+                }
             }
         }
 

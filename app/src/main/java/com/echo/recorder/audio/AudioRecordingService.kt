@@ -48,6 +48,7 @@ class AudioRecordingService : Service() {
 
     private var liveSpeechRecognizer: LiveSpeechRecognizer? = null
     private val currentCycleSpeech = StringBuilder()
+    private var lastPartialSpeech = ""
     private val speechLock = Any()
 
     private var sessionTimestamp: String = ""
@@ -76,7 +77,16 @@ class AudioRecordingService : Service() {
                 val speechCaptured = synchronized(speechLock) {
                     val s = currentCycleSpeech.toString().trim()
                     currentCycleSpeech.clear()
-                    s
+                    if (s.isNotBlank()) {
+                        lastPartialSpeech = ""
+                        s
+                    } else if (lastPartialSpeech.isNotBlank()) {
+                        val p = lastPartialSpeech.trim()
+                        lastPartialSpeech = ""
+                        p
+                    } else {
+                        ""
+                    }
                 }
                 onAudioSegmentSaved(file, startTime, endTime, duration, overlap, speechCaptured)
             }
@@ -159,29 +169,38 @@ class AudioRecordingService : Service() {
 
         // Initialize and start live speech recognizer on Main Thread
         mainHandler.post {
-            liveSpeechRecognizer = LiveSpeechRecognizer(applicationContext) { text ->
-                val now = System.currentTimeMillis()
-                val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
-                val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
-                subtitleSequence++
+            liveSpeechRecognizer = LiveSpeechRecognizer(
+                context = applicationContext,
+                onPartialResult = { partial ->
+                    synchronized(speechLock) {
+                        lastPartialSpeech = partial
+                    }
+                },
+                onFinalResult = { text ->
+                    val now = System.currentTimeMillis()
+                    val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
+                    val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
+                    subtitleSequence++
 
-                // Save live speech to timestamped subtitle SRT file
-                com.echo.recorder.util.AppStorageManager.appendLiveSessionSrt(
-                    context = applicationContext,
-                    sessionTimestamp = sessionTimestamp,
-                    entryIndex = subtitleSequence,
-                    startMs = utteranceStartMs,
-                    endMs = utteranceEndMs,
-                    text = text,
-                    customDir = customTranscriptionDir
-                )
+                    // Save live speech to timestamped subtitle SRT file
+                    com.echo.recorder.util.AppStorageManager.appendLiveSessionSrt(
+                        context = applicationContext,
+                        sessionTimestamp = sessionTimestamp,
+                        entryIndex = subtitleSequence,
+                        startMs = utteranceStartMs,
+                        endMs = utteranceEndMs,
+                        text = text,
+                        customDir = customTranscriptionDir
+                    )
 
-                synchronized(speechLock) {
-                    if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
-                    currentCycleSpeech.append(text)
+                    synchronized(speechLock) {
+                        if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
+                        currentCycleSpeech.append(text)
+                        lastPartialSpeech = ""
+                    }
+                    AudioRecordingState.liveTranscript.value = text
                 }
-                AudioRecordingState.liveTranscript.value = text
-            }.apply {
+            ).apply {
                 startListening()
             }
         }

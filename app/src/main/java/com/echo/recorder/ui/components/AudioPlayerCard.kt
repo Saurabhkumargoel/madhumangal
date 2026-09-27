@@ -93,6 +93,7 @@ fun AudioPlayerCard(
     var isPlaying by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showModelMenu by remember { mutableStateOf(false) }
+    var selectedModelShortName by remember { mutableStateOf("Vosk (Hi)") }
     var showFileViewerDialog by remember { mutableStateOf(false) }
     var editTextValue by remember { mutableStateOf(transcription.text) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -399,25 +400,26 @@ fun AudioPlayerCard(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = if (isTranscribing) "Transcribing..." else if (!hasValidTranscript) "Transcribe Audio" else "Transcribe Again",
+                        text = if (isTranscribing) "Transcribing..." else if (!hasValidTranscript) "Transcribe ($selectedModelShortName)" else "Transcribe Again ($selectedModelShortName)",
                         fontWeight = FontWeight.Bold,
                         color = if (!hasValidTranscript) DarkBackground else TextPrimary,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
                 }
 
-                // Tini "Transcribe With" Model Selector Button
+                // Tini "Transcribe With" Model Selector Button - shows current model short name!
                 Box {
                     OutlinedButton(
                         onClick = { showModelMenu = true },
                         enabled = !isTranscribing,
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Model", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(selectedModelShortName, color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(2.dp))
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Select Model",
-                            tint = TextSecondary,
+                            tint = PrimaryBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -427,35 +429,66 @@ fun AudioPlayerCard(
                         onDismissRequest = { showModelMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("⚡ Whisper Tiny (Fast On-Device)") },
+                            text = { Text("🎙️ Vosk Hindi (Offline)") },
                             onClick = {
+                                selectedModelShortName = "Vosk (Hi)"
+                                showModelMenu = false
+                                Toast.makeText(context, "Transcribing with Vosk Hindi...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_VOSK_HINDI)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🇮🇳 Vosk Indian English (Offline)") },
+                            onClick = {
+                                selectedModelShortName = "Vosk (En)"
+                                showModelMenu = false
+                                Toast.makeText(context, "Transcribing with Vosk Indian English...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_VOSK_EN_IN)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud API)") },
+                            onClick = {
+                                selectedModelShortName = "Gemini"
+                                showModelMenu = false
+                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_CLOUD_GEMINI)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("⚡ Whisper Tiny (Multi-lingual)") },
+                            onClick = {
+                                selectedModelShortName = "Whisper (T)"
                                 showModelMenu = false
                                 Toast.makeText(context, "Transcribing with Whisper Tiny...", Toast.LENGTH_SHORT).show()
                                 onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_TINY)
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("🇮🇳 IndicConformer (AI4Bharat Hindi)") },
-                            onClick = {
-                                showModelMenu = false
-                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
-                            }
-                        )
-                        DropdownMenuItem(
                             text = { Text("🤖 Whisper Base (High Precision)") },
                             onClick = {
+                                selectedModelShortName = "Whisper (B)"
                                 showModelMenu = false
                                 Toast.makeText(context, "Transcribing with Whisper Base...", Toast.LENGTH_SHORT).show()
                                 onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_WHISPER_BASE)
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("☁️ Google Gemini 1.5 Flash (Cloud API)") },
+                            text = { Text("🇮🇳 IndicConformer (AI4Bharat)") },
                             onClick = {
+                                selectedModelShortName = "Indic"
                                 showModelMenu = false
-                                Toast.makeText(context, "Transcribing with Gemini 1.5 Flash...", Toast.LENGTH_SHORT).show()
-                                onRetranscribeWithModel(transcription.id, "cloud_gemini")
+                                Toast.makeText(context, "Transcribing with IndicConformer...", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_INDIC_CONFORMER)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("🗣️ Google Speech (Live Mic)") },
+                            onClick = {
+                                selectedModelShortName = "Google"
+                                showModelMenu = false
+                                Toast.makeText(context, "Selected Google Speech", Toast.LENGTH_SHORT).show()
+                                onRetranscribeWithModel(transcription.id, UserPreferences.STT_MODEL_GOOGLE_SPEECH)
                             }
                         )
                     }

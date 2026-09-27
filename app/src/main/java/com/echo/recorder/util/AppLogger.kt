@@ -20,10 +20,13 @@ data class LogEntry(
 
 object AppLogger {
     private const val MAX_IN_MEMORY_LOGS = 500
+    private const val MAX_SESSION_LOG_SIZE_BYTES = 512 * 1024L // 512 KB rollover limit
     private val logList = mutableListOf<LogEntry>()
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     val logsFlow: StateFlow<List<LogEntry>> = _logsFlow.asStateFlow()
 
+    private var appContext: Context? = null
+    private var customLogsDirPath: String? = null
     private var appLogFile: File? = null
     private var sessionLogFile: File? = null
     private var sessionLogsDir: File? = null
@@ -33,6 +36,8 @@ object AppLogger {
     private val sessionDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
     fun init(context: Context, customLogsDir: String? = null) {
+        appContext = context.applicationContext
+        customLogsDirPath = customLogsDir
         sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDir)
         appLogFile = File(context.filesDir, "app_logs.txt")
 
@@ -43,7 +48,9 @@ object AppLogger {
     }
 
     fun startNewSession(context: Context, customLogsDir: String? = null) {
-        sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDir)
+        appContext = context.applicationContext
+        if (customLogsDir != null) customLogsDirPath = customLogsDir
+        sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDirPath)
         val sessionTimestamp = sessionDateFormat.format(Date())
         sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.log")
         i("SYSTEM", "=== New Session Started: ${sessionLogFile?.name} ===")
@@ -81,6 +88,19 @@ object AppLogger {
 
         val logLine = "[$fileTimeStr] [$level] [$tag] $fullMsg\n"
 
+        // Check for automatic rollover if session log exceeds 512 KB
+        val currentFile = sessionLogFile
+        if (currentFile != null && currentFile.exists() && currentFile.length() > MAX_SESSION_LOG_SIZE_BYTES) {
+            val oldName = currentFile.name
+            appContext?.let { ctx ->
+                startNewSession(ctx, customLogsDirPath)
+                val rolledMsg = "Log file $oldName exceeded 512KB. Automatically rolled over to new session: ${sessionLogFile?.name}"
+                val rolloverEntry = LogEntry(timeFormat.format(Date()), "INFO", "SYSTEM", rolledMsg)
+                logList.add(rolloverEntry)
+                _logsFlow.value = logList.toList()
+            }
+        }
+
         // Append to current session log file in user-configured folder
         sessionLogFile?.let { file ->
             try {
@@ -111,6 +131,30 @@ object AppLogger {
 
     fun getAllLogsText(): String {
         return logList.joinToString("\n") { "[${it.timestamp}] [${it.level}] [${it.tag}] ${it.message}" }
+    }
+
+    fun getAllSessionLogsText(context: Context): String {
+        val files = getSessionFiles(context).sortedBy { it.lastModified() }
+        if (files.isEmpty()) return getAllLogsText()
+        val sb = StringBuilder()
+        sb.append("=========================================\n")
+        sb.append("   GOODECHO GLOBAL EXPORT OF ALL SESSIONS\n")
+        sb.append("   Total Sessions: ${files.size}\n")
+        sb.append("   Export Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
+        sb.append("=========================================\n\n")
+
+        for (file in files) {
+            sb.append("--------------------------------------------------\n")
+            sb.append("SESSION FILE: ${file.name} (${file.length() / 1024} KB)\n")
+            sb.append("--------------------------------------------------\n")
+            try {
+                sb.append(file.readText())
+            } catch (e: Exception) {
+                sb.append("[Error reading file ${file.name}: ${e.message}]\n")
+            }
+            sb.append("\n\n")
+        }
+        return sb.toString()
     }
 
     fun getLogFile(): File? = sessionLogFile ?: appLogFile

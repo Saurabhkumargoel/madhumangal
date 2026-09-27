@@ -1,5 +1,9 @@
 package com.echo.recorder.ui.screens
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -27,22 +31,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -82,6 +94,27 @@ fun RecorderTab(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var validationError by remember { mutableStateOf<com.echo.recorder.data.ModelValidationResult?>(null) }
+
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.importAudioFile(uri) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val onStartRecordingAttempt = {
+        val validation = viewModel.validateCurrentModel(context)
+        if (validation is com.echo.recorder.data.ModelValidationResult.Valid) {
+            onRequestPermission()
+            viewModel.startRecordingService(context)
+        } else {
+            validationError = validation
+        }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -113,6 +146,9 @@ fun RecorderTab(
     }
 
     val activeModelName = when (userPreferences.selectedSttModel) {
+        UserPreferences.STT_MODEL_VOSK_HINDI -> "Vosk Hindi"
+        UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk Indian English"
+        UserPreferences.STT_MODEL_CLOUD_GEMINI -> "Gemini 1.5 Flash"
         UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper Tiny"
         UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
         UserPreferences.STT_MODEL_INDIC_CONFORMER -> "IndicConformer"
@@ -258,8 +294,7 @@ fun RecorderTab(
                         if (isServiceRunning) {
                             viewModel.stopRecordingService(context)
                         } else {
-                            onRequestPermission()
-                            viewModel.startRecordingService(context)
+                            onStartRecordingAttempt()
                         }
                     }
             ) {
@@ -280,8 +315,7 @@ fun RecorderTab(
                 if (isServiceRunning) {
                     viewModel.stopRecordingService(context)
                 } else {
-                    onRequestPermission()
-                    viewModel.startRecordingService(context)
+                    onStartRecordingAttempt()
                 }
             },
             colors = ButtonDefaults.buttonColors(
@@ -304,6 +338,30 @@ fun RecorderTab(
                 fontWeight = FontWeight.Bold,
                 color = if (isServiceRunning) TextPrimary else DarkBackground,
                 fontSize = 15.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Files for Audio Source: Pick pre-recorded file as input
+        OutlinedButton(
+            onClick = { audioPickerLauncher.launch("audio/*") },
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth(0.75f).height(42.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+        ) {
+            Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "📁 Files for Audio Source",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
             )
         }
 
@@ -451,6 +509,93 @@ fun RecorderTab(
                     )
                 }
             }
+        }
+
+        // Validation Warning Alert Dialog
+        if (validationError != null) {
+            val err = validationError!!
+            AlertDialog(
+                onDismissRequest = { validationError = null },
+                icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = ActiveRed) },
+                title = {
+                    Text(
+                        text = when (err) {
+                            is com.echo.recorder.data.ModelValidationResult.IncompatibleMode -> "Mode & Model Mismatch"
+                            is com.echo.recorder.data.ModelValidationResult.MissingDownload -> "Model Not Downloaded"
+                            is com.echo.recorder.data.ModelValidationResult.MissingApiKey -> "API Key Required"
+                            is com.echo.recorder.data.ModelValidationResult.ServiceUnavailable -> "Service Unavailable"
+                            else -> "Invalid Selection"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = when (err) {
+                                is com.echo.recorder.data.ModelValidationResult.IncompatibleMode -> err.message
+                                is com.echo.recorder.data.ModelValidationResult.MissingDownload -> err.message
+                                is com.echo.recorder.data.ModelValidationResult.MissingApiKey -> err.message
+                                is com.echo.recorder.data.ModelValidationResult.ServiceUnavailable -> err.message
+                                else -> "Selected model is not valid for recording."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "💡 Tip: You can also tap 'Files for Audio Source' to pick and transcribe pre-recorded audio files directly without microphone recording.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PrimaryBlue
+                        )
+                    }
+                },
+                confirmButton = {
+                    if (err is com.echo.recorder.data.ModelValidationResult.IncompatibleMode) {
+                        Button(
+                            onClick = {
+                                viewModel.updateSttModel(err.suggestedModelId)
+                                validationError = null
+                                onRequestPermission()
+                                viewModel.startRecordingService(context)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        ) {
+                            Text("Auto-Fix & Record", color = DarkBackground, fontWeight = FontWeight.Bold)
+                        }
+                    } else if (err is com.echo.recorder.data.ModelValidationResult.MissingDownload) {
+                        Button(
+                            onClick = {
+                                viewModel.downloadModel(err.modelId)
+                                validationError = null
+                                Toast.makeText(context, "Download started! Monitor progress in Settings.", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        ) {
+                            Text("Download Model", color = DarkBackground, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = { validationError = null },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        ) {
+                            Text("OK", color = DarkBackground, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            validationError = null
+                            audioPickerLauncher.launch("audio/*")
+                        }
+                    ) {
+                        Text("Pick Audio File", color = TextPrimary)
+                    }
+                },
+                containerColor = SurfaceDark
+            )
         }
     }
 }

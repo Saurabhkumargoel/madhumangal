@@ -166,6 +166,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateLiveTranscribe(enabled: Boolean) {
         viewModelScope.launch {
             prefsRepo.updateLiveTranscribe(enabled)
+            val currentPrefs = prefsRepo.userPreferencesFlow.first()
+            val currentModel = UserPreferences.AVAILABLE_STT_MODELS.find { it.id == currentPrefs.selectedSttModel }
+            if (enabled && currentModel?.capability == com.echo.recorder.data.SttCapability.FILE_ONLY) {
+                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_GOOGLE_SPEECH)
+                com.echo.recorder.util.AppLogger.i("SETTINGS", "Live mode enabled: auto-switched STT model to Google Speech Recognizer")
+            } else if (!enabled && currentModel?.capability == com.echo.recorder.data.SttCapability.LIVE_ONLY) {
+                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_VOSK_HINDI)
+                com.echo.recorder.util.AppLogger.i("SETTINGS", "File mode enabled: auto-switched STT model to Vosk Hindi (Offline)")
+            }
         }
     }
 
@@ -256,13 +265,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
 
                 when (modelId) {
-                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI -> {
-                        // ── Real Vosk Hindi model download + extraction ────────────────────
-                        val zipFile = File(modelsDir, "vosk_hindi_download.zip")
-                        val extractDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI,
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN -> {
+                        // ── Real Vosk model download + extraction (Hindi & Indian English) ─
+                        val isEnIn = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN
+                        val zipFileName = if (isEnIn) "vosk_en_in_download.zip" else "vosk_hindi_download.zip"
+                        val dirName = if (isEnIn) com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN else com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME
+                        val zipFile = File(modelsDir, zipFileName)
+                        val extractDir = File(modelsDir, dirName)
 
-                        val modelUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
-                        com.echo.recorder.util.AppLogger.i("MODEL", "Downloading Vosk Hindi model from: $modelUrl")
+                        val modelUrl = if (isEnIn)
+                            "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
+                        else
+                            "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
+                        com.echo.recorder.util.AppLogger.i("MODEL", "Downloading Vosk model ($modelId) from: $modelUrl")
 
                         try {
                             // ── 1. HTTP Download with progress ─────────────────────────────
@@ -295,9 +311,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
                                 var entry = zis.nextEntry
                                 while (entry != null) {
-                                    // Strip the top-level "vosk-model-small-hi-0.22/" prefix
-                                    val relPath = entry.name
-                                        .substringAfter('/')  // drop first dir component
+                                    // Strip the top-level directory prefix from archive
+                                    val relPath = entry.name.substringAfter('/')
                                     if (relPath.isNotEmpty()) {
                                         val outFile = File(extractDir, relPath)
                                         if (entry.isDirectory) {
@@ -316,7 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                             // ── 3. Clean up zip ────────────────────────────────────────────
                             zipFile.delete()
-                            com.echo.recorder.util.AppLogger.i("MODEL", "Vosk Hindi model extracted to: ${extractDir.absolutePath}")
+                            com.echo.recorder.util.AppLogger.i("MODEL", "Vosk model extracted to: ${extractDir.absolutePath}")
 
                             prefsRepo.setModelDownloaded(modelId, true)
                             withContext(Dispatchers.Main) {
@@ -356,12 +371,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Vosk model is a directory, not a .bin file
                 val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
                 if (voskDir.exists()) voskDir.deleteRecursively()
+            } else if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN) {
+                val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                if (voskDir.exists()) voskDir.deleteRecursively()
             } else {
                 val modelFile = File(modelsDir, "${modelId}.bin")
                 if (modelFile.exists()) modelFile.delete()
             }
             prefsRepo.setModelDownloaded(modelId, false)
-            com.echo.recorder.util.AppLogger.i("MODEL", "Deleted local model $modelId")
+            com.echo.recorder.util.AppLogger.i("MODEL", "Deleted model $modelId")
         }
     }
 
@@ -461,17 +479,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // 2. Offline on-device STT model
                 if (transcribedText.isNullOrBlank()) {
-                    // For Vosk Hindi: check if the model directory is actually present
-                    if (targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI) {
-                        val voskInstalled = com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(app)
+                    // For Vosk models: check if the model directory is actually present
+                    if (targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI ||
+                        targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN) {
+                        val dirName = if (targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN)
+                            com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN else com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME
+                        val voskInstalled = com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(app, dirName)
                         if (voskInstalled && !prefs.downloadedModels.contains(targetModel)) {
                             // Dir exists but prefs wasn't updated — sync it
                             prefsRepo.setModelDownloaded(targetModel, true)
                         }
                         if (!voskInstalled) {
-                            com.echo.recorder.util.AppLogger.w("STT", "Vosk Hindi model not yet downloaded. Please tap 'Download Model' in Settings.")
+                            val modelDisplayName = if (targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN) "Vosk Indian English" else "Vosk Hindi"
+                            com.echo.recorder.util.AppLogger.w("STT", "$modelDisplayName model not yet downloaded. Please tap 'Download Model' in Settings.")
                             withContext(Dispatchers.Main) {
-                                onResult(false, "Vosk Hindi model not installed. Go to Settings → Transcription Models and tap 'Download Model'.")
+                                onResult(false, "$modelDisplayName model not installed. Go to Settings → Transcription Models and tap 'Download Model'.")
                             }
                             return@launch
                         }
@@ -646,6 +668,85 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context.startActivity(intent)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    fun validateCurrentModel(context: Context): com.echo.recorder.data.ModelValidationResult {
+        val prefs = userPreferences.value
+        val isSpeechAvailable = android.speech.SpeechRecognizer.isRecognitionAvailable(context)
+        return com.echo.recorder.data.UserPreferences.validateModelSelection(
+            prefs = prefs,
+            isRecognitionAvailable = isSpeechAvailable,
+            isModelDownloaded = { id ->
+                prefs.downloadedModels.contains(id) || when (id) {
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI ->
+                        com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN ->
+                        com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                    else -> File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "$id.bin").exists()
+                }
+            }
+        )
+    }
+
+    fun importAudioFile(uri: Uri, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val audioDir = com.echo.recorder.util.AppStorageManager.getAudioDirectory(app, prefs.audioFolderPath)
+
+                var fileName = "imported_${System.currentTimeMillis()}.wav"
+                try {
+                    app.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1 && cursor.moveToFirst()) {
+                            val name = cursor.getString(nameIndex)
+                            if (!name.isNullOrBlank()) {
+                                val cleanName = name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                                fileName = "import_${System.currentTimeMillis()}_$cleanName"
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                val destFile = File(audioDir, fileName)
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    withContext(Dispatchers.Main) { onResult(false, "Could not read audio file from device") }
+                    return@launch
+                }
+
+                val sampleRate = prefs.sampleRate.coerceAtLeast(8000)
+                val durationSec = ((destFile.length() - 44).coerceAtLeast(0) / (sampleRate * 2.0)).toInt().coerceIn(1, 7200)
+
+                val segment = com.echo.recorder.data.AudioSegment(
+                    filePath = destFile.absolutePath,
+                    startTimeMillis = System.currentTimeMillis(),
+                    endTimeMillis = System.currentTimeMillis() + (durationSec * 1000L),
+                    durationSeconds = durationSec,
+                    overlapSeconds = 0,
+                    status = com.echo.recorder.data.AudioSegment.STATUS_PENDING
+                )
+                val segmentId = app.database.audioSegmentDao().insertSegment(segment)
+                refreshStorageUsage()
+
+                com.echo.recorder.util.AppLogger.i("AUDIO", "Imported audio file: ${destFile.name} as segment #$segmentId ($durationSec sec)")
+                app.transcriptionManager.enqueueTranscription(segmentId, null)
+
+                withContext(Dispatchers.Main) {
+                    onResult(true, "✅ Imported \"${destFile.name}\" as segment #$segmentId")
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("AUDIO", "Failed to import audio file", e)
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Import failed: ${e.message}")
+                }
+            }
         }
     }
 }

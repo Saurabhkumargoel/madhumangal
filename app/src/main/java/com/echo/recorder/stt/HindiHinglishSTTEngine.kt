@@ -37,9 +37,10 @@ class HindiHinglishSTTEngine(
         }
 
         // ── VOSK: Real 100% offline neural transcription of audio files ──────
-        if (model == UserPreferences.STT_MODEL_VOSK_HINDI) {
-            AppLogger.i("STT_ENGINE", "Routing to VoskSTTEngine for offline file transcription")
-            val voskResult = VoskSTTEngine(context).transcribeAudioFile(audioFile)
+        if (model == UserPreferences.STT_MODEL_VOSK_HINDI || model == UserPreferences.STT_MODEL_VOSK_EN_IN) {
+            val dirName = if (model == UserPreferences.STT_MODEL_VOSK_EN_IN) VoskSTTEngine.MODEL_DIR_EN_IN else VoskSTTEngine.MODEL_DIR_NAME
+            AppLogger.i("STT_ENGINE", "Routing to VoskSTTEngine for offline file transcription (dir=$dirName)")
+            val voskResult = VoskSTTEngine(context, dirName).transcribeAudioFile(audioFile)
             return@withContext if (voskResult.isSuccess) {
                 voskResult
             } else {

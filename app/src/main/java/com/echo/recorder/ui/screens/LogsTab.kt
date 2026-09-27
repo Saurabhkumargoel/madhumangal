@@ -32,6 +32,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -136,49 +137,70 @@ fun LogsTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Session Log File Banner
+        // Session Log File Banner with 'New File' button
         val sessionFile = remember(logs.size) { AppLogger.getCurrentSessionFile() }
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(
-                    text = "📄 Active Session: ${sessionFile?.name ?: "session_active.log"}",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryBlue
-                )
-                Text(
-                    text = sessionFile?.absolutePath ?: "Download/App data/poc/yesboss/logs/",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted,
-                    fontSize = 10.sp
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "📄 Active: ${sessionFile?.name ?: "session_active.log"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue
+                    )
+                    Text(
+                        text = sessionFile?.absolutePath ?: "Download/App data/poc/yesboss/logs/",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        AppLogger.startNewSession(context)
+                        Toast.makeText(context, "Started new session log file!", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
+                ) {
+                    Text("➕ New Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Action Buttons: Copy All, Share Log File, Clear
+        // Action Buttons: Copy All, Share Log File, Global Export All, Clear
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Button(
                 onClick = {
                     val allText = AppLogger.getAllLogsText()
                     clipboardManager.setText(AnnotatedString(allText))
-                    Toast.makeText(context, "All ${logs.size} logs copied to clipboard!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Current session logs copied (${logs.size})!", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                 shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Copy Logs", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Copy", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             OutlinedButton(
@@ -189,15 +211,34 @@ fun LogsTab(
                         putExtra(Intent.EXTRA_TEXT, allText)
                         type = "text/plain"
                     }
-                    val shareIntent = Intent.createChooser(sendIntent, "Share GoodEcho Debug Logs")
+                    val shareIntent = Intent.createChooser(sendIntent, "Share Current Session Logs")
                     context.startActivity(shareIntent)
                 },
                 shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Share Logs", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Share", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val allSessionsText = AppLogger.getAllSessionLogsText(context)
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, allSessionsText)
+                        type = "text/plain"
+                    }
+                    val shareIntent = Intent.createChooser(sendIntent, "Global Export: All Session Logs")
+                    context.startActivity(shareIntent)
+                },
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                modifier = Modifier.weight(1.3f)
+            ) {
+                Text("🌐 All Logs", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             OutlinedButton(
@@ -205,9 +246,10 @@ fun LogsTab(
                     AppLogger.clearLogs()
                     Toast.makeText(context, "Logs cleared", Toast.LENGTH_SHORT).show()
                 },
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
             }
         }
 
@@ -264,10 +306,82 @@ fun LogsTab(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(filteredLogs) { entry ->
-                        LogItemRow(entry)
+                        if (entry.message.contains("=== New Session Started:")) {
+                            SessionDividerRow(entry)
+                        } else {
+                            LogItemRow(entry)
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun SessionDividerRow(entry: LogEntry) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimaryBlue.copy(alpha = 0.12f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("⚡", fontSize = 12.sp)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = entry.message.trim(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = PrimaryBlue,
+                modifier = Modifier.weight(1f)
+            )
+
+            // Small export button for this specific session file
+            IconButton(
+                onClick = {
+                    val sessionName = entry.message.substringAfter("=== New Session Started: ")
+                        .substringBefore(" ===").trim()
+                    val files = AppLogger.getSessionFiles(context)
+                    val targetFile = files.find { it.name == sessionName }
+                    val contentToShare = if (targetFile != null && targetFile.exists()) {
+                        targetFile.readText()
+                    } else {
+                        AppLogger.getAllLogsText()
+                    }
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, contentToShare)
+                        type = "text/plain"
+                    }
+                    val shareIntent = Intent.createChooser(sendIntent, "Export Session ($sessionName)")
+                    context.startActivity(shareIntent)
+                },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Export Session",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = entry.timestamp,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = TextMuted
+            )
         }
     }
 }

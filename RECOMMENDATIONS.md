@@ -215,6 +215,7 @@ Because the audio chunks had consistent duration (3.8s, 8.1s) and syllable count
 | 4 | Unresponsive button clicks | Generic | Missing observable async loading state | Minimum visual debounce delay + loading indicators | UI test for progress state during execution |
 | 5 | Scoped storage permission errors | Specific | Legacy file I/O instead of public Scoped Storage | Centralized `AppStorageManager.getBaseDirectory()` | Unit test checking write access on base directory |
 | 6 | Proposing stub models instead of real Vosk | Specific / Generic | Ignored the viable Vosk Android library and kept fake Whisper/IndicConformer stubs | Replaced all stubs with real VoskSTTEngine backed by vosk-android 0.3.50 | Runtime model-dir existence check; build would fail if `org.vosk.*` classes missing |
+| 7 | Model-mode mismatch & flat unstructured dashboard | Specific / Generic | Allowed file-only models in live mode without validation; lacked multi-group lists & smart summary | Added SttCapability enum, mode-filtered model list, recording guard with auto-fix, and multi-group dashboard with smart summaries | ModelValidationResult unit test & overlap deduplication tests |
 
 ---
 
@@ -256,5 +257,85 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## 🛡️ Mistake #7: Model-to-Mode Mismatch and Flat Unstructured Task Dashboard
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Model Capability Blindness:** The app permitted selecting offline file-only models (such as Vosk Hindi) when "Live Real-Time Transcribe" was active, or selecting live-only models (such as Android Google Speech Recognizer) when offline file transcription was selected. At runtime, this caused confusion: the live mic was listening, but file retranscriptions failed, or live mode failed because file models do not support microphone streaming.
+2. **Unguarded Recording:** The user could tap "Start Recording" regardless of whether the selected STT model was downloaded, available, or compatible with the mode.
+3. **Flat Dashboard List:** Extracted AI tasks were dumped into a single flat list with small filter chips. Tasks lacked hierarchical grouping (Urgent vs Quick Wins vs Work vs Shopping), sorting controls, and an executive summary card previewing what requires immediate attention.
+4. **No Direct Audio Source Ingestion:** No mechanism existed to use pre-recorded audio files (.wav, .mp3, etc.) as an audio source when microphone recording was not appropriate.
+
+#### What AI Did Wrong
+- Treated all STT models as interchangeable entries in a flat dropdown rather than classifying their operational domain (`LIVE_ONLY`, `FILE_ONLY`, `BOTH`).
+- Did not gate recording start with model validation.
+- Implemented a basic MVP task list instead of a full multi-group, tabbed dashboard with smart summaries and sorting controls.
+
+#### What User Did Wrong / Communication Gap
+- Noticed overlap across chunk boundaries with slight text differences (which is standard behavior for acoustic boundary windows) and wondered if AI would misinterpret it.
+
+#### How It Could Have Been Avoided
+- Explicit capability categorization:
+  ```kotlin
+  enum class SttCapability { LIVE_ONLY, FILE_ONLY, BOTH }
+  ```
+- Mode-aware UI filtering: Live ON shows only live-capable models; Live OFF shows only file-capable models; models supporting both appear in both.
+- Pre-flight recording guard: Before initiating `startRecordingService()`, execute `validateModelSelection()`. If invalid, present an alert dialog offering one-tap auto-switch or file import.
+- Files as Audio Source: Allow direct file picker import (`audio/*`) to feed audio segments directly into the transcription pipeline.
+- Multi-Group Dashboard:
+  - Tab 0: "All (Grouped)" with collapsible cards per group (Urgent, Quick Wins, Work, Shopping, Personal, Ideas) featuring smart summary preview lines.
+  - Tabs 1-3: Dedicated Priority, Easy Wins, and Category tag views.
+  - Executive Summary card with 4-column metric counters, progress indicator, and dynamic AI insight string.
+  - Sorting (Priority, Date, Title, Status) and Status filters (All, Pending, Done).
+- Overlap deduplication in `TinyAiProcessor` using a rolling window of recent task titles.
+
+#### Automated Prevention
+1. **Model Validation Unit Test:** Verify that `validateModelSelection` returns `IncompatibleMode` when `liveTranscribe=true` and `vosk_hindi` is selected, and when `liveTranscribe=false` and `google_speech` is selected.
+2. **Chunk Overlap Deduplication Test:** Pass two overlapping text segments with repeated sentences into `TinyAiProcessor` and assert that duplicate `NoteTask` entries are suppressed.
+
+#### Optimal Agent Rule
+> **RULE — Capability Gating & Rich Dashboarding:** Always validate user selections against the active operational mode before triggering hardware services (like recording). When displaying structured analytical data (like extracted AI tasks), never present a single flat list: provide executive summaries, hierarchical groups with count badges, collapsible sections, and multi-dimensional sorting/filtering.
+
+---
+
+## 🛑 Mistake #8: Silent Ambient Audio Falling Back to Offline STT Error and Unbounded Session Logs
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Live Mode Offline Error Bleed:** When recording in live mode, if an audio chunk slice (e.g. 15s) contained silence or ambient noise, no speech recognizer results arrived (`liveTranscript` was blank). `TranscriptionManager` erroneously fell back to `sttEngine.transcribeAudioFile(audioFile)`. Because Google Speech Recognizer is live-only, it returned an offline error text: `"[Google Speech Recognizer does not support file transcription... Switch to Vosk in Settings]"`. This error string was displayed on the user's screen as if it were spoken text, saved to disk, and processed by `TinyAiProcessor`, creating nonsensical action items from the error message.
+2. **Speech Cut Across Chunk Boundaries:** In continuous speech, if an utterance spanned across a 15-second chunk cut without a pause, `onFinalResult` had not yet triggered. The chunk was processed with an empty buffer, dropping the spoken words.
+3. **Unbounded Single-Session Logs:** Session logs were monolithic without automatic rollover, lacked a manual "New Log File" button, lacked visual session separators in the logs UI feed, and offered no single-tap global export across all past sessions.
+
+#### What AI Did Wrong
+- Did not verify STT model capability before invoking offline `transcribeAudioFile()` when `liveTranscribe` was true.
+- Overwrote `AudioRecordingState.liveTranscript` and processed tasks without checking whether the text was actual speech or an ambient/silence telemetry tag.
+- Ignored partial speech recognition results (`onPartialResult`) at chunk boundaries.
+- Designed logging around a single session file per app process without size caps or multi-file consolidation.
+
+#### What User Did Wrong / Communication Gap
+- In live mode with background noise or silence, the user observed the confusing Google Speech error message and concluded live transcribe was broken.
+
+#### How It Was Fixed
+1. **Live Transcribe Ambient Guard in `TranscriptionManager`:**
+   - If `liveTranscribe == true` and `liveTranscript` is blank, check model capability.
+   - For `LIVE_ONLY` models (Google Speech), classify the chunk as `"[Ambient Audio: ${audioFile.name}]"` rather than invoking an incompatible file engine.
+   - Guard UI and AI: Never overwrite `AudioRecordingState.liveTranscript` or extract `NoteTask` action items from ambient or telemetry strings.
+2. **Boundary Partial Speech Retention in `AudioRecordingService`:**
+   - Captured `lastPartialSpeech` from `LiveSpeechRecognizer.onPartialResult`.
+   - On `onSegmentCreated`, if `currentCycleSpeech` is empty, use `lastPartialSpeech` so mid-sentence speech across boundaries is preserved.
+3. **Dynamic Multi-Session Log Management in `AppLogger` & `LogsTab`:**
+   - Implemented automatic 512KB file rollover to prevent runaway log sizes.
+   - Added manual `"➕ New Log"` session button on the UI banner.
+   - Added `SessionDividerRow` visual accent cards in the logs feed whenever a new session starts.
+   - Added `"🌐 All Logs"` Global Export button to consolidate all session files into one complete debug report.
+
+#### Automated Prevention
+- Integration test simulating 30 seconds of pure silence in live recording mode: verify that the resulting segments are marked `[Ambient Audio]` with 0 extracted tasks and no offline error text in `liveTranscript`.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
+
 

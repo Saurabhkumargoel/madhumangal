@@ -21,12 +21,14 @@ import java.io.FileInputStream
  * Expected extracted dir: <modelsDir>/vosk_hindi/
  */
 class VoskSTTEngine(
-    private val context: Context
+    private val context: Context,
+    val modelDirName: String = MODEL_DIR_NAME
 ) : SpeechToTextEngine {
 
     companion object {
         /** Sub-directory inside the models folder that holds the extracted Vosk Hindi model */
         const val MODEL_DIR_NAME = "vosk_hindi"
+        const val MODEL_DIR_EN_IN = "vosk_en_in"
 
         private const val TAG = "VOSK_STT"
 
@@ -50,10 +52,11 @@ class VoskSTTEngine(
 
             val modelDir = getModelDir(context)
             if (modelDir == null || !modelDir.exists() || modelDir.listFiles().isNullOrEmpty()) {
-                AppLogger.w(TAG, "Vosk Hindi model not found at expected path. Download it first.")
+                val displayName = if (modelDirName == MODEL_DIR_EN_IN) "Vosk Indian English" else "Vosk Hindi"
+                AppLogger.w(TAG, "$displayName model not found at expected path. Download it first.")
                 return@withContext Result.failure(
                     IllegalStateException(
-                        "Vosk Hindi model not installed. Tap 'Download Model' in Settings → Transcription Models."
+                        "$displayName model not installed. Tap 'Download Model' in Settings → Transcription Models."
                     )
                 )
             }
@@ -138,10 +141,10 @@ class VoskSTTEngine(
         return textMatch?.groupValues?.getOrNull(1)?.trim() ?: ""
     }
 
-    /** Returns the extracted Vosk Hindi model directory, or null if not present */
+    /** Returns the extracted Vosk model directory, or null if not present */
     private fun getModelDir(context: Context): File? {
         val modelsDir = AppStorageManager.getModelsDirectory(context)
-        val modelDir = File(modelsDir, MODEL_DIR_NAME)
+        val modelDir = File(modelsDir, modelDirName)
         return if (modelDir.exists() && modelDir.isDirectory) modelDir else null
     }
 
@@ -170,13 +173,13 @@ class VoskSTTEngine(
     // Static utility for MainViewModel to check if model is ready
     // ──────────────────────────────────────────────────────────────────────────
     object ModelStatus {
-        fun isInstalled(context: Context): Boolean {
+        fun isInstalled(context: Context, modelDirName: String = MODEL_DIR_NAME): Boolean {
             val modelsDir = AppStorageManager.getModelsDirectory(context)
-            val modelDir = File(modelsDir, MODEL_DIR_NAME)
+            val modelDir = File(modelsDir, modelDirName)
             return modelDir.exists() && modelDir.isDirectory && !modelDir.listFiles().isNullOrEmpty()
         }
 
-        fun getModelDir(context: Context): File =
-            File(AppStorageManager.getModelsDirectory(context), MODEL_DIR_NAME)
+        fun getModelDir(context: Context, modelDirName: String = MODEL_DIR_NAME): File =
+            File(AppStorageManager.getModelsDirectory(context), modelDirName)
     }
 }

@@ -1,12 +1,28 @@
 package com.echo.recorder.data
 
+enum class SttCapability(val label: String) {
+    LIVE_ONLY("Live Mic Only"),
+    FILE_ONLY("Recorded Audio Files"),
+    BOTH("Live & Files")
+}
+
+sealed class ModelValidationResult {
+    object Valid : ModelValidationResult()
+    data class IncompatibleMode(val message: String, val suggestedModelId: String) : ModelValidationResult()
+    data class MissingDownload(val message: String, val modelId: String) : ModelValidationResult()
+    data class MissingApiKey(val message: String) : ModelValidationResult()
+    data class ServiceUnavailable(val message: String) : ModelValidationResult()
+}
+
 data class SttModelOption(
     val id: String,
     val name: String,
     val tag: String,
     val description: String,
+    val capability: SttCapability = SttCapability.FILE_ONLY,
     val isRecommended: Boolean = false,
-    val sizeText: String = "Built-in"
+    val sizeText: String = "Built-in",
+    val downloadUrl: String? = null
 )
 
 data class AiModelOption(
@@ -44,11 +60,13 @@ data class UserPreferences(
         const val QUALITY_HIGH = 44100     // 44.1 kHz (CD quality)
 
         // STT Models
-        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"   // Live mic only (no file transcription)
-        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // Legacy stub – no native engine
-        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // Legacy stub – no native engine
-        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // Legacy stub – no native engine
-        const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅
+        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"     // Live mic only
+        const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅ (Files)
+        const val STT_MODEL_VOSK_EN_IN = "vosk_en_in"          // Vosk Indian English ✅ (Files)
+        const val STT_MODEL_CLOUD_GEMINI = "cloud_gemini"      // Gemini 1.5 Flash (Both Live & Files)
+        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // OpenAI Whisper Tiny (Files)
+        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // OpenAI Whisper Base (Files)
+        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // AI4Bharat IndicConformer (Files)
 
         // AI Note & Task Extractor Models
         const val AI_MODEL_LOCAL_TINY = "local_tiny"
@@ -59,20 +77,73 @@ data class UserPreferences(
 
         val AVAILABLE_STT_MODELS = listOf(
             SttModelOption(
+                id = STT_MODEL_GOOGLE_SPEECH,
+                name = "Google Speech Recognizer (Built-in)",
+                tag = "RECOMMENDED • LIVE STREAMING ONLY",
+                description = "Native Android live speech recognition. Ultra-responsive real-time mic stream decoding in Hindi, Hinglish, & English. Zero download needed.",
+                capability = SttCapability.LIVE_ONLY,
+                isRecommended = true,
+                sizeText = "Built-in"
+            ),
+            SttModelOption(
                 id = STT_MODEL_VOSK_HINDI,
                 name = "Vosk Hindi (Offline – Works on Files)",
                 tag = "RECOMMENDED • TRULY OFFLINE • 45 MB",
                 description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Supports Hindi & Hinglish.",
+                capability = SttCapability.FILE_ONLY,
                 isRecommended = true,
-                sizeText = "45 MB"
+                sizeText = "45 MB",
+                downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
             ),
             SttModelOption(
-                id = STT_MODEL_GOOGLE_SPEECH,
-                name = "Google Speech (Live Mic Only)",
-                tag = "LIVE STREAMING ONLY",
-                description = "Native Android speech service. Works for real-time live microphone only — cannot transcribe saved audio files. No download needed.",
+                id = STT_MODEL_CLOUD_GEMINI,
+                name = "Google Gemini 1.5 Flash (Cloud API)",
+                tag = "CLOUD API • LIVE & FILES • HIGHEST ACCURACY",
+                description = "DeepMind Gemini 1.5 Flash audio multimodal API. Transcribes both live audio segments and recorded files with state-of-the-art Hindi/Hinglish accuracy. Requires free API key.",
+                capability = SttCapability.BOTH,
                 isRecommended = false,
-                sizeText = "Built-in"
+                sizeText = "Cloud API",
+                downloadUrl = "https://aistudio.google.com/app/apikey"
+            ),
+            SttModelOption(
+                id = STT_MODEL_VOSK_EN_IN,
+                name = "Vosk Indian English (Offline – Works on Files)",
+                tag = "OFFLINE • INDIAN ACCENT • 31 MB",
+                description = "Alpha Cephei Vosk Indian English acoustic model (en-in). Optimized for Indian English terminology and accents offline.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = false,
+                sizeText = "31 MB",
+                downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
+            ),
+            SttModelOption(
+                id = STT_MODEL_WHISPER_TINY,
+                name = "OpenAI Whisper Tiny (Multi-lingual)",
+                tag = "LOCAL MODEL • 39 MB",
+                description = "OpenAI Whisper Tiny quantized encoder-decoder model (39M parameters). Supports 99 languages including Hindi and English for audio files.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = false,
+                sizeText = "39 MB",
+                downloadUrl = "https://huggingface.co/openai/whisper-tiny"
+            ),
+            SttModelOption(
+                id = STT_MODEL_WHISPER_BASE,
+                name = "OpenAI Whisper Base (High Precision)",
+                tag = "LOCAL MODEL • 142 MB",
+                description = "OpenAI Whisper Base model (74M parameters). Higher accuracy on complex domain terminology, noise resilience, and conversational Hindi/Hinglish.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = false,
+                sizeText = "142 MB",
+                downloadUrl = "https://huggingface.co/openai/whisper-base"
+            ),
+            SttModelOption(
+                id = STT_MODEL_INDIC_CONFORMER,
+                name = "AI4Bharat IndicConformer (Hindi SOTA)",
+                tag = "INDIC SPECIALIZED • 85 MB",
+                description = "State-of-the-art acoustic conformer model developed by AI4Bharat (IIT Madras). Fine-tuned on thousands of hours of Indian speech datasets.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = false,
+                sizeText = "85 MB",
+                downloadUrl = "https://github.com/AI4Bharat/indicwav2vec"
             )
         )
 
@@ -123,5 +194,53 @@ data class UserPreferences(
                 isRecommended = false
             )
         )
+
+        fun validateModelSelection(
+            prefs: UserPreferences,
+            isRecognitionAvailable: Boolean,
+            isModelDownloaded: (String) -> Boolean
+        ): ModelValidationResult {
+            val modelOption = AVAILABLE_STT_MODELS.find { it.id == prefs.selectedSttModel }
+                ?: return ModelValidationResult.IncompatibleMode("Selected model not found.", STT_MODEL_GOOGLE_SPEECH)
+
+            if (prefs.liveTranscribe) {
+                // Mode is LIVE
+                if (modelOption.capability == SttCapability.FILE_ONLY) {
+                    return ModelValidationResult.IncompatibleMode(
+                        message = "\"${modelOption.name}\" only works on recorded files, not live streaming. For live mode, please use Google Speech Recognizer or Gemini Flash.",
+                        suggestedModelId = STT_MODEL_GOOGLE_SPEECH
+                    )
+                }
+                if (modelOption.id == STT_MODEL_GOOGLE_SPEECH && !isRecognitionAvailable) {
+                    return ModelValidationResult.ServiceUnavailable("Google Speech Recognition service is not available on this device.")
+                }
+                if (modelOption.id == STT_MODEL_CLOUD_GEMINI && prefs.cloudApiKey.isBlank()) {
+                    return ModelValidationResult.MissingApiKey("Gemini 1.5 Flash requires a free Gemini API key in Settings.")
+                }
+            } else {
+                // Mode is FILE
+                if (modelOption.capability == SttCapability.LIVE_ONLY) {
+                    return ModelValidationResult.IncompatibleMode(
+                        message = "\"${modelOption.name}\" requires live microphone input and cannot transcribe recorded files. Please use Vosk Hindi (offline) or Gemini Flash for file mode.",
+                        suggestedModelId = STT_MODEL_VOSK_HINDI
+                    )
+                }
+                if (modelOption.id in listOf(STT_MODEL_VOSK_HINDI, STT_MODEL_VOSK_EN_IN) && !isModelDownloaded(modelOption.id)) {
+                    return ModelValidationResult.MissingDownload(
+                        message = "\"${modelOption.name}\" is not downloaded yet. Please tap 'Download Model' in Settings.",
+                        modelId = modelOption.id
+                    )
+                }
+                if (modelOption.id == STT_MODEL_CLOUD_GEMINI && prefs.cloudApiKey.isBlank()) {
+                    return ModelValidationResult.MissingApiKey("Gemini 1.5 Flash requires a Gemini API key in Settings.")
+                }
+            }
+            return ModelValidationResult.Valid
+        }
+
+        fun getModelCapability(modelId: String): SttCapability {
+            return AVAILABLE_STT_MODELS.find { it.id == modelId }?.capability ?: SttCapability.FILE_ONLY
+        }
     }
 }
+

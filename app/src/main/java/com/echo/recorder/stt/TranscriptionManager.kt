@@ -6,8 +6,10 @@ import com.echo.recorder.data.AudioSegment
 import com.echo.recorder.data.AudioSegmentDao
 import com.echo.recorder.data.NoteTaskDao
 import com.echo.recorder.data.PreferencesRepository
+import com.echo.recorder.data.SttCapability
 import com.echo.recorder.data.Transcription
 import com.echo.recorder.data.TranscriptionDao
+import com.echo.recorder.data.UserPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,8 +52,22 @@ class TranscriptionManager(
         audioSegmentDao.updateSegment(updatedSegment)
 
         val audioFile = File(segment.filePath)
+        val prefs = prefsRepo.userPreferencesFlow.first()
+
         val textToUse = if (!liveTranscript.isNullOrBlank()) {
             liveTranscript
+        } else if (prefs.liveTranscribe) {
+            // Live transcribe is active.
+            // If the model is LIVE_ONLY (like Google Speech Recognizer), it cannot transcribe offline audio files.
+            // Do NOT call sttEngine.transcribeAudioFile() because it returns an error message like:
+            // "Offline STT model 'Google Speech' requires live microphone input... Switch to Vosk..."
+            // If the model is capable of offline file transcription (like Vosk or Gemini), try it.
+            val cap = UserPreferences.getModelCapability(prefs.selectedSttModel)
+            if (cap == SttCapability.FILE_ONLY || cap == SttCapability.BOTH) {
+                sttEngine.transcribeAudioFile(audioFile).getOrDefault("[Ambient Audio: ${audioFile.name}]")
+            } else {
+                "[Ambient Audio: ${audioFile.name}]"
+            }
         } else {
             sttEngine.transcribeAudioFile(audioFile).getOrDefault("[Audio Recorded: ${audioFile.name}]")
         }
@@ -66,16 +82,20 @@ class TranscriptionManager(
         )
         val transcriptionId = transcriptionDao.insertTranscription(transcription)
 
-        // Update live transcript display on screen
-        com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = textToUse
+        // Update live transcript display on screen ONLY if it's real speech (not ambient tag)
+        if (!textToUse.startsWith("[Ambient") && !textToUse.startsWith("[Silence") && !textToUse.startsWith("[Audio Recorded")) {
+            com.echo.recorder.audio.AudioRecordingState.liveTranscript.value = textToUse
+        }
 
-        // Process with Tiny AI to extract NoteTasks
-        val extractedTasks = tinyAiProcessor.processTranscription(textToUse, transcriptionId)
+        // Process with Tiny AI to extract NoteTasks ONLY if real speech is present!
+        val extractedTasks = if (!textToUse.startsWith("[Ambient") && !textToUse.startsWith("[Silence") && !textToUse.startsWith("[Audio Recorded")) {
+            tinyAiProcessor.processTranscription(textToUse, transcriptionId)
+        } else {
+            emptyList()
+        }
         for (task in extractedTasks) {
             noteTaskDao.insertTask(task)
         }
-
-        val prefs = prefsRepo.userPreferencesFlow.first()
 
         // Save transcription and AI notes files to user configured folders (default: Download/App data/poc/yesboss)
         try {
