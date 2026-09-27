@@ -456,7 +456,9 @@ fun SettingsTab(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     UserPreferences.AVAILABLE_STT_MODELS.forEach { modelOption ->
                         val isSelected = userPreferences.selectedSttModel == modelOption.id
-                        val isDownloaded = userPreferences.downloadedModels.contains(modelOption.id)
+                        val isDownloaded = userPreferences.downloadedModels.contains(modelOption.id) ||
+                            (modelOption.id == UserPreferences.STT_MODEL_VOSK_HINDI &&
+                                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context))
                         val isDownloading = downloadingProgress.containsKey(modelOption.id)
                         val progress = downloadingProgress[modelOption.id] ?: 0f
 

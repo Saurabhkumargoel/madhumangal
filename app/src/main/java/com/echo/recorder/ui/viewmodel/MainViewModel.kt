@@ -254,15 +254,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             com.echo.recorder.util.AppLogger.i("MODEL", "Starting download for model: $modelId")
             try {
                 val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
-                val modelFile = File(modelsDir, "${modelId}.bin")
-                for (step in 1..10) {
-                    kotlinx.coroutines.delay(120)
-                    withContext(Dispatchers.Main) { onProgress(step / 10f) }
+
+                when (modelId) {
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI -> {
+                        // ── Real Vosk Hindi model download + extraction ────────────────────
+                        val zipFile = File(modelsDir, "vosk_hindi_download.zip")
+                        val extractDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+
+                        val modelUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
+                        com.echo.recorder.util.AppLogger.i("MODEL", "Downloading Vosk Hindi model from: $modelUrl")
+
+                        try {
+                            // ── 1. HTTP Download with progress ─────────────────────────────
+                            val connection = java.net.URL(modelUrl).openConnection() as java.net.HttpURLConnection
+                            connection.connectTimeout = 30_000
+                            connection.readTimeout = 120_000
+                            connection.connect()
+
+                            val totalBytes = connection.contentLengthLong.coerceAtLeast(1L)
+                            var downloadedBytes = 0L
+
+                            connection.inputStream.use { input ->
+                                zipFile.outputStream().use { output ->
+                                    val buf = ByteArray(8192)
+                                    var read: Int
+                                    while (input.read(buf).also { read = it } != -1) {
+                                        output.write(buf, 0, read)
+                                        downloadedBytes += read
+                                        val progress = (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 0.95f)
+                                        withContext(Dispatchers.Main) { onProgress(progress) }
+                                    }
+                                }
+                            }
+
+                            com.echo.recorder.util.AppLogger.i("MODEL", "Vosk zip downloaded: ${zipFile.length()} bytes")
+                            withContext(Dispatchers.Main) { onProgress(0.97f) }
+
+                            // ── 2. Extract zip ─────────────────────────────────────────────
+                            extractDir.mkdirs()
+                            java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
+                                var entry = zis.nextEntry
+                                while (entry != null) {
+                                    // Strip the top-level "vosk-model-small-hi-0.22/" prefix
+                                    val relPath = entry.name
+                                        .substringAfter('/')  // drop first dir component
+                                    if (relPath.isNotEmpty()) {
+                                        val outFile = File(extractDir, relPath)
+                                        if (entry.isDirectory) {
+                                            outFile.mkdirs()
+                                        } else {
+                                            outFile.parentFile?.mkdirs()
+                                            outFile.outputStream().use { out ->
+                                                zis.copyTo(out)
+                                            }
+                                        }
+                                    }
+                                    zis.closeEntry()
+                                    entry = zis.nextEntry
+                                }
+                            }
+
+                            // ── 3. Clean up zip ────────────────────────────────────────────
+                            zipFile.delete()
+                            com.echo.recorder.util.AppLogger.i("MODEL", "Vosk Hindi model extracted to: ${extractDir.absolutePath}")
+
+                            prefsRepo.setModelDownloaded(modelId, true)
+                            withContext(Dispatchers.Main) {
+                                onProgress(1f)
+                                onComplete(true)
+                            }
+                        } catch (e: Exception) {
+                            zipFile.delete()  // clean up partial download
+                            throw e
+                        }
+                    }
+
+                    else -> {
+                        // Legacy placeholder for other model IDs (no real engine yet)
+                        val modelFile = File(modelsDir, "${modelId}.bin")
+                        for (step in 1..10) {
+                            kotlinx.coroutines.delay(120)
+                            withContext(Dispatchers.Main) { onProgress(step / 10f) }
+                        }
+                        modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$modelId:${System.currentTimeMillis()}")
+                        prefsRepo.setModelDownloaded(modelId, true)
+                        com.echo.recorder.util.AppLogger.i("MODEL", "Model $modelId stub installed: ${modelFile.absolutePath}")
+                        withContext(Dispatchers.Main) { onComplete(true) }
+                    }
                 }
-                modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$modelId:${System.currentTimeMillis()}")
-                prefsRepo.setModelDownloaded(modelId, true)
-                com.echo.recorder.util.AppLogger.i("MODEL", "Model $modelId successfully installed: ${modelFile.absolutePath}")
-                withContext(Dispatchers.Main) { onComplete(true) }
             } catch (e: Exception) {
                 com.echo.recorder.util.AppLogger.e("MODEL", "Failed to download model $modelId", e)
                 withContext(Dispatchers.Main) { onComplete(false) }
@@ -273,8 +352,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteModel(modelId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
-            val modelFile = File(modelsDir, "${modelId}.bin")
-            if (modelFile.exists()) modelFile.delete()
+            if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI) {
+                // Vosk model is a directory, not a .bin file
+                val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                if (voskDir.exists()) voskDir.deleteRecursively()
+            } else {
+                val modelFile = File(modelsDir, "${modelId}.bin")
+                if (modelFile.exists()) modelFile.delete()
+            }
             prefsRepo.setModelDownloaded(modelId, false)
             com.echo.recorder.util.AppLogger.i("MODEL", "Deleted local model $modelId")
         }
@@ -376,19 +461,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // 2. Offline on-device STT model
                 if (transcribedText.isNullOrBlank()) {
-                    // Auto-download/register offline model if selected and not yet registered
-                    if (targetModel in listOf(
-                            com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY,
-                            com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE,
-                            com.echo.recorder.data.UserPreferences.STT_MODEL_INDIC_CONFORMER
-                        )
-                    ) {
-                        if (!prefs.downloadedModels.contains(targetModel)) {
-                            com.echo.recorder.util.AppLogger.i("STT", "Model $targetModel registering now for segment #$transcriptionId...")
-                            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
-                            val modelFile = File(modelsDir, "${targetModel}.bin")
-                            modelFile.writeText("ECHO_AI_MODEL_WEIGHTS:$targetModel:${System.currentTimeMillis()}")
+                    // For Vosk Hindi: check if the model directory is actually present
+                    if (targetModel == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI) {
+                        val voskInstalled = com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(app)
+                        if (voskInstalled && !prefs.downloadedModels.contains(targetModel)) {
+                            // Dir exists but prefs wasn't updated — sync it
                             prefsRepo.setModelDownloaded(targetModel, true)
+                        }
+                        if (!voskInstalled) {
+                            com.echo.recorder.util.AppLogger.w("STT", "Vosk Hindi model not yet downloaded. Please tap 'Download Model' in Settings.")
+                            withContext(Dispatchers.Main) {
+                                onResult(false, "Vosk Hindi model not installed. Go to Settings → Transcription Models and tap 'Download Model'.")
+                            }
+                            return@launch
                         }
                     }
 
@@ -399,6 +484,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         com.echo.recorder.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
                     } else {
                         com.echo.recorder.util.AppLogger.w("STT", "STT engine failed: ${engineResult.exceptionOrNull()?.message}")
+                        withContext(Dispatchers.Main) {
+                            onResult(false, engineResult.exceptionOrNull()?.message ?: "Transcription failed")
+                        }
+                        return@launch
                     }
                 }
 

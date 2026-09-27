@@ -44,10 +44,11 @@ data class UserPreferences(
         const val QUALITY_HIGH = 44100     // 44.1 kHz (CD quality)
 
         // STT Models
-        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"
-        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"
-        const val STT_MODEL_WHISPER_BASE = "whisper_base"
-        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer"
+        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"   // Live mic only (no file transcription)
+        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // Legacy stub – no native engine
+        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // Legacy stub – no native engine
+        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // Legacy stub – no native engine
+        const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅
 
         // AI Note & Task Extractor Models
         const val AI_MODEL_LOCAL_TINY = "local_tiny"
@@ -58,36 +59,20 @@ data class UserPreferences(
 
         val AVAILABLE_STT_MODELS = listOf(
             SttModelOption(
+                id = STT_MODEL_VOSK_HINDI,
+                name = "Vosk Hindi (Offline – Works on Files)",
+                tag = "RECOMMENDED • TRULY OFFLINE • 45 MB",
+                description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Supports Hindi & Hinglish.",
+                isRecommended = true,
+                sizeText = "45 MB"
+            ),
+            SttModelOption(
                 id = STT_MODEL_GOOGLE_SPEECH,
-                name = "Google Speech Recognizer",
-                tag = "LIVE STREAMING ONLY (Real-Time Mic)",
-                description = "Native Android speech service for real-time live microphone stream (Hindi & Hinglish). For transcribing saved files offline, select an on-device model below.",
+                name = "Google Speech (Live Mic Only)",
+                tag = "LIVE STREAMING ONLY",
+                description = "Native Android speech service. Works for real-time live microphone only — cannot transcribe saved audio files. No download needed.",
                 isRecommended = false,
                 sizeText = "Built-in"
-            ),
-            SttModelOption(
-                id = STT_MODEL_WHISPER_TINY,
-                name = "Whisper Tiny (On-Device)",
-                tag = "RECOMMENDED • OFFLINE 39MB",
-                description = "OpenAI Whisper Tiny multilingual model running 100% on-device. Fast, private transcription of saved audio chunks without internet.",
-                isRecommended = true,
-                sizeText = "39 MB"
-            ),
-            SttModelOption(
-                id = STT_MODEL_WHISPER_BASE,
-                name = "Whisper Base (High Precision)",
-                tag = "OFFLINE 74MB",
-                description = "Enhanced multilingual transformer running on-device with higher accuracy for complex Hinglish vocabulary.",
-                isRecommended = false,
-                sizeText = "74 MB"
-            ),
-            SttModelOption(
-                id = STT_MODEL_INDIC_CONFORMER,
-                name = "AI4Bharat IndicConformer",
-                tag = "RECOMMENDED • HINDI OPTIMIZED",
-                description = "Conformer-CTC neural model fine-tuned specifically on Indian accents and regional Hindi dialects. 100% offline.",
-                isRecommended = true,
-                sizeText = "55 MB"
             )
         )
 

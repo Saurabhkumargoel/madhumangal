@@ -214,6 +214,47 @@ Because the audio chunks had consistent duration (3.8s, 8.1s) and syllable count
 | 3 | Overwriting retranscribed files | Specific | Single-file write without versioning | Immutable timestamped versions for MD, HTML, and SRT | Multi-save file count assertion test |
 | 4 | Unresponsive button clicks | Generic | Missing observable async loading state | Minimum visual debounce delay + loading indicators | UI test for progress state during execution |
 | 5 | Scoped storage permission errors | Specific | Legacy file I/O instead of public Scoped Storage | Centralized `AppStorageManager.getBaseDirectory()` | Unit test checking write access on base directory |
+| 6 | Proposing stub models instead of real Vosk | Specific / Generic | Ignored the viable Vosk Android library and kept fake Whisper/IndicConformer stubs | Replaced all stubs with real VoskSTTEngine backed by vosk-android 0.3.50 | Runtime model-dir existence check; build would fail if `org.vosk.*` classes missing |
 
 ---
+
+## 🪄 Mistake #6: Proposing Non-Functional Model Stubs When a Real Library Existed
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+After Mistake #1 (canned phrases) was fixed, the agent kept three model entries — Whisper Tiny, Whisper Base, IndicConformer — as *download stubs* that wrote a tiny manifest `.bin` file and `prefsRepo.setModelDownloaded(id, true)`. These showed "Status: Installed ✅" in the UI but all calls to `transcribeAudioFile()` returned the honest-but-useless message  
+`"[Audio: chunk... does not support file transcription]"`.
+
+The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Maven Central the entire time, supports Hindi, can transcribe WAV files fully offline, and was never evaluated.
+
+#### What AI Did Wrong
+- Focused only on widely-known research models (Whisper, IndicConformer) that require hundreds of MBs of native inference runtimes not bundled.
+- Assumed "you need to compile native C++ code" without first checking whether a pre-packaged Android AAR existed for offline ASR.
+- Left the model list with fake model IDs after removing canned phrases, giving the user the same broken experience from a different angle.
+
+#### What User Did Wrong / Communication Gap
+- The user repeated "do anything get it run" which was correctly interpreted as "implement something that actually works", but the initial session chose honest fallback rather than searching for working libraries.
+- No explicit milestone was set: "Verify that model X actually decodes audio into text before calling it done."
+
+#### How It Could Have Been Avoided
+- **Library-first research:** Before implementing any ML model integration, search Maven Central / JitPack for `android speech recognition` and check the most popular production-ready Android STT libraries.
+- **Decision flowchart:**
+  1. Does a Java/Kotlin library with pre-compiled JNI exist? → Use it (Vosk = YES).
+  2. Does an ONNX/TFLite inference runtime for this model exist? → Integrate (complex, adds 50-100MB).
+  3. Is a cloud API the only option? → State this clearly to the user.
+
+#### Automated Prevention
+- After `downloadModel()` is called, run a smoke-test that opens the model, passes 1 second of synthetic silence, and asserts that `Model(dir)` initialises without throwing.
+- Add a KUnit assertion: `assert(VoskSTTEngine.ModelStatus.isInstalled(context))` after download.
+
+#### Optimal Agent Rule
+> **RULE — STT Library Evaluation:** Before building any custom STT engine shim, search for an existing open-source Android-compatible library (`vosk-android`, `sherpa-onnx-android`, `whisper.cpp` JNI wrapper). Only build a custom JNI wrapper if no pre-packaged library exists. State capabilities and limitations clearly before implementation.
+
+#### Optimal User Prompt Template
+> "I need offline audio file transcription for Hindi on Android without any internet or API key. First, list what libraries exist that can do this today (pre-packaged for Android, Maven Central). Then implement the best one. Show me what a successful test transcript looks like. Do not use any mock data."
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
+

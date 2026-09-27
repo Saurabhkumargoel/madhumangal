@@ -72,6 +72,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.vosk.android) { artifact { type = "aar" } }
+    implementation(libs.jna) { artifact { type = "aar" } }
 
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation("junit:junit:4.13.2")

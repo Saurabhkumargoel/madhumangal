@@ -36,6 +36,19 @@ class HindiHinglishSTTEngine(
             return@withContext Result.success("[Ambient background segment - Low noise]")
         }
 
+        // ── VOSK: Real 100% offline neural transcription of audio files ──────
+        if (model == UserPreferences.STT_MODEL_VOSK_HINDI) {
+            AppLogger.i("STT_ENGINE", "Routing to VoskSTTEngine for offline file transcription")
+            val voskResult = VoskSTTEngine(context).transcribeAudioFile(audioFile)
+            return@withContext if (voskResult.isSuccess) {
+                voskResult
+            } else {
+                val errMsg = voskResult.exceptionOrNull()?.message ?: "Unknown Vosk error"
+                AppLogger.w("STT_ENGINE", "VoskSTTEngine failed: $errMsg")
+                Result.failure(RuntimeException(errMsg))
+            }
+        }
+
         val audioInfo = parseWavHeader(audioFile)
         val sampleRate = audioInfo.first
         val channels = audioInfo.second
@@ -75,7 +88,7 @@ class HindiHinglishSTTEngine(
 
         AppLogger.i("STT_ENGINE", "Audio evaluation: duration=${String.format(Locale.US, "%.1f", durationSec)}s, RMS=${rms.toInt()}, model=$modelName (installed=$isModelDownloaded)")
 
-        val honestStatus = "[Audio: ${audioFile.name} • ${String.format(Locale.US, "%.1f", durationSec)}s • RMS: ${rms.toInt()} • Model: $modelName. Verbatim offline decoding requires live microphone recording or a Gemini API key in Settings]"
+        val honestStatus = "[Audio: ${audioFile.name} • ${String.format(Locale.US, "%.1f", durationSec)}s • RMS: ${rms.toInt()} • Model: $modelName does not support file transcription. Switch to 'Vosk Hindi' in Settings for offline file transcription.]"
         Result.success(honestStatus)
     }
 
