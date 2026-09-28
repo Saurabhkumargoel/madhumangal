@@ -241,6 +241,49 @@ data class UserPreferences(
         fun getModelCapability(modelId: String): SttCapability {
             return AVAILABLE_STT_MODELS.find { it.id == modelId }?.capability ?: SttCapability.FILE_ONLY
         }
+
+        fun isSttModelRequirementFulfilled(
+            context: android.content.Context,
+            modelId: String,
+            cloudApiKey: String,
+            downloadedModels: Set<String>
+        ): Boolean {
+            return when (modelId) {
+                STT_MODEL_GOOGLE_SPEECH -> android.speech.SpeechRecognizer.isRecognitionAvailable(context)
+                STT_MODEL_VOSK_HINDI -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                STT_MODEL_CLOUD_GEMINI -> cloudApiKey.isNotBlank()
+                STT_MODEL_WHISPER_TINY, STT_MODEL_WHISPER_BASE, STT_MODEL_INDIC_CONFORMER -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists() ||
+                    com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                }
+                else -> false
+            }
+        }
+
+        fun isAiModelRequirementFulfilled(
+            context: android.content.Context,
+            modelId: String,
+            cloudApiKey: String,
+            downloadedModels: Set<String>
+        ): Boolean {
+            return when (modelId) {
+                AI_MODEL_LOCAL_TINY -> true // Always ready on-device zero-MB built-in parser
+                AI_MODEL_LOCAL_GEMMA -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists()
+                }
+                AI_MODEL_LOCAL_LLAMA -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists()
+                }
+                AI_MODEL_CLOUD_GEMINI, AI_MODEL_CLOUD_OPENAI -> cloudApiKey.isNotBlank()
+                else -> false
+            }
+        }
     }
 }
 

@@ -377,6 +377,46 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #10: Immediate Selection on Card Touch Without Requirement Gating, Missing 'Use' Activation Flow, and Live Stream Speech Disconnects
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Premature Selection on Card Touch:** Tapping a model card in Settings immediately updated `selectedSttModel` or `selectedAiModel`. This caused user confusion because touching a card to read its details or download requirements accidentally set it as active, even when the model was not yet downloaded or lacked an API key.
+2. **Missing Inactive Radio Button State:** Radio buttons remained visually selectable even when requirements (e.g. Vosk model directory missing, Gemini API key empty, Gemma weights not deployed) were unfulfilled.
+3. **Absence of an Explicit "Use" Button:** Users had no deliberate two-step flow to examine a model, ensure requirements are ready, and then explicitly activate it with a dedicated "Use" button.
+4. **Live Transcribe Speech Loss on Disconnect/Timeout:** When the Android native `SpeechRecognizer` dropped connection (`ERROR_CODE_11`) or returned `ERROR_NO_MATCH` during continuous listening, `liveTranscript` was left blank. The system wrote `"[Ambient Audio]"` into the database and skipped audio transcription, even though high-quality audio had been captured in the `.wav` chunk file.
+
+#### What AI Did Wrong
+- Bound the `onClick` event of the entire card `Surface` to `viewModel.updateSttModel(id)` / `viewModel.updateAiModel(id)` instead of decoupling expansion from activation.
+- Did not gate `RadioButton(enabled = ...)` behind requirement verification.
+- Failed to provide a fallback to offline audio file transcription when the live recognizer produced an empty transcript for a non-empty audio chunk.
+
+#### What User Did Wrong / Communication Gap
+- Expected touching a card to function strictly as an accordion toggle, and expected models to require explicit activation via a "Use" button after verifying requirements.
+
+#### How It Was Fixed
+1. **Decoupled Accordion Expansion from Selection (`SettingsTab.kt`):**
+   - Introduced `expandedSttModelId` and `expandedAiModelId`.
+   - Tapping any model card toggles expansion (next touch collapses it) and NEVER changes the active selection.
+2. **Strict Requirement Gating & Inactive Radio Buttons (`UserPreferences.kt` & `SettingsTab.kt`):**
+   - Implemented `isSttModelRequirementFulfilled()` and `isAiModelRequirementFulfilled()`:
+     - Checks if model weights directory exists (Vosk), GGUF weights deployed (Gemma), or API keys provided (Gemini/OpenAI).
+   - Radio buttons are `enabled = isRequirementFulfilled`. If unfulfilled, the radio button is disabled (alpha 0.4) and displays a requirement prompt toast if clicked.
+3. **Explicit "Use" Activation Button:**
+   - Every model's expanded body features a dedicated action button:
+     - When requirements are satisfied and model is not yet selected: Displays **"Use"** button in primary accent color. Clicking it activates the model and gives clear toast feedback.
+     - When model is currently active: Displays **"✓ Selected"** in emerald green (`#10B981`).
+     - When requirements are unfulfilled: Displays disabled state **"Requirements Incomplete"** or prompts the user to download / configure.
+4. **Serial Lazy Loading & Offline Fallback (`TranscriptionManager.kt`):**
+   - In `TranscriptionManager`, if `liveTranscript` is blank or disconnected (`ERROR_CODE_11`), the pipeline automatically decodes the saved `.wav` chunk file using on-device STT (`vosk_hindi`) instead of writing ambient tags.
+   - STT and AI models execute strictly in series: STT decodes audio and releases resources, followed by on-device AI extracting structured tasks and notes.
+
+#### Automated Prevention
+- UI unit tests asserting that touching a model item in Settings does not modify `selectedSttModel` unless its requirements are met and the "Use" button is clicked.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

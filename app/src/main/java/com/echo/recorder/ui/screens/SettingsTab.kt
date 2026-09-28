@@ -111,6 +111,8 @@ fun SettingsTab(
     // Download progress tracking per model
     val downloadingProgress = remember { mutableStateMapOf<String, Float>() }
     var showAllModels by remember { mutableStateOf(false) }
+    var expandedSttModelId by remember { mutableStateOf<String?>(null) }
+    var expandedAiModelId by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -521,6 +523,13 @@ fun SettingsTab(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     displayedSttModels.forEach { modelOption ->
                         val isSelected = userPreferences.selectedSttModel == modelOption.id
+                        val isExpanded = expandedSttModelId == modelOption.id
+                        val isRequirementFulfilled = UserPreferences.isSttModelRequirementFulfilled(
+                            context = context,
+                            modelId = modelOption.id,
+                            cloudApiKey = userPreferences.cloudApiKey,
+                            downloadedModels = userPreferences.downloadedModels
+                        )
                         val isDownloaded = userPreferences.downloadedModels.contains(modelOption.id) ||
                             (modelOption.id == UserPreferences.STT_MODEL_VOSK_HINDI &&
                                 com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)) ||
@@ -539,14 +548,30 @@ fun SettingsTab(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.updateSttModel(modelOption.id) }
+                                .clickable {
+                                    // Touching expands or collapses only! Does NOT select!
+                                    expandedSttModelId = if (expandedSttModelId == modelOption.id) null else modelOption.id
+                                }
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     RadioButton(
                                         selected = isSelected,
-                                        onClick = { viewModel.updateSttModel(modelOption.id) },
-                                        colors = RadioButtonDefaults.colors(selectedColor = PrimaryBlue)
+                                        enabled = isRequirementFulfilled,
+                                        onClick = {
+                                            if (isRequirementFulfilled) {
+                                                viewModel.updateSttModel(modelOption.id)
+                                                Toast.makeText(context, "Selected ${modelOption.name}", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                expandedSttModelId = modelOption.id
+                                                Toast.makeText(context, "Please complete requirements to use this model", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = PrimaryBlue,
+                                            disabledSelectedColor = PrimaryBlue.copy(alpha = 0.4f),
+                                            disabledUnselectedColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                        )
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
@@ -577,93 +602,157 @@ fun SettingsTab(
                                                 )
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(text = modelOption.description, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                        Text(text = modelOption.tag, style = MaterialTheme.typography.labelSmall, color = if (isSelected) PrimaryBlue else TextMuted)
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            expandedSttModelId = if (expandedSttModelId == modelOption.id) null else modelOption.id
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Expand",
+                                            tint = if (isExpanded) PrimaryBlue else TextMuted
+                                        )
                                     }
                                 }
 
-                                // Model Download Options for offline models
-                                if (modelOption.id != UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = if (isDownloaded) "Status: Installed (${modelOption.sizeText}) ✅" else "Status: Not Downloaded (${modelOption.sizeText})",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isDownloaded) Color(0xFF10B981) else Color(0xFFF59E0B)
-                                        )
+                                AnimatedVisibility(visible = isExpanded) {
+                                    Column(modifier = Modifier.padding(top = 10.dp)) {
+                                        Text(text = modelOption.description, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                        Spacer(modifier = Modifier.height(10.dp))
 
-                                        if (!isDownloaded && !isDownloading) {
-                                            Button(
-                                                onClick = {
-                                                    downloadingProgress[modelOption.id] = 0.1f
-                                                    viewModel.downloadModel(
-                                                        modelId = modelOption.id,
-                                                        onProgress = { p -> downloadingProgress[modelOption.id] = p },
-                                                        onComplete = { success ->
-                                                            downloadingProgress.remove(modelOption.id)
-                                                            if (success) {
-                                                                Toast.makeText(context, "${modelOption.name} installed successfully!", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        }
-                                                    )
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                        // Requirements status chip
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isRequirementFulfilled) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = if (isRequirementFulfilled) "✅ Requirements Fulfilled" else "⚠️ Requirements Not Met (Action Needed)",
+                                                color = if (isRequirementFulfilled) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        // Model Download / Cloud Config
+                                        if (modelOption.id == UserPreferences.STT_MODEL_CLOUD_GEMINI) {
+                                            Text("Requires Gemini Cloud API key in Section 4 below.", fontSize = 11.sp, color = TextMuted)
+                                        } else if (modelOption.id != UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Download Model", fontSize = 12.sp, color = DarkBackground, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = if (isDownloaded) "Status: Installed (${modelOption.sizeText}) ✅" else "Status: Not Downloaded (${modelOption.sizeText})",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isDownloaded) Color(0xFF10B981) else Color(0xFFF59E0B)
+                                                )
+
+                                                if (!isDownloaded && !isDownloading) {
+                                                    Button(
+                                                        onClick = {
+                                                            downloadingProgress[modelOption.id] = 0.1f
+                                                            viewModel.downloadModel(
+                                                                modelId = modelOption.id,
+                                                                onProgress = { p -> downloadingProgress[modelOption.id] = p },
+                                                                onComplete = { success ->
+                                                                    downloadingProgress.remove(modelOption.id)
+                                                                    if (success) {
+                                                                        Toast.makeText(context, "${modelOption.name} installed successfully!", Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                }
+                                                            )
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Download Model", fontSize = 12.sp, color = DarkBackground, fontWeight = FontWeight.Bold)
+                                                    }
+                                                } else if (isDownloading) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PrimaryBlue)
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Downloading ${(progress * 100).toInt()}%", fontSize = 11.sp, color = PrimaryBlue)
+                                                    }
+                                                } else {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            viewModel.deleteModel(modelOption.id)
+                                                            Toast.makeText(context, "Deleted ${modelOption.name}", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Delete", fontSize = 12.sp, color = ActiveRed, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
-                                        } else if (isDownloading) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PrimaryBlue)
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Downloading ${(progress * 100).toInt()}%", fontSize = 11.sp, color = PrimaryBlue)
+
+                                            if (isDownloading) {
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                LinearProgressIndicator(
+                                                    progress = { progress },
+                                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                                    color = PrimaryBlue
+                                                )
                                             }
                                         } else {
-                                            OutlinedButton(
+                                            Text(
+                                                text = "Google Speech streams live microphone voice. For transcribing saved chunk files offline, select Vosk Hindi or Gemini Flash.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = TextMuted,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        // Explicit "Use" button
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            Button(
                                                 onClick = {
-                                                    viewModel.deleteModel(modelOption.id)
-                                                    Toast.makeText(context, "Deleted ${modelOption.name}", Toast.LENGTH_SHORT).show()
+                                                    if (isRequirementFulfilled) {
+                                                        viewModel.updateSttModel(modelOption.id)
+                                                        Toast.makeText(context, "Selected ${modelOption.name} as active STT model", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Please download/complete requirements before using", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 },
+                                                enabled = isRequirementFulfilled && !isSelected,
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isSelected) Color(0xFF10B981) else PrimaryBlue,
+                                                    disabledContainerColor = if (isSelected) Color(0xFF10B981).copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
+                                                    disabledContentColor = if (isSelected) Color(0xFF10B981) else TextMuted
+                                                ),
                                                 shape = RoundedCornerShape(10.dp),
-                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                             ) {
-                                                Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Delete", fontSize = 12.sp, color = ActiveRed, fontWeight = FontWeight.Bold)
+                                                if (isSelected) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("✓ Selected", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                } else if (isRequirementFulfilled) {
+                                                    Text("Use", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                } else {
+                                                    Text("Requirements Incomplete", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                }
                                             }
                                         }
                                     }
-
-                                    if (isDownloading) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        LinearProgressIndicator(
-                                            progress = { progress },
-                                            modifier = Modifier.fillMaxWidth().height(4.dp),
-                                            color = PrimaryBlue
-                                        )
-                                    }
-                                } else {
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Status: Live Mic Streaming (Real-Time Only) 🎙️",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF10B981),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Google Speech streams live microphone voice. For transcribing saved chunk files offline, select Whisper or IndicConformer above.",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TextMuted,
-                                        fontSize = 11.sp
-                                    )
                                 }
                             }
                         }
@@ -722,6 +811,13 @@ fun SettingsTab(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     UserPreferences.AVAILABLE_AI_MODELS.forEach { modelOption ->
                         val isSelected = userPreferences.selectedAiModel == modelOption.id
+                        val isExpanded = expandedAiModelId == modelOption.id
+                        val isRequirementFulfilled = UserPreferences.isAiModelRequirementFulfilled(
+                            context = context,
+                            modelId = modelOption.id,
+                            cloudApiKey = userPreferences.cloudApiKey,
+                            downloadedModels = userPreferences.downloadedModels
+                        )
 
                         Surface(
                             shape = RoundedCornerShape(14.dp),
@@ -732,7 +828,10 @@ fun SettingsTab(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.updateAiModel(modelOption.id) }
+                                .clickable {
+                                    // Touching expands or collapses only! Does NOT select!
+                                    expandedAiModelId = if (expandedAiModelId == modelOption.id) null else modelOption.id
+                                }
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
                                 // Accordion Header Row
@@ -742,8 +841,21 @@ fun SettingsTab(
                                 ) {
                                     RadioButton(
                                         selected = isSelected,
-                                        onClick = { viewModel.updateAiModel(modelOption.id) },
-                                        colors = RadioButtonDefaults.colors(selectedColor = AccentPurple)
+                                        enabled = isRequirementFulfilled,
+                                        onClick = {
+                                            if (isRequirementFulfilled) {
+                                                viewModel.updateAiModel(modelOption.id)
+                                                Toast.makeText(context, "Selected ${modelOption.name}", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                expandedAiModelId = modelOption.id
+                                                Toast.makeText(context, "Please complete setup requirements to use this model", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = AccentPurple,
+                                            disabledSelectedColor = AccentPurple.copy(alpha = 0.4f),
+                                            disabledUnselectedColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                        )
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
@@ -759,16 +871,36 @@ fun SettingsTab(
                                             color = if (isSelected) AccentPurple else TextMuted
                                         )
                                     }
-                                    Icon(
-                                        imageVector = if (isSelected) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                        contentDescription = "Expand",
-                                        tint = if (isSelected) AccentPurple else TextMuted
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            expandedAiModelId = if (expandedAiModelId == modelOption.id) null else modelOption.id
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Expand",
+                                            tint = if (isExpanded) AccentPurple else TextMuted
+                                        )
+                                    }
                                 }
 
-                                // Unique Accordion Body - ONLY Expanded when this AI model is selected!
-                                AnimatedVisibility(visible = isSelected) {
+                                // Unique Accordion Body - ONLY Expanded when tapped!
+                                AnimatedVisibility(visible = isExpanded) {
                                     Column(modifier = Modifier.padding(top = 10.dp)) {
+                                        // Requirements status chip
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isRequirementFulfilled) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = if (isRequirementFulfilled) "✅ Requirements Ready" else "⚠️ Setup Required to Enable",
+                                                color = if (isRequirementFulfilled) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = modelOption.description,
                                             style = MaterialTheme.typography.bodySmall,
@@ -1176,6 +1308,43 @@ fun SettingsTab(
                                                     shape = RoundedCornerShape(8.dp)
                                                 ) {
                                                     Text("OpenAI Key Settings", fontSize = 11.sp, color = AccentPurple)
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(14.dp))
+
+                                        // Explicit "Use" button for AI model
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    if (isRequirementFulfilled) {
+                                                        viewModel.updateAiModel(modelOption.id)
+                                                        Toast.makeText(context, "Selected ${modelOption.name} as active AI model", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Please complete setup requirements before using", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                enabled = isRequirementFulfilled && !isSelected,
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isSelected) Color(0xFF10B981) else AccentPurple,
+                                                    disabledContainerColor = if (isSelected) Color(0xFF10B981).copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
+                                                    disabledContentColor = if (isSelected) Color(0xFF10B981) else TextMuted
+                                                ),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("✓ Selected", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                } else if (isRequirementFulfilled) {
+                                                    Text("Use", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                } else {
+                                                    Text("Setup Incomplete", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                                 }
                                             }
                                         }

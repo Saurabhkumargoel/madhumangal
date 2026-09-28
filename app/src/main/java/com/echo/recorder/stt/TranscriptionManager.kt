@@ -56,20 +56,23 @@ class TranscriptionManager(
 
         val textToUse = if (!liveTranscript.isNullOrBlank()) {
             liveTranscript
-        } else if (prefs.liveTranscribe) {
-            // Live transcribe is active.
-            // If the model is LIVE_ONLY (like Google Speech Recognizer), it cannot transcribe offline audio files.
-            // Do NOT call sttEngine.transcribeAudioFile() because it returns an error message like:
-            // "Offline STT model 'Google Speech' requires live microphone input... Switch to Vosk..."
-            // If the model is capable of offline file transcription (like Vosk or Gemini), try it.
-            val cap = UserPreferences.getModelCapability(prefs.selectedSttModel)
-            if (cap == SttCapability.FILE_ONLY || cap == SttCapability.BOTH) {
-                sttEngine.transcribeAudioFile(audioFile).getOrDefault("[Ambient Audio: ${audioFile.name}]")
+        } else if (audioFile.exists() && audioFile.length() > 44) {
+            // Live speech was empty or disconnected; automatically decode the recorded audio chunk
+            val targetModel = if (UserPreferences.getModelCapability(prefs.selectedSttModel) == SttCapability.LIVE_ONLY) {
+                UserPreferences.STT_MODEL_VOSK_HINDI
             } else {
-                "[Ambient Audio: ${audioFile.name}]"
+                prefs.selectedSttModel
+            }
+            com.echo.recorder.util.AppLogger.i("TRANSCRIPTION", "Live speech stream was blank; decoding ${audioFile.name} with offline model ($targetModel)...")
+            val res = sttEngine.transcribeAudioFile(audioFile, targetModel)
+            val decoded = res.getOrNull()
+            if (!decoded.isNullOrBlank() && !decoded.startsWith("[Offline model not ready")) {
+                decoded
+            } else {
+                "[Audio Recorded: ${audioFile.name}]"
             }
         } else {
-            sttEngine.transcribeAudioFile(audioFile).getOrDefault("[Audio Recorded: ${audioFile.name}]")
+            "[Ambient Audio: ${audioFile.name}]"
         }
 
         // Insert into transcriptions table
