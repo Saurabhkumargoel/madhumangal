@@ -20,7 +20,7 @@ class TinyAiProcessorTest {
         val transcript = "Ramesh ko call karna hai kal subah 10 baje"
         val tasks = processor.processTranscription(transcript, 101L)
 
-        assertEquals(1, tasks.size)
+        assertTrue(tasks.isNotEmpty())
         val task = tasks.first()
         assertEquals("Personal", task.categoryGroup)
         assertTrue(task.isLowHangingFruit)
@@ -32,10 +32,28 @@ class TinyAiProcessorTest {
         val transcript = "Doodh aur bread khareedna hai aaj sham tak"
         val tasks = processor.processTranscription(transcript, 102L)
 
-        assertEquals(1, tasks.size)
-        val task = tasks.first()
-        assertEquals("Shopping", task.categoryGroup)
-        assertTrue(task.isLowHangingFruit)
+        assertTrue(tasks.isNotEmpty())
+        assertTrue(tasks.any { it.categoryGroup == "Shopping" })
+        assertTrue(tasks.any { it.title.contains("Doodh", ignoreCase = true) || it.title.contains("Milk", ignoreCase = true) })
+    }
+
+    @Test
+    fun testRealWorldSabziListExtraction() {
+        // Exact user log from field test
+        val transcript = "सब्जी कौन कौन से गांधी है आलू टमाटर भिंडी करेला बैंगन"
+        val tasks = processor.processTranscription(transcript, 104L)
+
+        assertTrue("Should extract tasks from sabzi list", tasks.isNotEmpty())
+        // All tasks must be categorized into Shopping (NOT Ideas!)
+        assertTrue("All items must be in Shopping", tasks.all { it.categoryGroup == "Shopping" })
+        // Must contain master Buy Vegetables task
+        assertTrue("Must contain master vegetables task", tasks.any { it.title.startsWith("Buy Vegetables:") })
+        // Must split individual items
+        assertTrue("Must have task for aalu", tasks.any { it.title.contains("आलू") })
+        assertTrue("Must have task for tamatar", tasks.any { it.title.contains("टमाटर") })
+        assertTrue("Must have task for bhindi", tasks.any { it.title.contains("भिंडी") })
+        assertTrue("Must have task for karela", tasks.any { it.title.contains("करेला") })
+        assertTrue("Must have task for baingan", tasks.any { it.title.contains("बैंगन") })
     }
 
     @Test
@@ -43,7 +61,7 @@ class TinyAiProcessorTest {
         val transcript = "Urgent project report submit karni hai"
         val tasks = processor.processTranscription(transcript, 103L)
 
-        assertEquals(1, tasks.size)
+        assertTrue(tasks.isNotEmpty())
         val task = tasks.first()
         assertEquals("Work", task.categoryGroup)
         assertEquals(NoteTask.PRIORITY_HIGH, task.priority)

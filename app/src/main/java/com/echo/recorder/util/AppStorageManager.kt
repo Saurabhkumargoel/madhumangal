@@ -60,6 +60,61 @@ object AppStorageManager {
         return dir
     }
 
+    /**
+     * Resolves a Storage Access Framework (SAF) tree URI (from OpenDocumentTree) into an absolute filesystem path.
+     */
+    fun resolveTreeUriToPath(context: Context, uri: Uri): String? {
+        try {
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (_: Exception) {}
+
+            if (android.provider.DocumentsContract.isTreeUri(uri)) {
+                val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+                if (docId != null) {
+                    val split = docId.split(":")
+                    if (split.isNotEmpty()) {
+                        val type = split[0]
+                        val relativePath = if (split.size > 1) split[1] else ""
+                        if ("primary".equalsIgnoreCase(type)) {
+                            val resolved = if (relativePath.isNotBlank()) {
+                                File(Environment.getExternalStorageDirectory(), relativePath)
+                            } else {
+                                Environment.getExternalStorageDirectory()
+                            }
+                            if (!resolved.exists()) resolved.mkdirs()
+                            return resolved.absolutePath
+                        } else {
+                            val extDirs = context.getExternalFilesDirs(null)
+                            for (f in extDirs) {
+                                if (f != null) {
+                                    val abs = f.absolutePath
+                                    val index = abs.indexOf("/Android/data")
+                                    if (index > 0) {
+                                        val root = abs.substring(0, index)
+                                        val candidate = if (relativePath.isNotBlank()) File(root, relativePath) else File(root)
+                                        if (!candidate.exists()) candidate.mkdirs()
+                                        return candidate.absolutePath
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (uri.scheme == "file") {
+                return uri.path
+            }
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Failed to resolve tree URI to path: $uri", e)
+        }
+        return null
+    }
+
+    private fun String.equalsIgnoreCase(other: String): Boolean = this.equals(other, ignoreCase = true)
+
     fun getAudioDirectory(context: Context? = null, customPath: String? = null): File {
         if (!customPath.isNullOrBlank()) {
             val f = File(customPath)

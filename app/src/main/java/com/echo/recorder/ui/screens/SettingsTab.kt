@@ -143,6 +143,33 @@ fun SettingsTab(
         }
     }
 
+    // Base Folder Tree Picker Launcher (SAF directory picker)
+    val baseFolderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val resolved = AppStorageManager.resolveTreeUriToPath(context, uri)
+            if (!resolved.isNullOrBlank()) {
+                viewModel.updateBaseFolderPath(resolved)
+                Toast.makeText(context, "📁 Base storage folder updated to:\n$resolved", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "Could not resolve selected folder path", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Model File Picker Launcher (Select any .gguf / model weights file as-is)
+    var targetImportModelFileId by remember { mutableStateOf<String?>(null) }
+    val modelFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null && targetImportModelFileId != null) {
+            viewModel.importModelFileFromUri(uri, targetImportModelFileId!!) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -302,31 +329,81 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val baseDir = remember { AppStorageManager.getBaseDirectory(context) }
+                val currentBasePath = userPreferences.baseFolderPath
+                val baseDir = remember(currentBasePath) {
+                    AppStorageManager.getBaseDirectory(context, currentBasePath.ifBlank { null })
+                }
+                val isCustomBase = currentBasePath.isNotBlank()
+
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth()
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = if (isCustomBase) PrimaryBlue else CardBorder
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            baseFolderPickerLauncher.launch(null)
+                        }
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "📁 Base Directory (Default):",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlue
-                        )
-                        Text(
-                            text = AppStorageManager.DEFAULT_RELATIVE_PATH,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = baseDir.absolutePath,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextMuted,
-                            fontSize = 10.sp
-                        )
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = if (isCustomBase) "📁 Base Directory (Custom):" else "📁 Base Directory (Default):",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlue
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (isCustomBase) PrimaryBlue.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = if (isCustomBase) "CUSTOM" else "DEFAULT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isCustomBase) PrimaryBlue else TextMuted,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        fontSize = 8.sp
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = if (isCustomBase) currentBasePath else AppStorageManager.DEFAULT_RELATIVE_PATH,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = baseDir.absolutePath,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                fontSize = 10.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        OutlinedButton(
+                            onClick = { baseFolderPickerLauncher.launch(null) },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Change", fontSize = 11.sp, color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
@@ -369,18 +446,31 @@ fun SettingsTab(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
                         onClick = {
                             viewModel.resetStoragePathsToDefault()
                             Toast.makeText(context, "Reset all folders to Download/App data/poc/yesboss/", Toast.LENGTH_SHORT).show()
                         },
-                        shape = RoundedCornerShape(10.dp)
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp), tint = TextSecondary)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reset to Default", fontSize = 12.sp, color = TextSecondary)
+                        Text("Reset Default", fontSize = 11.sp, color = TextSecondary)
+                    }
+
+                    OutlinedButton(
+                        onClick = { baseFolderPickerLauncher.launch(null) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFC4B5FD))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Change Folder", fontSize = 11.sp, color = Color(0xFFC4B5FD))
                     }
 
                     OutlinedButton(
@@ -390,11 +480,13 @@ fun SettingsTab(
                                 Toast.makeText(context, "Path: ${baseDir.absolutePath}", Toast.LENGTH_LONG).show()
                             }
                         },
-                        shape = RoundedCornerShape(10.dp)
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Open Folder", fontSize = 12.sp, color = PrimaryBlue)
+                        Text("Open Folder", fontSize = 11.sp, color = PrimaryBlue)
                     }
                 }
 
@@ -815,12 +907,37 @@ fun SettingsTab(
                                         )
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = modelOption.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Text(text = modelOption.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                            if (modelOption.isRecommended) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "⭐ RECOMMENDED",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFFBBF24),
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
+                                            }
+
                                             Surface(
                                                 shape = RoundedCornerShape(4.dp),
                                                 color = when (modelOption.capability) {
@@ -830,7 +947,11 @@ fun SettingsTab(
                                                 }
                                             ) {
                                                 Text(
-                                                    text = modelOption.capability.label.uppercase(),
+                                                    text = when (modelOption.capability) {
+                                                        com.echo.recorder.data.SttCapability.LIVE_ONLY -> "🎙️ LIVE MIC"
+                                                        com.echo.recorder.data.SttCapability.FILE_ONLY -> "📁 AUDIO FILES"
+                                                        com.echo.recorder.data.SttCapability.BOTH -> "🔄 LIVE & FILES"
+                                                    },
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = FontWeight.Bold,
                                                     color = when (modelOption.capability) {
@@ -838,12 +959,24 @@ fun SettingsTab(
                                                         com.echo.recorder.data.SttCapability.FILE_ONLY -> AccentPurple
                                                         com.echo.recorder.data.SttCapability.BOTH -> Color(0xFF10B981)
                                                     },
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                            ) {
+                                                Text(
+                                                    text = modelOption.sizeText,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = TextSecondary,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                                                     fontSize = 9.sp
                                                 )
                                             }
                                         }
-                                        Text(text = modelOption.tag, style = MaterialTheme.typography.labelSmall, color = if (isSelected) PrimaryBlue else TextMuted)
                                     }
                                     IconButton(
                                         onClick = {
@@ -1192,18 +1325,51 @@ fun SettingsTab(
                                         )
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
                                         Text(
                                             text = modelOption.name,
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = TextPrimary
                                         )
-                                        Text(
-                                            text = modelOption.tag,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSelected) AccentPurple else TextMuted
-                                        )
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (modelOption.isRecommended) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "⭐ RECOMMENDED",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFFBBF24),
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                        fontSize = 9.sp
+                                                    )
+                                                }
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = if (modelOption.isApi) PrimaryBlue.copy(alpha = 0.2f) else AccentPurple.copy(alpha = 0.2f)
+                                            ) {
+                                                Text(
+                                                    text = if (modelOption.isApi) "☁️ CLOUD API" else "⚡ LOCAL OFFLINE",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (modelOption.isApi) PrimaryBlue else AccentPurple,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+                                        }
                                     }
                                     IconButton(
                                         onClick = {
@@ -1340,25 +1506,43 @@ fun SettingsTab(
 
                                                             Spacer(modifier = Modifier.height(8.dp))
                                                             Text(
-                                                                text = "📖 On-Device Deployment Instructions:",
+                                                                text = "📖 On-Device Deployment:",
                                                                 style = MaterialTheme.typography.labelSmall,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = AccentPurple
                                                             )
                                                             Spacer(modifier = Modifier.height(4.dp))
                                                             Text(
-                                                                text = "1. Download the quantized weights: gemma-2-2b-it-Q4_K_M.gguf (~1.6 GB) from the official HuggingFace repository.\n" +
-                                                                        "2. Place the .gguf file into your device models folder:\n" +
-                                                                        "   Download/App data/poc/yesboss/models/gemma-2-2b-it.gguf\n" +
-                                                                        "3. Tap 'Auto-Deploy On-Device Engine' below to mount and initialize the local weights for 100% offline task intelligence.",
+                                                                text = "1. Download any Gemma GGUF weights (e.g. gemma-2-2b-it-Q4_K_M.gguf ~1.6 GB) to your device.\n" +
+                                                                        "2. Tap 'Select Model File (.gguf) As-Is' below to pick it directly without any renaming.\n" +
+                                                                        "3. The app automatically imports and activates the weights for 100% offline task intelligence.",
                                                                 style = MaterialTheme.typography.bodySmall,
                                                                 fontSize = 11.sp,
                                                                 color = TextSecondary,
                                                                 lineHeight = 16.sp
                                                             )
 
-                                                                                  if (!isDeployed && !isDeploying) {
-                                                                Button(
+                                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                                            // Direct Select Model File button (No manual renaming required!)
+                                                            Button(
+                                                                onClick = {
+                                                                    targetImportModelFileId = modelOption.id
+                                                                    modelFilePickerLauncher.launch("*/*")
+                                                                },
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                shape = RoundedCornerShape(10.dp),
+                                                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                                                            ) {
+                                                                Icon(Icons.Default.UploadFile, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                                Spacer(modifier = Modifier.width(6.dp))
+                                                                Text("📁 Select Model File (.gguf) As-Is", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(6.dp))
+
+                                                            if (!isDeployed && !isDeploying) {
+                                                                OutlinedButton(
                                                                     onClick = {
                                                                         downloadingProgress[modelOption.id] = 0.1f
                                                                         viewModel.deployLocalAiModel(
@@ -1376,12 +1560,11 @@ fun SettingsTab(
                                                                         )
                                                                     },
                                                                     modifier = Modifier.fillMaxWidth(),
-                                                                    shape = RoundedCornerShape(10.dp),
-                                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                                                                    shape = RoundedCornerShape(10.dp)
                                                                 ) {
-                                                                    Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
+                                                                    Icon(Icons.Default.Download, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
                                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                                    Text("📥 Auto-Deploy On-Device Engine", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
+                                                                    Text("⚡ Auto-Detect & Deploy from Models Folder", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = AccentPurple)
                                                                 }
                                                             } else if (isDeploying) {
                                                                 Row(

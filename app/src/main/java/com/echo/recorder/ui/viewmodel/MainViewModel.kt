@@ -253,12 +253,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateBaseFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateBaseFolderPath(path)
+            refreshStorageUsage()
+        }
+    }
+
     fun resetStoragePathsToDefault() {
         viewModelScope.launch {
+            prefsRepo.updateBaseFolderPath("")
             prefsRepo.updateAudioFolderPath("")
             prefsRepo.updateTranscriptionFolderPath("")
             prefsRepo.updateNotesFolderPath("")
             prefsRepo.updateLogsFolderPath("")
+            refreshStorageUsage()
         }
     }
 
@@ -434,6 +443,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 com.echo.recorder.util.AppLogger.e("MODEL", "Failed to import model ZIP from URI", e)
+                withContext(Dispatchers.Main) { onComplete(false, "Import failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun importModelFileFromUri(
+        uri: android.net.Uri,
+        targetModelId: String,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+                modelsDir.mkdirs()
+
+                // Query display name
+                var fileName = "imported_model.gguf"
+                app.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(nameIndex) ?: fileName
+                    }
+                }
+
+                val isGemma = targetModelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA
+                val targetFileName = if (isGemma) "gemma-2-2b-it.gguf" else "${targetModelId}.bin"
+                val destFile = File(modelsDir, targetFileName)
+
+                app.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    destFile.outputStream().use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                } ?: throw java.io.IOException("Cannot open input stream from selected URI")
+
+                if (destFile.exists() && destFile.length() > 0) {
+                    prefsRepo.setModelDownloaded(targetModelId, true)
+                    com.echo.recorder.util.AppLogger.i("MODEL", "Imported model $targetModelId from file $fileName (${destFile.length() / (1024 * 1024)} MB)")
+                    withContext(Dispatchers.Main) {
+                        onComplete(true, "Model file '$fileName' imported & deployed successfully (${destFile.length() / (1024 * 1024)} MB)!")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { onComplete(false, "Imported file was empty") }
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("MODEL", "Failed to import model file from URI", e)
                 withContext(Dispatchers.Main) { onComplete(false, "Import failed: ${e.message}") }
             }
         }

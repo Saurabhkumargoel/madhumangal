@@ -466,6 +466,55 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #12: Verbatim Sentence Copying Instead of Categorized Task Extraction, Forced Model Renaming, Inactive Base Folder Picker, and Model Badge/Title Collapsing
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Verbatim Grocery/List Copying to Ideas:** When the Vosk Hindi STT engine transcribed an audio chunk containing grocery/vegetable items (`"सब्जी कौन कौन से गांधी है आलू टमाटर भिंडी करेला बैंगन"`), `TinyAiProcessor` failed to recognize the vegetables, did not split the enumeration into distinct items, did not strip phonetic ASR artifacts, and dumped the entire raw string verbatim into the catch-all `"Ideas & Notes"` category instead of `"Shopping"`.
+2. **Forced Model File Renaming:** Instructions for deploying on-device LLM models (Gemma 2B) demanded that the user manually rename their downloaded `.gguf` weights file to `gemma-2-2b-it.gguf` and place it into a hidden app-specific folder structure, rather than allowing them to select any `.gguf` file as-is from their device.
+3. **Inactive Base Directory Card:** Tapping the Base Directory card in Settings did nothing because the card lacked an interactive click handler, SAF folder picker launcher (`ActivityResultContracts.OpenDocumentTree()`), and preference persistence.
+4. **Collapsing Model Badges & Squished Names:** Model capability pills (`LIVE MIC ONLY`, `RECORDED AUDIO FILES`, `LIVE & FILES`) and tags (`RECOMMENDED`, `LOCAL LLM`, `45 MB`) shared the same horizontal row with the model name, causing severe horizontal compression, truncated badge text, and awkward wrapping on mobile screens.
+
+#### What AI Did Wrong
+- Lacked domain vocabulary dictionaries for groceries, fruits, staples, and vegetables (Hindi, Hinglish, English) in `TinyAiProcessor`.
+- Did not perform clause/enumeration splitting on common conjunctions (`aur`, commas, `and`) or strip ASR filler phrasing.
+- Instructed manual file manipulation instead of providing an automated file picker contract.
+- Did not attach a directory tree picker to the base path card.
+- Placed long model titles side-by-side with badges inside a single flex row.
+
+#### What User Did Wrong / Communication Gap
+- None; user provided real-device log output demonstrating the exact ASR transcript and accurately pointed out the 4 usability flaws.
+
+#### How It Was Fixed
+1. **Vegetable & Grocery Domain Extraction (`TinyAiProcessor.kt`):**
+   - Added `SHOPPING_ITEMS` dictionary covering 50+ Hindi, Hinglish, and English vegetables, fruits, groceries, dairy, and staples (आलू, टमाटर, भिंडी, करेला, बैंगन, प्याज, अदरक, लहसुन, दूध, etc.).
+   - Implemented `extractShoppingListTasks`: extracts both a clean master summary task (`"Buy Vegetables: आलू, टमाटर, भिंडी, करेला, बैंगन"`) and individual checkable tasks (`"Buy आलू"`, `"Buy टमाटर"`, etc.) categorized under `Shopping`.
+   - Added clause splitting on conjunctions (`aur`, `and`, commas, `fir`, `pehle`) and phonetic artifact filtering (`"kaun kaun se"`, `"gandhi hai"`).
+   - Ensured domain categories (`Shopping`, `Work`, `Personal`) take priority over generic catch-alls.
+2. **Select Any Model File As-Is (`SettingsTab.kt` & `MainViewModel.kt`):**
+   - Added `modelFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent())`.
+   - Prominent **"📁 Select Model File (.gguf) As-Is"** button allows picking any downloaded `.gguf` file without renaming.
+   - `MainViewModel.importModelFileFromUri()` copies the file directly into `models/`, activates the model, and updates preferences.
+   - Updated `UserPreferences.isAiModelRequirementFulfilled` to recognize any `.gguf` file present in the models directory.
+3. **Interactive Base Folder Picker (`AppStorageManager.kt`, `PreferencesRepository.kt`, & `SettingsTab.kt`):**
+   - Added `baseFolderPickerLauncher` with `ActivityResultContracts.OpenDocumentTree()`.
+   - Added `AppStorageManager.resolveTreeUriToPath()` to convert SAF tree URIs into absolute filesystem paths.
+   - Added `baseFolderPath` in `UserPreferences` and `PreferencesRepository`.
+   - Made the Base Directory card fully interactive (`clickable`), showing a `CUSTOM` vs `DEFAULT` indicator and an explicit **"Change Folder"** button.
+4. **Decoupled Model Cards Layout (`SettingsTab.kt`):**
+   - Model name is allocated its own full-width row at the top of the card.
+   - Badges sit on a dedicated sub-row below the model name with clean spacing:
+     - `⭐ RECOMMENDED` (Gold pill)
+     - `🎙️ LIVE MIC` / `📁 AUDIO FILES` / `🔄 LIVE & FILES` (Distinct color-coded pills)
+     - `Built-in` / `45 MB` / `1.6 GB` (Muted size pills)
+   - Streamlined model names in `UserPreferences` to eliminate redundant parenthetical noise.
+
+#### Automated Prevention
+- Added `TinyAiProcessorTest.testRealWorldSabziListExtraction()` validating that `"सब्जी कौन कौन से गांधी है आलू टमाटर भिंडी करेla बैंगन"` correctly yields `Shopping` category tasks with individual vegetable items and no verbatim dump into Ideas.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

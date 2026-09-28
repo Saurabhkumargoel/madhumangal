@@ -30,6 +30,7 @@ class PreferencesRepository(private val context: Context) {
         val TRANSCRIPTION_FOLDER_PATH = stringPreferencesKey("transcription_folder_path")
         val NOTES_FOLDER_PATH = stringPreferencesKey("notes_folder_path")
         val LOGS_FOLDER_PATH = stringPreferencesKey("logs_folder_path")
+        val BASE_FOLDER_PATH = stringPreferencesKey("base_folder_path")
         val DOWNLOADED_MODELS = androidx.datastore.preferences.core.stringSetPreferencesKey("downloaded_models")
         val SETTINGS_MODE = stringPreferencesKey("settings_mode")
     }
@@ -51,6 +52,7 @@ class PreferencesRepository(private val context: Context) {
             transcriptionFolderPath = preferences[PreferencesKeys.TRANSCRIPTION_FOLDER_PATH] ?: "",
             notesFolderPath = preferences[PreferencesKeys.NOTES_FOLDER_PATH] ?: "",
             logsFolderPath = preferences[PreferencesKeys.LOGS_FOLDER_PATH] ?: "",
+            baseFolderPath = preferences[PreferencesKeys.BASE_FOLDER_PATH] ?: "",
             downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
         )
     }
@@ -136,6 +138,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateLogsFolderPath(path: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LOGS_FOLDER_PATH] = path.trim()
+        }
+    }
+
+    suspend fun updateBaseFolderPath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.BASE_FOLDER_PATH] = path.trim()
         }
     }
 

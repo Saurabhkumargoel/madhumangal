@@ -57,6 +57,7 @@ data class UserPreferences(
     val transcriptionFolderPath: String = "",
     val notesFolderPath: String = "",
     val logsFolderPath: String = "",
+    val baseFolderPath: String = "",
     val downloadedModels: Set<String> = emptySet()
 ) {
     companion object {
@@ -85,8 +86,8 @@ data class UserPreferences(
         val AVAILABLE_STT_MODELS = listOf(
             SttModelOption(
                 id = STT_MODEL_GOOGLE_SPEECH,
-                name = "Google Speech Recognizer (Built-in)",
-                tag = "RECOMMENDED • LIVE STREAMING ONLY",
+                name = "Google Speech Recognizer",
+                tag = "LIVE STREAMING ONLY",
                 description = "Native Android live speech recognition. Ultra-responsive real-time mic stream decoding in Hindi, Hinglish, & English. Can run offline if offline speech pack is installed in Android Speech Services.",
                 capability = SttCapability.LIVE_ONLY,
                 isRecommended = true,
@@ -94,8 +95,8 @@ data class UserPreferences(
             ),
             SttModelOption(
                 id = STT_MODEL_VOSK_HINDI,
-                name = "Vosk Hindi (Offline – Works on Files)",
-                tag = "RECOMMENDED • TRULY OFFLINE • 45 MB",
+                name = "Vosk Hindi (Offline)",
+                tag = "TRULY OFFLINE • 45 MB",
                 description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Supports Hindi & Hinglish.",
                 capability = SttCapability.FILE_ONLY,
                 isRecommended = true,
@@ -104,8 +105,8 @@ data class UserPreferences(
             ),
             SttModelOption(
                 id = STT_MODEL_VOSK_EN_IN,
-                name = "Vosk Indian English (Offline – Works on Files)",
-                tag = "OFFLINE • INDIAN ACCENT • 31 MB",
+                name = "Vosk Indian English (Offline)",
+                tag = "INDIAN ACCENT • 31 MB",
                 description = "Alpha Cephei Vosk Indian English acoustic model (en-in). Optimized for Indian English terminology and accents offline.",
                 capability = SttCapability.FILE_ONLY,
                 isRecommended = false,
@@ -114,8 +115,8 @@ data class UserPreferences(
             ),
             SttModelOption(
                 id = STT_MODEL_CLOUD_GEMINI,
-                name = "Google Gemini 1.5 Flash (Cloud API)",
-                tag = "CLOUD API • LIVE & FILES • HIGHEST ACCURACY",
+                name = "Google Gemini 1.5 Flash",
+                tag = "CLOUD API • HIGHEST ACCURACY",
                 description = "DeepMind Gemini 1.5 Flash audio multimodal API. Transcribes both live audio segments and recorded files with state-of-the-art Hindi/Hinglish accuracy. Requires free API key.",
                 capability = SttCapability.BOTH,
                 isRecommended = false,
@@ -128,8 +129,8 @@ data class UserPreferences(
         val AVAILABLE_AI_MODELS = listOf(
             AiModelOption(
                 id = AI_MODEL_LOCAL_TINY,
-                name = "On-Device Tiny AI (Built-in)",
-                tag = "RECOMMENDED • OFFLINE 0MB • INSTANT",
+                name = "On-Device Tiny AI",
+                tag = "OFFLINE 0MB • INSTANT",
                 description = "Lightweight on-device semantic parser. Categorizes into Work, Shopping, Personal & flags Low-Hanging Fruits without any network or model download.",
                 downloadUrl = null,
                 isApi = false,
@@ -137,8 +138,8 @@ data class UserPreferences(
             ),
             AiModelOption(
                 id = AI_MODEL_LOCAL_GEMMA,
-                name = "Google Gemma 2B (On-Device LLM)",
-                tag = "RECOMMENDED • LOCAL LLM • 1.6 GB",
+                name = "Google Gemma 2B",
+                tag = "LOCAL LLM • 1.6 GB",
                 description = "Google DeepMind open weights for advanced on-device task intelligence and reasoning. Zero cloud API needed.",
                 downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
                 isApi = false,
@@ -146,7 +147,7 @@ data class UserPreferences(
             ),
             AiModelOption(
                 id = AI_MODEL_CLOUD_GEMINI,
-                name = "Google Gemini 1.5 Flash (Cloud API)",
+                name = "Google Gemini 1.5 Flash",
                 tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud transcription and summarization if an external Gemini API key is provided.",
                 downloadUrl = "https://aistudio.google.com/app/apikey",
@@ -155,7 +156,7 @@ data class UserPreferences(
             ),
             AiModelOption(
                 id = AI_MODEL_CLOUD_OPENAI,
-                name = "OpenAI GPT-4o-mini (Cloud API)",
+                name = "OpenAI GPT-4o-mini",
                 tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud API for task extraction with an OpenAI API key.",
                 downloadUrl = "https://platform.openai.com/api-keys",
@@ -237,7 +238,8 @@ data class UserPreferences(
                 AI_MODEL_LOCAL_GEMMA -> {
                     downloadedModels.contains(modelId) ||
                     java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists()
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists() ||
+                    (com.echo.recorder.util.AppStorageManager.getModelsDirectory(context).listFiles()?.any { it.isFile && it.extension.equals("gguf", ignoreCase = true) } == true)
                 }
                 AI_MODEL_LOCAL_LLAMA -> {
                     downloadedModels.contains(modelId) ||
