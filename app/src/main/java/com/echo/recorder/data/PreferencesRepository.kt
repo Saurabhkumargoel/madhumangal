@@ -31,10 +31,12 @@ class PreferencesRepository(private val context: Context) {
         val NOTES_FOLDER_PATH = stringPreferencesKey("notes_folder_path")
         val LOGS_FOLDER_PATH = stringPreferencesKey("logs_folder_path")
         val DOWNLOADED_MODELS = androidx.datastore.preferences.core.stringSetPreferencesKey("downloaded_models")
+        val SETTINGS_MODE = stringPreferencesKey("settings_mode")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
         UserPreferences(
+            settingsMode = preferences[PreferencesKeys.SETTINGS_MODE]?.let { runCatching { SettingsMode.valueOf(it) }.getOrNull() } ?: SettingsMode.SMART,
             bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 15,
             overlapSeconds = preferences[PreferencesKeys.OVERLAP_SECONDS] ?: 3,
             sampleRate = preferences[PreferencesKeys.SAMPLE_RATE] ?: UserPreferences.QUALITY_TINIEST,
@@ -141,6 +143,12 @@ class PreferencesRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
             preferences[PreferencesKeys.DOWNLOADED_MODELS] = if (isDownloaded) current + modelId else current - modelId
+        }
+    }
+
+    suspend fun updateSettingsMode(mode: SettingsMode) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SETTINGS_MODE] = mode.name
         }
     }
 }

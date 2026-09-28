@@ -500,13 +500,14 @@ object AppStorageManager {
         val totalTranscriptsMoved: Int,
         val totalNotesMoved: Int,
         val totalLogsMoved: Int,
+        val totalModelsMoved: Int = 0,
         val targetBasePath: String,
         val isSuccess: Boolean,
         val message: String
     )
 
     /**
-     * Scans and exports/migrates all existing media (audio WAV chunks, transcriptions, notes, logs)
+     * Scans and exports/migrates all existing media (audio WAV chunks, transcriptions, notes, logs, and models)
      * to the user's currently configured destination folders, updating Room database paths.
      */
     suspend fun exportAllMediaToCurrentLocation(
@@ -515,18 +516,21 @@ object AppStorageManager {
         customAudioDir: String? = null,
         customTranscriptionsDir: String? = null,
         customNotesDir: String? = null,
-        customLogsDir: String? = null
+        customLogsDir: String? = null,
+        customModelsDir: String? = null
     ): ExportResult {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             var audioMoved = 0
             var transcriptsMoved = 0
             var notesMoved = 0
             var logsMoved = 0
+            var modelsMoved = 0
 
             val targetAudioDir = getAudioDirectory(context, customAudioDir)
             val targetTranscriptionsDir = getTranscriptionsDirectory(context, customTranscriptionsDir)
             val targetNotesDir = getNotesDirectory(context, customNotesDir)
             val targetLogsDir = getLogsDirectory(context, customLogsDir)
+            val targetModelsDir = getModelsDirectory(context, customModelsDir)
 
             try {
                 // 1. Move all audio segments tracked in database
@@ -679,11 +683,46 @@ object AppStorageManager {
                     }
                 }
 
-                // 6. Clean up any previous broken [Pending: error strings from the database
+                // 6. Migrate and backup Models (Vosk models, GGUF weights, zips)
+                val modelScanDirs = listOf(
+                    context.filesDir,
+                    File(context.filesDir, "models"),
+                    File(context.filesDir, "poc/yesboss/models"),
+                    context.cacheDir,
+                    File(context.cacheDir, "models")
+                )
+
+                for (scanDir in modelScanDirs) {
+                    if (scanDir.exists() && scanDir.isDirectory) {
+                        scanDir.listFiles()?.forEach { fileOrDir ->
+                            val isAlreadyInTarget = try {
+                                fileOrDir.canonicalPath.startsWith(targetModelsDir.canonicalPath)
+                            } catch (e: Exception) {
+                                fileOrDir.absolutePath.startsWith(targetModelsDir.absolutePath)
+                            }
+
+                            if (!isAlreadyInTarget && (fileOrDir.name.contains("vosk") ||
+                                fileOrDir.name.endsWith(".zip") ||
+                                fileOrDir.name.endsWith(".gguf") ||
+                                fileOrDir.name.endsWith(".bin"))
+                            ) {
+                                val dest = File(targetModelsDir, fileOrDir.name)
+                                if (fileOrDir.isDirectory) {
+                                    fileOrDir.copyRecursively(dest, overwrite = true)
+                                } else {
+                                    fileOrDir.copyTo(dest, overwrite = true)
+                                }
+                                modelsMoved++
+                            }
+                        }
+                    }
+                }
+
+                // 7. Clean up any previous broken [Pending: error strings from the database
                 database.transcriptionDao().cleanupPendingErrorTexts()
 
                 val baseTargetPath = targetAudioDir.parentFile?.absolutePath ?: targetAudioDir.absolutePath
-                val summaryMsg = "Successfully exported $audioMoved audio recordings, $transcriptsMoved transcriptions, $notesMoved notes, and $logsMoved log files to: $baseTargetPath"
+                val summaryMsg = "Successfully exported $audioMoved audio recordings, $transcriptsMoved transcriptions, $notesMoved notes, $logsMoved logs, and $modelsMoved models to: $baseTargetPath"
                 AppLogger.i("STORAGE", summaryMsg)
 
                 ExportResult(
@@ -691,6 +730,7 @@ object AppStorageManager {
                     totalTranscriptsMoved = transcriptsMoved,
                     totalNotesMoved = notesMoved,
                     totalLogsMoved = logsMoved,
+                    totalModelsMoved = modelsMoved,
                     targetBasePath = baseTargetPath,
                     isSuccess = true,
                     message = summaryMsg
@@ -702,11 +742,136 @@ object AppStorageManager {
                     totalTranscriptsMoved = transcriptsMoved,
                     totalNotesMoved = notesMoved,
                     totalLogsMoved = logsMoved,
+                    totalModelsMoved = modelsMoved,
                     targetBasePath = targetAudioDir.absolutePath,
                     isSuccess = false,
                     message = "Export error: ${e.message}"
                 )
             }
         }
+    }
+
+    /**
+     * Dedicated model exporter: copies all models in the models directory to the public storage location.
+     */
+    suspend fun exportModelsDirectory(
+        context: Context,
+        customDestDir: String? = null
+    ): ExportResult {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val sourceDir = getModelsDirectory(context)
+            val targetDir = if (!customDestDir.isNullOrBlank()) {
+                File(customDestDir).apply { mkdirs() }
+            } else {
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "App data/poc/yesboss/models").apply { mkdirs() }
+            }
+            var modelsCopied = 0
+            try {
+                if (sourceDir.exists() && sourceDir.isDirectory) {
+                    sourceDir.listFiles()?.forEach { fileOrDir ->
+                        val dest = File(targetDir, fileOrDir.name)
+                        if (fileOrDir.isDirectory) {
+                            fileOrDir.copyRecursively(dest, overwrite = true)
+                        } else {
+                            fileOrDir.copyTo(dest, overwrite = true)
+                        }
+                        modelsCopied++
+                    }
+                }
+                val summary = "Successfully exported $modelsCopied models/weights to: ${targetDir.absolutePath}"
+                AppLogger.i("STORAGE", summary)
+                ExportResult(
+                    totalAudioMoved = 0,
+                    totalTranscriptsMoved = 0,
+                    totalNotesMoved = 0,
+                    totalLogsMoved = 0,
+                    totalModelsMoved = modelsCopied,
+                    targetBasePath = targetDir.absolutePath,
+                    isSuccess = true,
+                    message = summary
+                )
+            } catch (e: Exception) {
+                AppLogger.e("STORAGE", "Error exporting models directory", e)
+                ExportResult(
+                    totalAudioMoved = 0,
+                    totalTranscriptsMoved = 0,
+                    totalNotesMoved = 0,
+                    totalLogsMoved = 0,
+                    totalModelsMoved = modelsCopied,
+                    targetBasePath = targetDir.absolutePath,
+                    isSuccess = false,
+                    message = "Export failed: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Packages all models into a single ZIP file for backup and PC transfer.
+     */
+    suspend fun exportModelsToZip(context: Context): File? {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val sourceDir = getModelsDirectory(context)
+                val timeStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val destDir = getBaseDirectory(context)
+                val zipFile = File(destDir, "yesboss_models_backup_$timeStr.zip")
+                java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
+                    zipSubfolder(sourceDir, sourceDir, zos)
+                }
+                AppLogger.i("STORAGE", "Exported models zip created: ${zipFile.absolutePath} (${zipFile.length()} bytes)")
+                zipFile
+            } catch (e: Exception) {
+                AppLogger.e("STORAGE", "Failed to create models zip export", e)
+                null
+            }
+        }
+    }
+
+    private fun zipSubfolder(rootDir: File, currentFile: File, zos: java.util.zip.ZipOutputStream) {
+        if (currentFile.isDirectory) {
+            currentFile.listFiles()?.forEach { child ->
+                zipSubfolder(rootDir, child, zos)
+            }
+        } else {
+            val relativePath = currentFile.relativeTo(rootDir).path.replace('\\', '/')
+            val entry = java.util.zip.ZipEntry(relativePath)
+            zos.putNextEntry(entry)
+            currentFile.inputStream().use { input ->
+                input.copyTo(zos)
+            }
+            zos.closeEntry()
+        }
+    }
+
+    /**
+     * Deletes dummy waste stub files (.bin with fake text) created by previous versions,
+     * while preserving genuine models.
+     */
+    fun cleanupWasteModels(context: Context): Int {
+        var deletedCount = 0
+        try {
+            val modelsDir = getModelsDirectory(context)
+            val wasteStubs = listOf(
+                "whisper_tiny.bin",
+                "whisper_base.bin",
+                "indic_conformer.bin",
+                "local_llama.bin"
+            )
+            for (stubName in wasteStubs) {
+                val stubFile = File(modelsDir, stubName)
+                if (stubFile.exists()) {
+                    if (stubFile.length() < 10_000L) {
+                        if (stubFile.delete()) {
+                            deletedCount++
+                            AppLogger.i("STORAGE", "Deleted waste stub model: $stubName")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Error cleaning up waste models", e)
+        }
+        return deletedCount
     }
 }

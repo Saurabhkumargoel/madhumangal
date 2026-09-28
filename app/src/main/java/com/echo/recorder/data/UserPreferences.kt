@@ -1,5 +1,10 @@
 package com.echo.recorder.data
 
+enum class SettingsMode(val label: String) {
+    SMART("Smart Mode"),
+    ADVANCED("Advanced Mode")
+}
+
 enum class SttCapability(val label: String) {
     LIVE_ONLY("Live Mic Only"),
     FILE_ONLY("Recorded Audio Files"),
@@ -36,6 +41,7 @@ data class AiModelOption(
 )
 
 data class UserPreferences(
+    val settingsMode: SettingsMode = SettingsMode.SMART,
     val bufferLengthSeconds: Int = 15, // Default to smaller 15s chunks
     val overlapSeconds: Int = 3,       // Default 3s overlap
     val sampleRate: Int = 8000,        // 8000 Hz = Tiniest Quality (Default from Good-Echo)
@@ -60,13 +66,13 @@ data class UserPreferences(
         const val QUALITY_HIGH = 44100     // 44.1 kHz (CD quality)
 
         // STT Models
-        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"     // Live mic only
-        const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅ (Files)
+        const val STT_MODEL_GOOGLE_SPEECH = "google_speech"     // Live mic only (offline pack supported)
+        const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅ (Files & Fallback)
         const val STT_MODEL_VOSK_EN_IN = "vosk_en_in"          // Vosk Indian English ✅ (Files)
         const val STT_MODEL_CLOUD_GEMINI = "cloud_gemini"      // Gemini 1.5 Flash (Both Live & Files)
-        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // OpenAI Whisper Tiny (Files)
-        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // OpenAI Whisper Base (Files)
-        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // AI4Bharat IndicConformer (Files)
+        const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // Legacy ID reference
+        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // Legacy ID reference
+        const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // Legacy ID reference
 
         // AI Note & Task Extractor Models
         const val AI_MODEL_LOCAL_TINY = "local_tiny"
@@ -75,12 +81,13 @@ data class UserPreferences(
         const val AI_MODEL_CLOUD_GEMINI = "cloud_gemini"
         const val AI_MODEL_CLOUD_OPENAI = "cloud_openai"
 
+        // Genuine, functional STT models on Android
         val AVAILABLE_STT_MODELS = listOf(
             SttModelOption(
                 id = STT_MODEL_GOOGLE_SPEECH,
                 name = "Google Speech Recognizer (Built-in)",
                 tag = "RECOMMENDED • LIVE STREAMING ONLY",
-                description = "Native Android live speech recognition. Ultra-responsive real-time mic stream decoding in Hindi, Hinglish, & English. Zero download needed.",
+                description = "Native Android live speech recognition. Ultra-responsive real-time mic stream decoding in Hindi, Hinglish, & English. Can run offline if offline speech pack is installed in Android Speech Services.",
                 capability = SttCapability.LIVE_ONLY,
                 isRecommended = true,
                 sizeText = "Built-in"
@@ -96,16 +103,6 @@ data class UserPreferences(
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
             ),
             SttModelOption(
-                id = STT_MODEL_CLOUD_GEMINI,
-                name = "Google Gemini 1.5 Flash (Cloud API)",
-                tag = "CLOUD API • LIVE & FILES • HIGHEST ACCURACY",
-                description = "DeepMind Gemini 1.5 Flash audio multimodal API. Transcribes both live audio segments and recorded files with state-of-the-art Hindi/Hinglish accuracy. Requires free API key.",
-                capability = SttCapability.BOTH,
-                isRecommended = false,
-                sizeText = "Cloud API",
-                downloadUrl = "https://aistudio.google.com/app/apikey"
-            ),
-            SttModelOption(
                 id = STT_MODEL_VOSK_EN_IN,
                 name = "Vosk Indian English (Offline – Works on Files)",
                 tag = "OFFLINE • INDIAN ACCENT • 31 MB",
@@ -116,38 +113,28 @@ data class UserPreferences(
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
             ),
             SttModelOption(
-                id = STT_MODEL_WHISPER_TINY,
-                name = "OpenAI Whisper Tiny (Multi-lingual)",
-                tag = "LOCAL MODEL • 39 MB",
-                description = "OpenAI Whisper Tiny quantized encoder-decoder model (39M parameters). Supports 99 languages including Hindi and English for audio files.",
-                capability = SttCapability.FILE_ONLY,
+                id = STT_MODEL_CLOUD_GEMINI,
+                name = "Google Gemini 1.5 Flash (Cloud API)",
+                tag = "CLOUD API • LIVE & FILES • HIGHEST ACCURACY",
+                description = "DeepMind Gemini 1.5 Flash audio multimodal API. Transcribes both live audio segments and recorded files with state-of-the-art Hindi/Hinglish accuracy. Requires free API key.",
+                capability = SttCapability.BOTH,
                 isRecommended = false,
-                sizeText = "39 MB",
-                downloadUrl = "https://huggingface.co/openai/whisper-tiny"
-            ),
-            SttModelOption(
-                id = STT_MODEL_WHISPER_BASE,
-                name = "OpenAI Whisper Base (High Precision)",
-                tag = "LOCAL MODEL • 142 MB",
-                description = "OpenAI Whisper Base model (74M parameters). Higher accuracy on complex domain terminology, noise resilience, and conversational Hindi/Hinglish.",
-                capability = SttCapability.FILE_ONLY,
-                isRecommended = false,
-                sizeText = "142 MB",
-                downloadUrl = "https://huggingface.co/openai/whisper-base"
-            ),
-            SttModelOption(
-                id = STT_MODEL_INDIC_CONFORMER,
-                name = "AI4Bharat IndicConformer (Hindi SOTA)",
-                tag = "INDIC SPECIALIZED • 85 MB",
-                description = "State-of-the-art acoustic conformer model developed by AI4Bharat (IIT Madras). Fine-tuned on thousands of hours of Indian speech datasets.",
-                capability = SttCapability.FILE_ONLY,
-                isRecommended = false,
-                sizeText = "85 MB",
-                downloadUrl = "https://github.com/AI4Bharat/indicwav2vec"
+                sizeText = "Cloud API",
+                downloadUrl = "https://aistudio.google.com/app/apikey"
             )
         )
 
+        // Genuine AI models for Task & Note Extraction
         val AVAILABLE_AI_MODELS = listOf(
+            AiModelOption(
+                id = AI_MODEL_LOCAL_TINY,
+                name = "On-Device Tiny AI (Built-in)",
+                tag = "RECOMMENDED • OFFLINE 0MB • INSTANT",
+                description = "Lightweight on-device semantic parser. Categorizes into Work, Shopping, Personal & flags Low-Hanging Fruits without any network or model download.",
+                downloadUrl = null,
+                isApi = false,
+                isRecommended = true
+            ),
             AiModelOption(
                 id = AI_MODEL_LOCAL_GEMMA,
                 name = "Google Gemma 2B (On-Device LLM)",
@@ -158,27 +145,9 @@ data class UserPreferences(
                 isRecommended = true
             ),
             AiModelOption(
-                id = AI_MODEL_LOCAL_TINY,
-                name = "On-Device Tiny AI (Built-in)",
-                tag = "RECOMMENDED • OFFLINE 0MB",
-                description = "Lightweight on-device semantic parser. Categorizes into Work, Shopping, Personal & flags Low-Hanging Fruits.",
-                downloadUrl = null,
-                isApi = false,
-                isRecommended = true
-            ),
-            AiModelOption(
-                id = AI_MODEL_LOCAL_LLAMA,
-                name = "Meta Llama 3.2 1B (On-Device LLM)",
-                tag = "LOCAL LLM • 1.1 GB",
-                description = "Meta high-efficiency on-device model for edge reasoning. 100% local on-device inference.",
-                downloadUrl = "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
-                isApi = false,
-                isRecommended = false
-            ),
-            AiModelOption(
                 id = AI_MODEL_CLOUD_GEMINI,
                 name = "Google Gemini 1.5 Flash (Cloud API)",
-                tag = "CLOUD API • OPTIONAL",
+                tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud transcription and summarization if an external Gemini API key is provided.",
                 downloadUrl = "https://aistudio.google.com/app/apikey",
                 isApi = true,
@@ -187,7 +156,7 @@ data class UserPreferences(
             AiModelOption(
                 id = AI_MODEL_CLOUD_OPENAI,
                 name = "OpenAI GPT-4o-mini (Cloud API)",
-                tag = "CLOUD API • OPTIONAL",
+                tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud API for task extraction with an OpenAI API key.",
                 downloadUrl = "https://platform.openai.com/api-keys",
                 isApi = true,
@@ -253,11 +222,6 @@ data class UserPreferences(
                 STT_MODEL_VOSK_HINDI -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
                 STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
                 STT_MODEL_CLOUD_GEMINI -> cloudApiKey.isNotBlank()
-                STT_MODEL_WHISPER_TINY, STT_MODEL_WHISPER_BASE, STT_MODEL_INDIC_CONFORMER -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists() ||
-                    com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
-                }
                 else -> false
             }
         }
@@ -277,8 +241,7 @@ data class UserPreferences(
                 }
                 AI_MODEL_LOCAL_LLAMA -> {
                     downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists()
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists()
                 }
                 AI_MODEL_CLOUD_GEMINI, AI_MODEL_CLOUD_OPENAI -> cloudApiKey.isNotBlank()
                 else -> false

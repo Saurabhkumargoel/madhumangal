@@ -21,8 +21,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
@@ -40,12 +46,17 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.draw.clip
+import com.echo.recorder.data.SettingsMode
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -114,6 +125,24 @@ fun SettingsTab(
     var expandedSttModelId by remember { mutableStateOf<String?>(null) }
     var expandedAiModelId by remember { mutableStateOf<String?>(null) }
 
+    // Smart vs. Advanced Modes Management
+    val currentGlobalMode = userPreferences.settingsMode
+    val sectionAdvancedOverrides = remember { mutableStateMapOf<String, Boolean>() }
+    fun isSectionAdvanced(key: String): Boolean =
+        (currentGlobalMode == SettingsMode.ADVANCED) || (sectionAdvancedOverrides[key] == true)
+
+    // Manual Model ZIP file picker launcher
+    var targetImportModelId by remember { mutableStateOf<String?>(null) }
+    val zipPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null && targetImportModelId != null) {
+            viewModel.importModelZipFromUri(uri, targetImportModelId!!) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -135,6 +164,105 @@ fun SettingsTab(
         Spacer(modifier = Modifier.height(16.dp))
 
         // =========================================================================
+        // GLOBAL MODE SELECTOR: SMART (Automated) vs ADVANCED (Full Control)
+        // =========================================================================
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = SurfaceDark,
+            border = BorderStroke(1.dp, CardBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val isSmart = currentGlobalMode == SettingsMode.SMART
+                    // Smart Mode Button
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSmart) PrimaryBlue else Color.Transparent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                viewModel.updateSettingsMode(SettingsMode.SMART)
+                                Toast.makeText(context, "⚡ Smart Mode: Automated & minimal manual work", Toast.LENGTH_SHORT).show()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = if (isSmart) DarkBackground else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Smart Mode",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSmart) DarkBackground else TextSecondary,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
+                    // Advanced Mode Button
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (!isSmart) Color(0xFF8B5CF6) else Color.Transparent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                viewModel.updateSettingsMode(SettingsMode.ADVANCED)
+                                Toast.makeText(context, "🛠️ Advanced Mode: Granular knobs & diagnostic tools revealed", Toast.LENGTH_SHORT).show()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = if (!isSmart) Color.White else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Advanced Mode",
+                                fontWeight = FontWeight.Bold,
+                                color = if (!isSmart) Color.White else TextSecondary,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (currentGlobalMode == SettingsMode.SMART)
+                        "⚡ Smart Mode: Automated downloads and zero-friction setup. On auto-download failure, sections switch to Advanced automatically."
+                    else
+                        "🛠️ Advanced Mode: Full control, manual model ZIP imports, custom mirror URLs, audio telemetry, and model export tools.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (currentGlobalMode == SettingsMode.SMART) PrimaryBlue.copy(alpha = 0.9f) else Color(0xFFC4B5FD),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // =========================================================================
         // FLOW STEP 1: STORAGE & DIRECTORY LOCATIONS (Default: Download/App data/poc/yesboss)
         // =========================================================================
         Card(
@@ -144,19 +272,30 @@ fun SettingsTab(
             border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Folder, contentDescription = "Storage", tint = PrimaryBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "1. Storage & Directory Locations",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                val isStorageAdvanced = isSectionAdvanced("storage")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Folder, contentDescription = "Storage", tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "1. Storage & Locations",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SectionModePill(
+                        isAdvanced = isStorageAdvanced,
+                        onToggle = { sectionAdvancedOverrides["storage"] = !isStorageAdvanced }
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Default base path for audio chunks, transcription markdown files, AI notes, and logs:",
+                    text = "Standard path for audio chunks, transcription markdown files, AI notes, models, and logs:",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -191,34 +330,37 @@ fun SettingsTab(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                // If in Advanced Mode: show individual directory breakdowns
+                AnimatedVisibility(visible = isStorageAdvanced) {
+                    Column(modifier = Modifier.padding(top = 10.dp)) {
+                        val folderDestinations = listOf(
+                            Triple("Audio Files (.wav)", "audio/", userPreferences.audioFolderPath),
+                            Triple("Transcriptions (.md)", "transcriptions/", userPreferences.transcriptionFolderPath),
+                            Triple("AI Notes & Action Items", "notes/", userPreferences.notesFolderPath),
+                            Triple("Offline Models & Weights", "models/", ""),
+                            Triple("Session Logs (.log)", "logs/", userPreferences.logsFolderPath)
+                        )
 
-                // Folder destination chips
-                val folderDestinations = listOf(
-                    Triple("Audio Files (.wav)", "audio/", userPreferences.audioFolderPath),
-                    Triple("Transcriptions (.md, .txt)", "transcriptions/", userPreferences.transcriptionFolderPath),
-                    Triple("AI Notes & Action Items", "notes/", userPreferences.notesFolderPath),
-                    Triple("Session Logs (.log)", "logs/", userPreferences.logsFolderPath)
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    folderDestinations.forEach { (label, subpath, custom) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "• $label:",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
-                            Text(
-                                text = if (custom.isNotBlank()) custom else subpath,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
-                            )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            folderDestinations.forEach { (label, subpath, custom) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "• $label:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                    Text(
+                                        text = if (custom.isNotBlank()) custom else subpath,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlue
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -258,7 +400,7 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Export / Migrate Media Button
+                // Export / Migrate Media & Models Button
                 val isExporting by viewModel.isExporting.collectAsState()
 
                 Button(
@@ -279,11 +421,73 @@ fun SettingsTab(
                             color = DarkBackground
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Exporting & Moving Media...", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Exporting & Moving Media & Models...", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     } else {
                         Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp), tint = DarkBackground)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Export All Previous Media to Selected Location", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Export All Media & Models to Public Storage", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
+                // Advanced Model Export Options (Revealed in Advanced Mode)
+                AnimatedVisibility(visible = isStorageAdvanced) {
+                    Column(modifier = Modifier.padding(top = 10.dp)) {
+                        Text(
+                            text = "🛠️ Dedicated Model Export & Maintenance:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFC4B5FD)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.exportModelsDirectory { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export Models", fontSize = 11.sp, color = PrimaryBlue)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.exportModelsZip { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Archive, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export ZIP", fontSize = 11.sp, color = AccentPurple)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val cleaned = AppStorageManager.cleanupWasteModels(context)
+                                Toast.makeText(context, "Cleaned up $cleaned obsolete model stubs.", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp), tint = ActiveRed)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clean Obsolete Model Stubs", fontSize = 11.sp, color = ActiveRed)
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -308,14 +512,25 @@ fun SettingsTab(
             border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.GraphicEq, contentDescription = "Audio", tint = PrimaryBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "2. Audio Recording & Chunking",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                val isAudioAdvanced = isSectionAdvanced("audio")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.GraphicEq, contentDescription = "Audio", tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "2. Audio Recording & Chunking",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SectionModePill(
+                        isAdvanced = isAudioAdvanced,
+                        onToggle = { sectionAdvancedOverrides["audio"] = !isAudioAdvanced }
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -327,34 +542,49 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Audio Quality (8 kHz default)
-                Text(text = "Audio Sample Rate (Quality)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(8.dp))
-                val qualityOptions = listOf(
-                    Triple(UserPreferences.QUALITY_TINIEST, "8 kHz", "Tiniest"),
-                    Triple(UserPreferences.QUALITY_SPEECH, "16 kHz", "Speech"),
-                    Triple(UserPreferences.QUALITY_STANDARD, "22 kHz", "Standard"),
-                    Triple(UserPreferences.QUALITY_HIGH, "44 kHz", "High")
-                )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    qualityOptions.forEach { (rate, label, desc) ->
-                        val isSelected = userPreferences.sampleRate == rate
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { viewModel.updateSampleRate(rate) }
-                        ) {
-                            Column(modifier = Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(text = label, fontWeight = FontWeight.Bold, color = if (isSelected) DarkBackground else TextPrimary, fontSize = 12.sp)
-                                Text(text = desc, color = if (isSelected) DarkBackground.copy(alpha = 0.8f) else TextMuted, fontSize = 10.sp)
+                // Audio Quality (8 kHz default in Smart Mode; full matrix in Advanced Mode)
+                if (isAudioAdvanced) {
+                    Text(text = "Audio Sample Rate (Quality)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val qualityOptions = listOf(
+                        Triple(UserPreferences.QUALITY_TINIEST, "8 kHz", "Tiniest"),
+                        Triple(UserPreferences.QUALITY_SPEECH, "16 kHz", "Speech"),
+                        Triple(UserPreferences.QUALITY_STANDARD, "22 kHz", "Standard"),
+                        Triple(UserPreferences.QUALITY_HIGH, "44 kHz", "High")
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        qualityOptions.forEach { (rate, label, desc) ->
+                            val isSelected = userPreferences.sampleRate == rate
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { viewModel.updateSampleRate(rate) }
+                            ) {
+                                Column(modifier = Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = label, fontWeight = FontWeight.Bold, color = if (isSelected) DarkBackground else TextPrimary, fontSize = 12.sp)
+                                    Text(text = desc, color = if (isSelected) DarkBackground.copy(alpha = 0.8f) else TextMuted, fontSize = 10.sp)
+                                }
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "⚡ Optimized: ${userPreferences.sampleRate / 1000} kHz Speech Rate (Switch to Advanced for 16-44 kHz)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PrimaryBlue,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
 
                 // Buffer Length Slider (Smaller Chunks)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -438,19 +668,30 @@ fun SettingsTab(
             border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.SmartToy, contentDescription = "STT", tint = PrimaryBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "3. Transcription Models & Model Download",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                val isSttAdvanced = isSectionAdvanced("stt_models")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.SmartToy, contentDescription = "STT", tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "3. Transcription Models & Download",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SectionModePill(
+                        isAdvanced = isSttAdvanced,
+                        onToggle = { sectionAdvancedOverrides["stt_models"] = !isSttAdvanced }
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Select your voice-to-text model. Models are automatically filtered based on your recording mode (Live vs File).",
+                    text = "Select voice model. Auto-downloads from source by default; switches to manual options on error.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -665,6 +906,10 @@ fun SettingsTab(
                                                                     downloadingProgress.remove(modelOption.id)
                                                                     if (success) {
                                                                         Toast.makeText(context, "${modelOption.name} installed successfully!", Toast.LENGTH_SHORT).show()
+                                                                    } else {
+                                                                        // Auto-fail: switch section to Advanced mode to reveal manual options
+                                                                        sectionAdvancedOverrides["stt_models"] = true
+                                                                        Toast.makeText(context, "⚠️ Auto-download failed. Switched to Advanced Mode for manual download & import options.", Toast.LENGTH_LONG).show()
                                                                     }
                                                                 }
                                                             )
@@ -707,13 +952,91 @@ fun SettingsTab(
                                                     color = PrimaryBlue
                                                 )
                                             }
+
+                                            // Manual Fallback Controls (Revealed when in Advanced Mode or upon Auto-Download Failure)
+                                            if (isSttAdvanced && !isDownloaded && modelOption.id != UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                    border = BorderStroke(1.dp, CardBorder),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Column(modifier = Modifier.padding(10.dp)) {
+                                                        Text(
+                                                            text = "🛠️ Manual Fallback Options (Advanced):",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFFC4B5FD)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            if (!modelOption.downloadUrl.isNullOrEmpty()) {
+                                                                OutlinedButton(
+                                                                    onClick = {
+                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(modelOption.downloadUrl))
+                                                                        context.startActivity(intent)
+                                                                    },
+                                                                    modifier = Modifier.weight(1f),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text("Open Browser Link", fontSize = 11.sp, color = PrimaryBlue)
+                                                                }
+                                                            }
+
+                                                            OutlinedButton(
+                                                                onClick = {
+                                                                    targetImportModelId = modelOption.id
+                                                                    zipPickerLauncher.launch("application/zip")
+                                                                },
+                                                                modifier = Modifier.weight(1f),
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                            ) {
+                                                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFC4B5FD))
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Text("Import Model ZIP", fontSize = 11.sp, color = Color(0xFFC4B5FD))
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         } else {
-                                            Text(
-                                                text = "Google Speech streams live microphone voice. For transcribing saved chunk files offline, select Vosk Hindi or Gemini Flash.",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = TextMuted,
-                                                fontSize = 11.sp
-                                            )
+                                            Column {
+                                                Text(
+                                                    text = "Google Speech streams live microphone voice. For transcribing saved chunk files offline, select Vosk Hindi or Gemini Flash.",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = TextMuted,
+                                                    fontSize = 11.sp
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        try {
+                                                            val intent = Intent("android.settings.VOICE_INPUT_SETTINGS")
+                                                            context.startActivity(intent)
+                                                        } catch (e: Exception) {
+                                                            try {
+                                                                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                                                            } catch (_: Exception) {
+                                                                Toast.makeText(context, "Open Android Settings -> Voice Input", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                ) {
+                                                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("📱 Download Android Offline Speech Packs", fontSize = 11.sp, color = PrimaryBlue)
+                                                }
+                                            }
                                         }
 
                                         Spacer(modifier = Modifier.height(12.dp))
@@ -773,14 +1096,25 @@ fun SettingsTab(
             border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Psychology, contentDescription = "AI", tint = AccentPurple)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "4. AI Task & Notes Extractor Model",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                val isAiAdvanced = isSectionAdvanced("ai_models")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Psychology, contentDescription = "AI", tint = AccentPurple)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "4. AI Task & Notes Extractor Model",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SectionModePill(
+                        isAdvanced = isAiAdvanced,
+                        onToggle = { sectionAdvancedOverrides["ai_models"] = !isAiAdvanced }
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -1023,9 +1357,7 @@ fun SettingsTab(
                                                                 lineHeight = 16.sp
                                                             )
 
-                                                            Spacer(modifier = Modifier.height(10.dp))
-
-                                                            if (!isDeployed && !isDeploying) {
+                                                                                  if (!isDeployed && !isDeploying) {
                                                                 Button(
                                                                     onClick = {
                                                                         downloadingProgress[modelOption.id] = 0.1f
@@ -1035,6 +1367,11 @@ fun SettingsTab(
                                                                             onComplete = { success, msg ->
                                                                                 downloadingProgress.remove(modelOption.id)
                                                                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                                if (!success) {
+                                                                                    // Auto-fail: switch section to Advanced mode
+                                                                                    sectionAdvancedOverrides["ai_models"] = true
+                                                                                    Toast.makeText(context, "⚠️ Auto-deploy failed. Switched to Advanced Mode for manual GGUF import.", Toast.LENGTH_LONG).show()
+                                                                                }
                                                                             }
                                                                         )
                                                                     },
@@ -1087,194 +1424,58 @@ fun SettingsTab(
                                                                 }
                                                             }
 
-                                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween
-                                                            ) {
-                                                                OutlinedButton(
-                                                                    onClick = {
-                                                                        val opened = AppStorageManager.openFolderWithIntent(context, modelsDir)
-                                                                        if (!opened) {
-                                                                            Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
-                                                                        }
-                                                                    },
-                                                                    shape = RoundedCornerShape(8.dp),
-                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text("Open Models Folder", fontSize = 11.sp, color = TextSecondary)
-                                                                }
-
-                                                                OutlinedButton(
-                                                                    onClick = {
-                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/google/gemma-2-2b-it"))
-                                                                        context.startActivity(intent)
-                                                                    },
-                                                                    shape = RoundedCornerShape(8.dp),
-                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text("HuggingFace Repo", fontSize = 11.sp, color = AccentPurple)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Unique UI for Local Llama 3.2 1B
-                                            UserPreferences.AI_MODEL_LOCAL_LLAMA -> {
-                                                val isDeployed = userPreferences.downloadedModels.contains(modelOption.id)
-                                                val isDeploying = downloadingProgress.containsKey(modelOption.id)
-                                                val deployProgress = downloadingProgress[modelOption.id] ?: 0f
-                                                val modelsDir = AppStorageManager.getModelsDirectory(context)
-
-                                                Column(modifier = Modifier.padding(top = 4.dp)) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        color = DarkBackground,
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    ) {
-                                                        Column(modifier = Modifier.padding(12.dp)) {
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Text("Meta Llama 3.2 1B (Local LLM)", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+                                                            // Advanced Manual Options for Gemma 2B
+                                                            if (isAiAdvanced) {
+                                                                Spacer(modifier = Modifier.height(10.dp))
                                                                 Surface(
-                                                                    shape = RoundedCornerShape(6.dp),
-                                                                    color = if (isDeployed) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
-                                                                ) {
-                                                                    Text(
-                                                                        text = if (isDeployed) "✅ Deployed & Active" else "🟡 Ready to Deploy",
-                                                                        color = if (isDeployed) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        fontSize = 11.sp,
-                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                    )
-                                                                }
-                                                            }
-
-                                                            Spacer(modifier = Modifier.height(8.dp))
-                                                            Text(
-                                                                text = "📖 On-Device Deployment Instructions:",
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = AccentPurple
-                                                            )
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Text(
-                                                                text = "1. Download the quantized weights: Llama-3.2-1B-Instruct-Q4_K_M.gguf (~1.1 GB) from Meta's HuggingFace repository.\n" +
-                                                                        "2. Place the .gguf file into your device models folder:\n" +
-                                                                        "   Download/App data/poc/yesboss/models/llama-3.2-1b-instruct.gguf\n" +
-                                                                        "3. Tap 'Auto-Deploy On-Device Engine' below to mount and initialize the local weights for 100% offline task intelligence.",
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                fontSize = 11.sp,
-                                                                color = TextSecondary,
-                                                                lineHeight = 16.sp
-                                                            )
-
-                                                            Spacer(modifier = Modifier.height(10.dp))
-
-                                                            if (!isDeployed && !isDeploying) {
-                                                                Button(
-                                                                    onClick = {
-                                                                        downloadingProgress[modelOption.id] = 0.1f
-                                                                        viewModel.deployLocalAiModel(
-                                                                            modelId = modelOption.id,
-                                                                            onProgress = { p -> downloadingProgress[modelOption.id] = p },
-                                                                            onComplete = { success, msg ->
-                                                                                downloadingProgress.remove(modelOption.id)
-                                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                                            }
-                                                                        )
-                                                                    },
-                                                                    modifier = Modifier.fillMaxWidth(),
                                                                     shape = RoundedCornerShape(10.dp),
-                                                                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                                    border = BorderStroke(1.dp, CardBorder),
+                                                                    modifier = Modifier.fillMaxWidth()
                                                                 ) {
-                                                                    Icon(Icons.Default.Download, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
-                                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                                    Text("📥 Auto-Deploy On-Device Engine", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkBackground)
-                                                                }
-                                                            } else if (isDeploying) {
-                                                                Row(
-                                                                    modifier = Modifier.fillMaxWidth(),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.Center
-                                                                ) {
-                                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentPurple)
-                                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                                    Text("Deploying Llama on device ${(deployProgress * 100).toInt()}%...", fontSize = 12.sp, color = AccentPurple)
-                                                                }
-                                                            } else {
-                                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                                    Surface(
-                                                                        shape = RoundedCornerShape(8.dp),
-                                                                        color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                                                        modifier = Modifier.weight(1f)
-                                                                    ) {
+                                                                    Column(modifier = Modifier.padding(10.dp)) {
                                                                         Text(
-                                                                            text = "⚡ Local Llama 3.2 engine running offline with zero API calls.",
+                                                                            text = "🛠️ Manual Setup & Diagnostic Links (Advanced):",
                                                                             style = MaterialTheme.typography.labelSmall,
-                                                                            color = Color(0xFF10B981),
-                                                                            modifier = Modifier.padding(8.dp),
-                                                                            fontSize = 11.sp
+                                                                            fontWeight = FontWeight.Bold,
+                                                                            color = Color(0xFFC4B5FD)
                                                                         )
-                                                                    }
-                                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                                    OutlinedButton(
-                                                                        onClick = {
-                                                                            viewModel.deleteModel(modelOption.id)
-                                                                            Toast.makeText(context, "Undeployed Llama 3.2", Toast.LENGTH_SHORT).show()
-                                                                        },
-                                                                        shape = RoundedCornerShape(8.dp),
-                                                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                                    ) {
-                                                                        Icon(Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        Text("Reset", fontSize = 11.sp, color = ActiveRed)
-                                                                    }
-                                                                }
-                                                            }
+                                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                                        Row(
+                                                                            modifier = Modifier.fillMaxWidth(),
+                                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                        ) {
+                                                                            OutlinedButton(
+                                                                                onClick = {
+                                                                                    val opened = AppStorageManager.openFolderWithIntent(context, modelsDir)
+                                                                                    if (!opened) {
+                                                                                        Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
+                                                                                    }
+                                                                                },
+                                                                                modifier = Modifier.weight(1f),
+                                                                                shape = RoundedCornerShape(8.dp),
+                                                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                                            ) {
+                                                                                Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                                Text("Open Models Folder", fontSize = 11.sp, color = TextSecondary)
+                                                                            }
 
-                                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween
-                                                            ) {
-                                                                OutlinedButton(
-                                                                    onClick = {
-                                                                        val opened = AppStorageManager.openFolderWithIntent(context, modelsDir)
-                                                                        if (!opened) {
-                                                                            Toast.makeText(context, "Models folder: ${modelsDir.absolutePath}", Toast.LENGTH_LONG).show()
+                                                                            OutlinedButton(
+                                                                                onClick = {
+                                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/google/gemma-2-2b-it"))
+                                                                                    context.startActivity(intent)
+                                                                                },
+                                                                                modifier = Modifier.weight(1f),
+                                                                                shape = RoundedCornerShape(8.dp),
+                                                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                                            ) {
+                                                                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
+                                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                                Text("HuggingFace Repo", fontSize = 11.sp, color = AccentPurple)
+                                                                            }
                                                                         }
-                                                                    },
-                                                                    shape = RoundedCornerShape(8.dp),
-                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text("Open Models Folder", fontSize = 11.sp, color = TextSecondary)
-                                                                }
-
-                                                                OutlinedButton(
-                                                                    onClick = {
-                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct"))
-                                                                        context.startActivity(intent)
-                                                                    },
-                                                                    shape = RoundedCornerShape(8.dp),
-                                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentPurple)
-                                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                                    Text("Meta HF Repo", fontSize = 11.sp, color = AccentPurple)
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -1369,14 +1570,25 @@ fun SettingsTab(
             border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Terminal, contentDescription = "Logs", tint = PrimaryBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "5. Session Logs & Diagnostics",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                val isLogsAdvanced = isSectionAdvanced("logs")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Terminal, contentDescription = "Logs", tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "5. Session Logs & Diagnostics",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SectionModePill(
+                        isAdvanced = isLogsAdvanced,
+                        onToggle = { sectionAdvancedOverrides["logs"] = !isLogsAdvanced }
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -1388,7 +1600,8 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                val sessionFile = remember { AppLogger.getCurrentSessionFile() }
+                var activeSessionName by remember { mutableStateOf(AppLogger.getCurrentSessionFile()?.name ?: "session_active.log") }
+                val sessionFile = remember(activeSessionName) { AppLogger.getCurrentSessionFile() }
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -1396,14 +1609,14 @@ fun SettingsTab(
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(text = "Active Session File:", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                        Text(text = sessionFile?.name ?: "session_active.log", fontWeight = FontWeight.Bold, color = PrimaryBlue, fontSize = 12.sp)
+                        Text(text = sessionFile?.name ?: activeSessionName, fontWeight = FontWeight.Bold, color = PrimaryBlue, fontSize = 12.sp)
                         Text(text = sessionFile?.absolutePath ?: "Download/App data/poc/yesboss/logs/", color = TextMuted, fontSize = 10.sp)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
                             val fileToShare = AppLogger.getLogFile()
@@ -1423,11 +1636,12 @@ fun SettingsTab(
                                 Toast.makeText(context, "No log file to share yet", Toast.LENGTH_SHORT).show()
                             }
                         },
+                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Share Log File", fontSize = 12.sp, color = PrimaryBlue)
+                        Text("Share Log", fontSize = 12.sp, color = PrimaryBlue)
                     }
 
                     OutlinedButton(
@@ -1435,11 +1649,69 @@ fun SettingsTab(
                             AppLogger.clearLogs()
                             Toast.makeText(context, "Logs cleared", Toast.LENGTH_SHORT).show()
                         },
+                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp), tint = ActiveRed)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Clear Logs", fontSize = 12.sp, color = ActiveRed)
+                    }
+                }
+
+                // Advanced Log Tools
+                if (isLogsAdvanced) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, CardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "🛠️ Advanced Log Management:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFC4B5FD)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        AppLogger.startNewSession(context)
+                                        activeSessionName = AppLogger.getCurrentSessionFile()?.name ?: "session_new.log"
+                                        Toast.makeText(context, "Created new active session log file!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(14.dp), tint = PrimaryBlue)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Session", fontSize = 11.sp, color = PrimaryBlue)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val logsDir = AppStorageManager.getLogsDirectory(context, userPreferences.logsFolderPath)
+                                        val opened = AppStorageManager.openFolderWithIntent(context, logsDir)
+                                        if (!opened) {
+                                            Toast.makeText(context, "Logs directory: ${logsDir.absolutePath}", Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp), tint = TextSecondary)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Open Logs Dir", fontSize = 11.sp, color = TextSecondary)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1498,6 +1770,43 @@ fun SettingsTab(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Granular Section Mode Pill Badge
+ * Allows user to toggle individual sections between Smart and Advanced mode
+ */
+@Composable
+fun SectionModePill(
+    isAdvanced: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (isAdvanced) Color(0xFF8B5CF6).copy(alpha = 0.15f) else PrimaryBlue.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, if (isAdvanced) Color(0xFF8B5CF6).copy(alpha = 0.5f) else PrimaryBlue.copy(alpha = 0.5f)),
+        modifier = modifier.clickable { onToggle() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (isAdvanced) Icons.Default.Tune else Icons.Default.Bolt,
+                contentDescription = null,
+                tint = if (isAdvanced) Color(0xFFC4B5FD) else PrimaryBlue,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (isAdvanced) "Advanced" else "Smart",
+                color = if (isAdvanced) Color(0xFFC4B5FD) else PrimaryBlue,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

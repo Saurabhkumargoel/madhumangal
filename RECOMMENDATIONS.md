@@ -415,6 +415,55 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 #### Automated Prevention
 - UI unit tests asserting that touching a model item in Settings does not modify `selectedSttModel` unless its requirements are met and the "Use" button is clicked.
 
+## ⚡ Mistake #11: Non-Functional Model Stubs, Lack of Auto-Download from Source, Missing Model Export/Backup, and Monolithic Settings Instead of Smart vs. Advanced Modes
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Retention of Non-Functional Model Stubs:** Keeping placeholder models (`whisper_tiny`, `whisper_base`, `indic_conformer`, `local_llama`) in the options list caused confusion because they lacked functional inference runtimes, produced dummy files, and failed during real-world file transcription.
+2. **Missing Automated Source Downloads:** Models previously expected manual setup or external folder placement instead of automatically downloading and extracting from official source repositories on first tap.
+3. **Missing Model Export & Backup:** Downloaded model weights were trapped in internal app storage with no capability to export/backup them to public storage (`Download/App data/poc/yesboss/models/`) or export them as a compressed `.zip` file for safekeeping across reinstalls.
+4. **Monolithic Settings UI:** Settings presented all granular technical controls at once instead of offering a **Smart Mode** (automated, zero-friction, minimal manual work) and an **Advanced Mode** (granular knobs, manual model ZIP imports, custom mirror URLs, and diagnostics).
+5. **Lack of Auto-Fail to Advanced:** When an automated download or setup failed, the app previously displayed generic error toasts without immediately exposing manual fallback tools (direct browser links, manual ZIP file picker, mirror URLs).
+6. **Confusion Regarding Google Offline Speech vs. Gemma:** Google's official Android voice apps run offline by leveraging Android system-level offline speech recognition packs (`android.settings.VOICE_INPUT_SETTINGS`) and on-device models, not on-device Gemma for raw speech-to-text. The app lacked direct intent shortcuts to configure these Android system speech packs.
+
+#### What AI Did Wrong
+- Kept non-functional stub model definitions in `UserPreferences.AVAILABLE_STT_MODELS` and `AVAILABLE_AI_MODELS`.
+- Did not implement automated background downloading with direct ZIP extraction for offline models.
+- Omitted model directory migration and export tools in `AppStorageManager`.
+- Built a single static Settings layout instead of a dual Smart/Advanced system with granular per-section mode switches and automatic failure fallback.
+
+#### What User Did Wrong / Communication Gap
+- Retained obsolete model requests before clarifying that GoodEcho/YesBoss's primary core purpose is continuous daily audio listening to capture tasks, reminders, and notes; intermediate text representation is disposable if it blocks this core goal.
+
+#### How It Was Fixed
+1. **Pruned Waste Model Stubs & Added Automated Cleanup (`UserPreferences.kt` & `AppStorageManager.kt`):**
+   - Removed non-functional stubs (`whisper_tiny`, `whisper_base`, `indic_conformer`, `local_llama`).
+   - Kept proven, production-grade offline engines: Vosk Hindi (`vosk_hindi`, 45MB), Vosk Indian English (`vosk_en_in`, 31MB), Google Speech Recognizer (`google_speech`), Cloud Gemini (`cloud_gemini`), Local Gemma 2B (`local_gemma`), and Built-in 0MB Semantic Engine (`local_tiny`).
+   - Implemented `AppStorageManager.cleanupWasteModels()` which automatically identifies and removes dummy `.bin` stubs (<10KB) without harming real weights.
+2. **Automated Source Downloads with Direct Extraction (`MainViewModel.kt`):**
+   - Integrated automated downloading via `HttpURLConnection` streaming with progress callbacks and automatic ZIP unzipping into target model directories (`model-hi/` and `model-en-in/`).
+3. **Comprehensive Model Export & Backup Tools (`AppStorageManager.kt`):**
+   - Added **Export Models Directory**: Recursively copies all model weight files to public storage (`Download/App data/poc/yesboss/models/`).
+   - Added **Export Models ZIP**: Packages all installed model directories into `yesboss_models_backup_[timestamp].zip` in the public models folder.
+   - Updated `exportAllMediaToCurrentLocation` to include models migration alongside audio, transcriptions, notes, and logs.
+4. **Smart vs. Advanced Dual-Mode Architecture (`SettingsTab.kt` & `PreferencesRepository.kt`):**
+   - Added `SettingsMode` enum (`SMART`, `ADVANCED`) persisted in DataStore.
+   - Global header toggle switching between **⚡ Smart Mode** (automated zero-friction setup) and **🛠️ Advanced Mode** (reveals manual file pickers, mirror URLs, and export tools).
+   - Added granular `SectionModePill` badges to each section (Storage, Audio, STT Models, AI Models, Logs), allowing users to switch individual sections to Advanced independently.
+5. **Auto-Fail Switch to Advanced Mode (`SettingsTab.kt`):**
+   - On automated download or deployment failure, the section's mode automatically flips to Advanced (`sectionAdvancedOverrides[key] = true`).
+   - Instantly reveals manual options: "Open Browser Link" and "Import Model ZIP" (using `ActivityResultContracts.GetContent` file picker).
+6. **Android System Offline Speech Settings Integration (`SettingsTab.kt`):**
+   - Added dedicated button launching `android.settings.VOICE_INPUT_SETTINGS`, enabling users to download offline language packs directly into Android Speech Services for 100% offline Google Speech recognition.
+7. **Expanded Semantic Action Parsing (`TinyAiProcessor.kt`):**
+   - Broadened Hindi, Hinglish, and Indian English action verbs ("chahiye", "milna", "dekhna hai", "bhejna", "mangwana", "transfer", "order", "book") ensuring continuous daily speech is reliably distilled into actionable tasks and reminders.
+
+#### Automated Prevention & Lessons Learned
+- Always implement auto-download from official sources first, followed by an automatic fail-over to manual tools (browser download link and file picker).
+- Ensure any file storage migration or export feature includes models in addition to user data.
+- Decouple basic and advanced options so non-technical users get automated simplicity while power users have full manual control.
+
 ---
 
 *End of Recommendations Document. Maintained automatically per `.agrules`.*

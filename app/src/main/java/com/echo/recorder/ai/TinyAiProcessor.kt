@@ -97,9 +97,10 @@ class TinyAiProcessor {
 
         // Action keywords in Hindi/Hinglish/English
         val actionKeywords = listOf(
-            "karna hai", "karne hai", "karo", "bhoolna mat", "yaad rakhna",
-            "buy", "call", "send", "fix", "clean", "meeting", "submit", "pay",
-            "doodh", "khareedna", "baat karna", "email", "reminder", "todo", "to-do"
+            "karna hai", "karne hai", "karo", "bhoolna mat", "yaad rakhna", "chahiye",
+            "buy", "call", "send", "fix", "clean", "meeting", "submit", "pay", "order", "book",
+            "doodh", "khareedna", "baat karna", "email", "reminder", "todo", "to-do",
+            "bhejna", "dekhna hai", "milna", "jana hai", "mangwana", "transfer", "note"
         )
 
         val hasAction = actionKeywords.any { lower.contains(it) }
