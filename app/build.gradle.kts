@@ -5,6 +5,12 @@ plugins {
     alias(libs.plugins.kotlin.ksp)
 }
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+val buildTimestamp = SimpleDateFormat("yyyy.MM.dd.HHmm", Locale.US).format(Date())
+
 android {
     namespace = "com.echo.recorder"
     compileSdk = 34
@@ -13,8 +19,8 @@ android {
         applicationId = "com.echo.recorder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.0.2026.09.30.0010"
+        versionCode = (System.currentTimeMillis() / 1000).toInt()
+        versionName = "0.0.$buildTimestamp"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
