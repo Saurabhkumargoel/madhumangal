@@ -85,7 +85,15 @@ import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.theme.TextPrimary
 import com.echo.recorder.ui.theme.TextSecondary
 import com.echo.recorder.ui.viewmodel.MainViewModel
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.echo.recorder.ui.components.AbortSessionDialog
+import com.echo.recorder.data.AudioSegment
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RecorderTab(
     viewModel: MainViewModel,
@@ -102,7 +110,36 @@ fun RecorderTab(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var validationError by remember { mutableStateOf<com.echo.recorder.data.ModelValidationResult?>(null) }
+    var showAbortDialog by remember { mutableStateOf(false) }
+    var abortSegments by remember { mutableStateOf<List<AudioSegment>>(emptyList()) }
+
+    fun triggerAbortDialog() {
+        scope.launch {
+            abortSegments = viewModel.getCurrentSessionSegments()
+            showAbortDialog = true
+        }
+    }
+
+    if (showAbortDialog) {
+        AbortSessionDialog(
+            segments = abortSegments,
+            defaultSelectionMode = userPreferences.defaultAbortSelection,
+            onConfirmAbort = { idsToDelete ->
+                showAbortDialog = false
+                viewModel.abortRecordingSession(context, idsToDelete) { count ->
+                    Toast.makeText(
+                        context,
+                        if (userPreferences.appLanguage == "hi") "सत्र निरस्त किया गया। $count फ़ाइलें हटाई गईं।" else "Session aborted. $count audio chunks deleted.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onDismiss = { showAbortDialog = false },
+            isHindi = userPreferences.appLanguage == "hi"
+        )
+    }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -304,17 +341,24 @@ fun RecorderTab(
                         },
                         shape = CircleShape
                     )
-                    .clickable {
-                        if (isServiceRunning) {
-                            viewModel.stopRecordingService(context)
-                        } else {
-                            onStartRecordingAttempt()
+                    .combinedClickable(
+                        onClick = {
+                            if (isServiceRunning) {
+                                viewModel.stopRecordingService(context)
+                            } else {
+                                onStartRecordingAttempt()
+                            }
+                        },
+                        onLongClick = {
+                            if (isServiceRunning) {
+                                triggerAbortDialog()
+                            }
                         }
-                    }
+                    )
             ) {
                 Icon(
                     imageVector = if (isServiceRunning) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = if (isServiceRunning) (if (isHindi) "रिकॉर्डिंग रोकें" else "Stop Recording") else (if (isHindi) "रिकॉर्डिंग शुरू करें" else "Start Recording"),
+                    contentDescription = if (isServiceRunning) (if (isHindi) "रिकॉर्डिंग रोकें (निरस्त करने के लिए दबाकर रखें)" else "Stop Recording (Hold to Abort)") else (if (isHindi) "रिकॉर्डिंग शुरू करें" else "Start Recording"),
                     tint = TextPrimary,
                     modifier = Modifier.size(52.dp)
                 )
@@ -323,36 +367,76 @@ fun RecorderTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Explicit Action Button: Clear "STOP" or "START" button
-        Button(
-            onClick = {
-                if (isServiceRunning) {
-                    viewModel.stopRecordingService(context)
-                } else {
-                    onStartRecordingAttempt()
+        // Explicit Action Buttons: Clear STOP / START / ABORT
+        if (isServiceRunning) {
+            Row(
+                modifier = Modifier.fillMaxWidth(0.85f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // STOP Button with Long Press Support
+                Button(
+                    onClick = { viewModel.stopRecordingService(context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = null,
+                        tint = TextPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isHindi) "रोकें" else "STOP",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        fontSize = 14.sp
+                    )
                 }
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isServiceRunning) ActiveRed else PrimaryBlue
-            ),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-                .fillMaxWidth(0.75f)
-                .height(48.dp)
-        ) {
-            Icon(
-                imageVector = if (isServiceRunning) Icons.Default.Stop else Icons.Default.Mic,
-                contentDescription = null,
-                tint = if (isServiceRunning) TextPrimary else DarkBackground,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (isServiceRunning) (if (isHindi) "रिकॉर्डिंग रोकें" else "STOP RECORDING") else (if (isHindi) "रिकॉर्डिंग शुरू करें" else "START RECORDING"),
-                fontWeight = FontWeight.Bold,
-                color = if (isServiceRunning) TextPrimary else DarkBackground,
-                fontSize = 15.sp
-            )
+
+                // Explicit ABORT Button
+                Button(
+                    onClick = { triggerAbortDialog() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7F1D1D)),
+                    border = BorderStroke(1.dp, ActiveRed),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = if (isHindi) "🚫 निरस्त" else "🚫 ABORT",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        } else {
+            Button(
+                onClick = { onStartRecordingAttempt() },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.75f)
+                    .height(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = DarkBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isHindi) "रिकॉर्डिंग शुरू करें" else "START RECORDING",
+                    fontWeight = FontWeight.Bold,
+                    color = DarkBackground,
+                    fontSize = 15.sp
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

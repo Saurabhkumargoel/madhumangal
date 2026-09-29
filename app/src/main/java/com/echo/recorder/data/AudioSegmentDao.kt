@@ -29,4 +29,7 @@ interface AudioSegmentDao {
 
     @Query("SELECT * FROM audio_segments WHERE id = :id LIMIT 1")
     suspend fun getSegmentById(id: Long): AudioSegment?
+
+    @Query("SELECT * FROM audio_segments WHERE sessionId = :sessionId ORDER BY startTimeMillis ASC")
+    suspend fun getSegmentsBySessionId(sessionId: String): List<AudioSegment>
 }

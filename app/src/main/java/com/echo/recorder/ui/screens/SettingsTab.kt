@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Explore
@@ -190,6 +191,13 @@ fun SettingsTab(
     var exportAppearance by remember { mutableStateOf(true) }
     var exportStorage by remember { mutableStateOf(true) }
 
+    // Import JSON Section Checkboxes
+    var importAudio by remember { mutableStateOf(true) }
+    var importStt by remember { mutableStateOf(true) }
+    var importAi by remember { mutableStateOf(true) }
+    var importAppearance by remember { mutableStateOf(true) }
+    var importStorage by remember { mutableStateOf(true) }
+
     // Collapsible Category Section States (Persisted in ViewModel across tab switches)
     var isStorageExpanded by viewModel::isSettingsStorageExpanded
     var isThemesExpanded by viewModel::isSettingsThemesExpanded
@@ -254,8 +262,26 @@ fun SettingsTab(
     }
 
 
+    // JSON Settings file picker launcher
+    val jsonImportPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val content = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                if (!content.isNullOrBlank()) {
+                    importJsonInput = content
+                    Toast.makeText(context, "Loaded JSON from file!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error reading file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     var isGeneralExpanded by remember { mutableStateOf(true) }
     var showApiKey by remember { mutableStateOf(false) }
+    var showHfToken by remember { mutableStateOf(false) }
     var modelToDelete by remember { mutableStateOf<String?>(null) }
 
     if (modelToDelete != null) {
@@ -551,6 +577,299 @@ fun SettingsTab(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // ── 📜 Log File Extension Selector ───────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = PrimaryBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "लॉग एक्सटेंशन" else "Log Extension",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf("log", "txt", "md").forEach { ext ->
+                                        val isSelected = userPreferences.logFileExtension.equals(ext, ignoreCase = true)
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                            modifier = Modifier.clickable {
+                                                viewModel.updateLogFileExtension(ext)
+                                                Toast.makeText(context, if (isHindi) "लॉग एक्सटेंशन: .$ext" else "Log extension set to .$ext", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Text(
+                                                text = ".$ext",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) DarkBackground else TextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 🎙️ Recorder Layout Mode Selector ──────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.GraphicEq,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "रिकॉर्डर लेआउट" else "Recorder Layout",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf(
+                                        Triple("BOTH_TABS", "Dual (Both)", "दोनों"),
+                                        Triple("BOTTOM_MEDIA_ONLY", "Media Bottom", "मीडिया नीचे"),
+                                        Triple("DEDICATED_TAB_ONLY", "Tab Only", "केवल टैब")
+                                    ).forEach { (mode, engLabel, hiLabel) ->
+                                        val isSelected = userPreferences.recorderLayoutMode == mode
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    viewModel.updateRecorderLayoutMode(mode)
+                                                    Toast.makeText(context, if (isHindi) "रिकॉर्डर लेआउट: $hiLabel" else "Recorder layout: $engLabel", Toast.LENGTH_SHORT).show()
+                                                }
+                                        ) {
+                                            Text(
+                                                text = if (isHindi) hiLabel else engLabel,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) DarkBackground else TextPrimary,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                modifier = Modifier.padding(vertical = 5.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── ⏹️ Default Abort Selection Mode ───────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteSweep,
+                                        contentDescription = null,
+                                        tint = ActiveRed,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "एबॉर्शन डिफ़ॉल्ट" else "Default Abort",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        Triple("ALL_FILES", "All Chunks", "सभी फ़ाइलें"),
+                                        Triple("LAST_FILE_ONLY", "Last Only", "केवल अंतिम")
+                                    ).forEach { (opt, engLabel, hiLabel) ->
+                                        val isSelected = userPreferences.defaultAbortSelection == opt
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) ActiveRed.copy(alpha = 0.2f) else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isSelected) ActiveRed else CardBorder),
+                                            modifier = Modifier.clickable {
+                                                viewModel.updateDefaultAbortSelection(opt)
+                                                Toast.makeText(context, if (isHindi) "डिफ़ॉल्ट एबॉर्शन: $hiLabel" else "Default abort: $engLabel", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Text(
+                                                text = if (isHindi) hiLabel else engLabel,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) ActiveRed else TextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 📑 Navigation Tabs Visibility Toggles (Advanced Mode) ──────
+                        if (userPreferences.settingsMode == SettingsMode.ADVANCED) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    // Show Logs Tab Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = if (isHindi) "📜 लॉग्स टैब दिखाएं" else "📜 Show Logs Tab",
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                text = if (isHindi) "सिस्टम और डेवलपर लॉग देखने के लिए नेविगेशन बार में" else "Include System & AI Logs in bottom navigation bar",
+                                                fontSize = 10.sp,
+                                                color = TextMuted
+                                            )
+                                        }
+                                        Switch(
+                                            checked = userPreferences.showLogsTab,
+                                            onCheckedChange = { viewModel.updateShowLogsTab(it) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // Show Ask AI Tab Toggle
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = if (isHindi) "✨ आस्क एआई टैब दिखाएं" else "✨ Show Ask AI Tab",
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                text = if (isHindi) "ऑफ़लाइन एलएलएम चैट इंटरफ़ेस नेविगेशन बार में" else "Include Ask AI chatbot in bottom navigation bar",
+                                                fontSize = 10.sp,
+                                                color = TextMuted
+                                            )
+                                        }
+                                        Switch(
+                                            checked = userPreferences.showAiTab,
+                                            onCheckedChange = { viewModel.updateShowAiTab(it) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = AccentPurple)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 🔑 Hugging Face Access Token Input ────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Key,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "हगिंग फेस एक्सेस टोकन" else "Hugging Face Access Token",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Text(
+                                    text = if (isHindi) "Google Gemma जैसे लाइसेंस-स्वीकृत मॉडलों को डाउनलोड करने के लिए टोकन आवश्यक है।" else "Required to authorize downloads for gated models like Google Gemma 2 / 3.",
+                                    fontSize = 10.sp,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                OutlinedTextField(
+                                    value = userPreferences.huggingFaceToken,
+                                    onValueChange = { viewModel.updateHuggingFaceToken(it) },
+                                    label = { Text("HF Token (hf_...)", fontSize = 11.sp) },
+                                    placeholder = { Text("hf_xxxxxxxxxxxxxxxxxxxxxx", fontSize = 11.sp) },
+                                    visualTransformation = if (showHfToken) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { showHfToken = !showHfToken }) {
+                                            Icon(
+                                                imageVector = if (showHfToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                                contentDescription = if (showHfToken) "Hide" else "Show",
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -2223,7 +2542,7 @@ fun SettingsTab(
         )
     }
 
-    // ── Import Settings Modal with Smart Sanitizer ─────────────────────────
+    // ── Import Settings Modal with Visual Section Toggles & SAF File Loader ─
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
@@ -2231,20 +2550,134 @@ fun SettingsTab(
                 Text("📥 Import Settings (JSON)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
             },
             text = {
-                Column {
-                    Text(
-                        "Paste or tweak settings JSON below. Smart cleaner will automatically sanitize syntax mistakes before applying:",
-                        fontSize = 12.sp,
-                        color = TextMuted
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Select Sections to Import:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = {
+                                    importAudio = true
+                                    importStt = true
+                                    importAi = true
+                                    importAppearance = true
+                                    importStorage = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("All", fontSize = 10.sp, color = PrimaryBlue)
+                            }
+                            TextButton(
+                                onClick = {
+                                    importAudio = false
+                                    importStt = false
+                                    importAi = false
+                                    importAppearance = false
+                                    importStorage = false
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("None", fontSize = 10.sp, color = TextMuted)
+                            }
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, CardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = importAudio,
+                                    onCheckedChange = { importAudio = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("🎙️ Audio Recording Settings", fontSize = 11.sp, color = TextPrimary)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = importStt,
+                                    onCheckedChange = { importStt = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("🗣️ Speech Recognition (STT)", fontSize = 11.sp, color = TextPrimary)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = importAi,
+                                    onCheckedChange = { importAi = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("🤖 AI Intelligence & Prompts", fontSize = 11.sp, color = TextPrimary)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = importAppearance,
+                                    onCheckedChange = { importAppearance = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("🎨 Appearance, Themes & Typography", fontSize = 11.sp, color = TextPrimary)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = importStorage,
+                                    onCheckedChange = { importStorage = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("📁 Storage Paths & Categories", fontSize = 11.sp, color = TextPrimary)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Paste or load settings JSON:",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = { jsonImportPickerLauncher.launch("*/*") },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(12.dp), tint = PrimaryBlue)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("📁 File", fontSize = 10.sp, color = PrimaryBlue)
+                        }
+                    }
+
                     OutlinedTextField(
                         value = importJsonInput,
                         onValueChange = { importJsonInput = it },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(240.dp),
+                            .height(180.dp),
                         shape = RoundedCornerShape(10.dp),
+                        placeholder = { Text("{\n  \"sampleRate\": 16000,\n  ...\n}", fontSize = 11.sp, color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color(0xFF1E293B),
                             unfocusedContainerColor = Color(0xFF1E293B),
@@ -2259,7 +2692,14 @@ fun SettingsTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.importSettingsFromJson(importJsonInput) { success, msg ->
+                        viewModel.importSelectedSettingsFromJson(
+                            importJsonInput,
+                            importAudio,
+                            importStt,
+                            importAi,
+                            importAppearance,
+                            importStorage
+                        ) { success, msg ->
                             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             if (success) showImportDialog = false
                         }

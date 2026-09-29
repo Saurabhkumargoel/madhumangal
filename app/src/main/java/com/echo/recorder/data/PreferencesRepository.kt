@@ -43,6 +43,11 @@ class PreferencesRepository(private val context: Context) {
         val CUSTOM_SYSTEM_PROMPT = stringPreferencesKey("custom_system_prompt")
         val AI_LANGUAGE = stringPreferencesKey("ai_language")
         val LOG_FILE_EXTENSION = stringPreferencesKey("log_file_extension")
+        val HUGGING_FACE_TOKEN = stringPreferencesKey("hugging_face_token")
+        val RECORDER_LAYOUT_MODE = stringPreferencesKey("recorder_layout_mode")
+        val DEFAULT_ABORT_SELECTION = stringPreferencesKey("default_abort_selection")
+        val SHOW_LOGS_TAB = booleanPreferencesKey("show_logs_tab")
+        val SHOW_AI_TAB = booleanPreferencesKey("show_ai_tab")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FONT_MODE = stringPreferencesKey("font_mode")
         val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
@@ -82,7 +87,12 @@ class PreferencesRepository(private val context: Context) {
             pinnedCategories = preferences[PreferencesKeys.PINNED_CATEGORIES] ?: setOf("Urgent", "Shopping"),
             customCategories = preferences[PreferencesKeys.CUSTOM_CATEGORIES] ?: emptySet(),
             downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet(),
-            logFileExtension = preferences[PreferencesKeys.LOG_FILE_EXTENSION] ?: "log"
+            logFileExtension = preferences[PreferencesKeys.LOG_FILE_EXTENSION] ?: "log",
+            huggingFaceToken = preferences[PreferencesKeys.HUGGING_FACE_TOKEN] ?: "",
+            recorderLayoutMode = preferences[PreferencesKeys.RECORDER_LAYOUT_MODE] ?: "BOTH_TABS",
+            defaultAbortSelection = preferences[PreferencesKeys.DEFAULT_ABORT_SELECTION] ?: "ALL_FILES",
+            showLogsTab = preferences[PreferencesKeys.SHOW_LOGS_TAB] ?: false,
+            showAiTab = preferences[PreferencesKeys.SHOW_AI_TAB] ?: true
         )
     }
 
@@ -270,6 +280,36 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateLogFileExtension(ext: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LOG_FILE_EXTENSION] = ext
+        }
+    }
+
+    suspend fun updateHuggingFaceToken(token: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HUGGING_FACE_TOKEN] = token
+        }
+    }
+
+    suspend fun updateRecorderLayoutMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.RECORDER_LAYOUT_MODE] = mode
+        }
+    }
+
+    suspend fun updateDefaultAbortSelection(selection: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DEFAULT_ABORT_SELECTION] = selection
+        }
+    }
+
+    suspend fun updateShowLogsTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_LOGS_TAB] = show
+        }
+    }
+
+    suspend fun updateShowAiTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_AI_TAB] = show
         }
     }
 }

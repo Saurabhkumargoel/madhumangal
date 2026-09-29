@@ -48,4 +48,7 @@ interface TranscriptionDao {
 
     @Query("DELETE FROM transcriptions WHERE id = :id")
     suspend fun deleteTranscription(id: Long)
+
+    @Query("DELETE FROM transcriptions WHERE segmentId = :segmentId")
+    suspend fun deleteBySegmentId(segmentId: Long)
 }

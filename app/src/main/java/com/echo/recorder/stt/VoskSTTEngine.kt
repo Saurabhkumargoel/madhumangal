@@ -99,6 +99,10 @@ class VoskSTTEngine(
             } finally {
                 try { recognizer?.close() } catch (_: Exception) {}
                 try { model?.close() } catch (_: Exception) {}
+                recognizer = null
+                model = null
+                System.gc()
+                AppLogger.d(TAG, "Vosk recognizer & model unloaded. Native STT RAM freed.")
             }
         }
 

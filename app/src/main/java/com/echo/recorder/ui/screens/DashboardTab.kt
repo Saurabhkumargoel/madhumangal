@@ -659,20 +659,41 @@ fun DashboardTab(
                         }
                     }
 
-                    // Recorder Pill
-                    if (isRecording) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = ActiveRed.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed),
-                            modifier = Modifier.clickable { onToggleRecording() }
+                    // Record Enable Toggle (In sync with Record button)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isRecording) ActiveRed.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isRecording) ActiveRed else CardBorder),
+                        modifier = Modifier.clickable { onToggleRecording() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🔴 $timerStr", color = ActiveRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Record Toggle",
+                                tint = if (isRecording) ActiveRed else TextMuted,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = if (isRecording) "🔴 $timerStr" else (if (isHindi) "रिकॉर्ड" else "REC"),
+                                color = if (isRecording) ActiveRed else TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Switch(
+                                checked = isRecording,
+                                onCheckedChange = { onToggleRecording() },
+                                modifier = Modifier.scale(0.65f),
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = ActiveRed,
+                                    uncheckedThumbColor = TextMuted,
+                                    uncheckedTrackColor = DarkBackground
+                                )
+                            )
                         }
                     }
                 }
@@ -1824,6 +1845,38 @@ fun DashboardTab(
                         modifier = Modifier.size(28.dp)
                     )
                 }
+            }
+        }
+
+        // ── Ask AI Floater in Tasks/Dashboard Bottom Middle ──
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = AccentPurple,
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 20.dp)
+                .zIndex(14f)
+                .clickable { onOpenAiAsk() }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = "Ask AI",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = if (isHindi) "✨ AI से पूछें" else "✨ Ask AI",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
             }
         }
 

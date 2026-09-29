@@ -68,6 +68,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import com.echo.recorder.ui.theme.ActiveRed
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TranscriptsTab(
@@ -91,6 +96,11 @@ fun TranscriptsTab(
     onExportMedia: () -> Unit = {},
     onSyncMedia: () -> Unit = {},
     onRunFlow: (sessionId: String?, chunkId: Long?) -> Unit = { _, _ -> },
+    isRecording: Boolean = false,
+    elapsedSeconds: Long = 0L,
+    onToggleRecording: () -> Unit = {},
+    onAbortRecording: () -> Unit = {},
+    recorderLayoutMode: String = "BOTH_TABS",
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -258,7 +268,7 @@ fun TranscriptsTab(
 
         if (transcriptions.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -296,8 +306,9 @@ fun TranscriptsTab(
             }
         } else {
             LazyColumn(
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                contentPadding = PaddingValues(bottom = 12.dp)
             ) {
                 groupedSessions.forEach { (sessionId, sessionChunks) ->
                     val isExpanded = expandedSessions.contains(sessionId)
@@ -442,6 +453,106 @@ fun TranscriptsTab(
                                 onRunFlow = { id -> onRunFlow(sessionId, id) },
                                 isHindi = isHindi,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Compact Static Recorder at Bottom of Media Tab ──────────────────
+        if (recorderLayoutMode != "DEDICATED_TAB_ONLY") {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = SurfaceDark,
+                border = BorderStroke(1.dp, if (isRecording) ActiveRed else CardBorder),
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left: Mic status & duration timer
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isRecording) ActiveRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = if (isRecording) ActiveRed else TextMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Column {
+                            val timerMinutes = elapsedSeconds / 60
+                            val timerSeconds = elapsedSeconds % 60
+                            val timerStr = String.format(Locale.US, "%02d:%02d", timerMinutes, timerSeconds)
+                            Text(
+                                text = if (isRecording) "🔴 REC: $timerStr" else (if (isHindi) "मीडिया रिकॉर्डर (तैयार)" else "Media Recorder (Ready)"),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isRecording) ActiveRed else TextPrimary
+                            )
+                            Text(
+                                text = if (isRecording) (if (isHindi) "निरंतर ऑडियो कैप्चर जारी है..." else "Continuous audio recording active...") else (if (isHindi) "रिकॉर्ड शुरू करने के लिए टैप करें" else "Tap record to start capturing"),
+                                fontSize = 10.sp,
+                                color = TextMuted
+                            )
+                        }
+                    }
+
+                    // Right: Control buttons
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isRecording) {
+                            // Abort button
+                            OutlinedButton(
+                                onClick = onAbortRecording,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ActiveRed),
+                                border = BorderStroke(1.dp, ActiveRed),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Text(if (isHindi) "🚫 निरस्त" else "🚫 Abort", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Button(
+                            onClick = onToggleRecording,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isRecording) ActiveRed else PrimaryBlue),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = null,
+                                tint = if (isRecording) TextPrimary else DarkBackground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isRecording) (if (isHindi) "रोकें" else "Stop") else (if (isHindi) "रिकॉर्ड" else "Record"),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isRecording) TextPrimary else DarkBackground
                             )
                         }
                     }

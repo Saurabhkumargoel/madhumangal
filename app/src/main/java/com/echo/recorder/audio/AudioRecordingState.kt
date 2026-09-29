@@ -16,6 +16,7 @@ object AudioRecordingState {
     val isSpeechDetected = MutableStateFlow(false)
     val statusMessage = MutableStateFlow("STANDBY")
     val actualSampleRate = MutableStateFlow(8000)
+    val currentSessionId = MutableStateFlow("")
 
     fun reset() {
         isRunning.value = false
@@ -24,5 +25,6 @@ object AudioRecordingState {
         elapsedSeconds.value = 0L
         isSpeechDetected.value = false
         statusMessage.value = "STANDBY"
+        currentSessionId.value = ""
     }
 }

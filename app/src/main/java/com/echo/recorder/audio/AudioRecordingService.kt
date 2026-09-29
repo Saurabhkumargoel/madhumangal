@@ -155,6 +155,7 @@ class AudioRecordingService : Service() {
 
         // Update centralized state immediately
         AudioRecordingState.isRunning.value = true
+        AudioRecordingState.currentSessionId.value = "session_$sessionTimestamp"
         AudioRecordingState.statusMessage.value = "RECORDING LIVE"
         AudioRecordingState.elapsedSeconds.value = 0L
         AudioRecordingState.liveTranscript.value = "Listening for Hindi & Hinglish voice..."

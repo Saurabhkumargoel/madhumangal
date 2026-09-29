@@ -396,6 +396,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateLogFileExtension(ext: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLogFileExtension(ext)
+            com.echo.recorder.util.AppLogger.setLogFileExtension(ext)
+        }
+    }
+
+    fun updateHuggingFaceToken(token: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHuggingFaceToken(token)
+        }
+    }
+
+    fun updateRecorderLayoutMode(mode: String) {
+        viewModelScope.launch {
+            prefsRepo.updateRecorderLayoutMode(mode)
+        }
+    }
+
+    fun updateDefaultAbortSelection(selection: String) {
+        viewModelScope.launch {
+            prefsRepo.updateDefaultAbortSelection(selection)
+        }
+    }
+
+    fun updateShowLogsTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowLogsTab(show)
+        }
+    }
+
+    fun updateShowAiTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowAiTab(show)
+        }
+    }
+
     fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
         startOrResumeModelDownload(modelId, onProgress, onComplete)
     }
@@ -486,6 +523,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 var existingBytes = if (partFile.exists()) partFile.length() else 0L
                 var currentUrl = modelUrl
+                val hfToken = userPreferences.value.huggingFaceToken.trim()
                 var connection: HttpURLConnection? = null
                 var redirects = 0
                 val maxRedirects = 6
@@ -497,6 +535,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         readTimeout = 60_000
                         instanceFollowRedirects = false // Manual follow across protocols/domains (e.g. HuggingFace -> S3/Cloudflare CDN)
                         setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                        if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
+                            setRequestProperty("Authorization", "Bearer $hfToken")
+                        }
                         if (existingBytes > 0) {
                             setRequestProperty("Range", "bytes=$existingBytes-")
                         }
@@ -538,6 +579,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             readTimeout = 60_000
                             instanceFollowRedirects = false
                             setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                            if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
+                                setRequestProperty("Authorization", "Bearer $hfToken")
+                            }
                         }
                         activeConnections[modelId] = retryConn
                         retryConn.connect()
@@ -1563,12 +1607,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateLogFileExtension(ext: String) {
-        viewModelScope.launch {
-            prefsRepo.updateLogFileExtension(ext)
-            com.echo.recorder.util.AppLogger.setLogFileExtension(ext)
-        }
-    }
 
     fun reorderCategoryGroups(fromIndex: Int, toIndex: Int, categories: List<String>) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1953,6 +1991,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("isWebSearchEnabled", prefs.isWebSearchEnabled)
                     put("customAiModels", prefs.customAiModels)
                     put("ttsSpeed", prefs.ttsSpeed)
+                    put("huggingFaceToken", prefs.huggingFaceToken)
                 }
                 put("aiConfig", aiObj)
             }
@@ -1965,6 +2004,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("fontScale", prefs.fontScale)
                     put("fontMode", prefs.fontMode)
                     put("settingsMode", prefs.settingsMode.name)
+                    put("recorderLayoutMode", prefs.recorderLayoutMode)
+                    put("defaultAbortSelection", prefs.defaultAbortSelection)
+                    put("showLogsTab", prefs.showLogsTab)
+                    put("showAiTab", prefs.showAiTab)
                 }
                 put("appearanceConfig", appObj)
             }
@@ -1976,6 +2019,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("transcriptionFolderPath", prefs.transcriptionFolderPath)
                     put("notesFolderPath", prefs.notesFolderPath)
                     put("logsFolderPath", prefs.logsFolderPath)
+                    put("logFileExtension", prefs.logFileExtension)
                     put("pinnedCategories", JSONArray(prefs.pinnedCategories))
                     put("customCategories", JSONArray(prefs.customCategories))
                 }
@@ -2000,6 +2044,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun importSettingsFromJson(rawJsonStr: String, onComplete: (Boolean, String) -> Unit) {
+        importSelectedSettingsFromJson(
+            rawJsonStr = rawJsonStr,
+            importAudio = true,
+            importStt = true,
+            importAi = true,
+            importAppearance = true,
+            importStorage = true,
+            onComplete = onComplete
+        )
+    }
+
+    fun importSelectedSettingsFromJson(
+        rawJsonStr: String,
+        importAudio: Boolean = true,
+        importStt: Boolean = true,
+        importAi: Boolean = true,
+        importAppearance: Boolean = true,
+        importStorage: Boolean = true,
+        onComplete: (Boolean, String) -> Unit
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Smart Cleaner: Sanitize input even if user messed up brackets, comments, or trailing commas
@@ -2026,68 +2090,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val json = JSONObject(cleanStr)
 
                 // Top level or nested audioConfig
-                val audioObj = json.optJSONObject("audioConfig") ?: json
-                if (audioObj.has("bufferLengthSeconds")) prefsRepo.updateBufferLength(audioObj.optInt("bufferLengthSeconds", 30))
-                if (audioObj.has("overlapSeconds")) prefsRepo.updateOverlap(audioObj.optInt("overlapSeconds", 3))
-                if (audioObj.has("sampleRate")) prefsRepo.updateSampleRate(audioObj.optInt("sampleRate", 16000))
-                if (audioObj.has("liveTranscribe")) prefsRepo.updateLiveTranscribe(audioObj.optBoolean("liveTranscribe", true))
-                if (audioObj.has("skipSilence")) prefsRepo.updateSkipSilence(audioObj.optBoolean("skipSilence", true))
-                if (audioObj.has("autoDeleteAudio")) prefsRepo.updateAutoDeleteAudio(audioObj.optBoolean("autoDeleteAudio", false))
+                if (importAudio) {
+                    val audioObj = json.optJSONObject("audioConfig") ?: json
+                    if (audioObj.has("bufferLengthSeconds")) prefsRepo.updateBufferLength(audioObj.optInt("bufferLengthSeconds", 30))
+                    if (audioObj.has("overlapSeconds")) prefsRepo.updateOverlap(audioObj.optInt("overlapSeconds", 3))
+                    if (audioObj.has("sampleRate")) prefsRepo.updateSampleRate(audioObj.optInt("sampleRate", 16000))
+                    if (audioObj.has("liveTranscribe")) prefsRepo.updateLiveTranscribe(audioObj.optBoolean("liveTranscribe", true))
+                    if (audioObj.has("skipSilence")) prefsRepo.updateSkipSilence(audioObj.optBoolean("skipSilence", true))
+                    if (audioObj.has("autoDeleteAudio")) prefsRepo.updateAutoDeleteAudio(audioObj.optBoolean("autoDeleteAudio", false))
+                }
 
                 // Top level or nested sttConfig
-                val sttObj = json.optJSONObject("sttConfig") ?: json
-                if (sttObj.has("selectedLanguage")) prefsRepo.updateLanguage(sttObj.optString("selectedLanguage", "hi"))
-                if (sttObj.has("selectedSttModel")) prefsRepo.updateSttModel(sttObj.optString("selectedSttModel", "vosk_hindi"))
+                if (importStt) {
+                    val sttObj = json.optJSONObject("sttConfig") ?: json
+                    if (sttObj.has("selectedLanguage")) prefsRepo.updateLanguage(sttObj.optString("selectedLanguage", "hi"))
+                    if (sttObj.has("selectedSttModel")) prefsRepo.updateSttModel(sttObj.optString("selectedSttModel", "vosk_hindi"))
+                }
 
                 // Top level or nested aiConfig
-                val aiObj = json.optJSONObject("aiConfig") ?: json
-                if (aiObj.has("selectedAiModel")) prefsRepo.updateAiModel(aiObj.optString("selectedAiModel", "local_tiny"))
-                if (aiObj.has("aiLanguage")) prefsRepo.updateAiLanguage(aiObj.optString("aiLanguage", "auto"))
-                if (aiObj.has("customSystemPrompt")) prefsRepo.updateCustomSystemPrompt(aiObj.optString("customSystemPrompt", ""))
-                if (aiObj.has("isWebSearchEnabled")) prefsRepo.updateWebSearchEnabled(aiObj.optBoolean("isWebSearchEnabled", true))
-                if (aiObj.has("customAiModels")) prefsRepo.updateCustomAiModels(aiObj.optString("customAiModels", ""))
-                if (aiObj.has("ttsSpeed")) prefsRepo.updateTtsSpeed(aiObj.optDouble("ttsSpeed", 1.0).toFloat())
+                if (importAi) {
+                    val aiObj = json.optJSONObject("aiConfig") ?: json
+                    if (aiObj.has("selectedAiModel")) prefsRepo.updateAiModel(aiObj.optString("selectedAiModel", "local_tiny"))
+                    if (aiObj.has("aiLanguage")) prefsRepo.updateAiLanguage(aiObj.optString("aiLanguage", "auto"))
+                    if (aiObj.has("customSystemPrompt")) prefsRepo.updateCustomSystemPrompt(aiObj.optString("customSystemPrompt", ""))
+                    if (aiObj.has("isWebSearchEnabled")) prefsRepo.updateWebSearchEnabled(aiObj.optBoolean("isWebSearchEnabled", true))
+                    if (aiObj.has("customAiModels")) prefsRepo.updateCustomAiModels(aiObj.optString("customAiModels", ""))
+                    if (aiObj.has("ttsSpeed")) prefsRepo.updateTtsSpeed(aiObj.optDouble("ttsSpeed", 1.0).toFloat())
+                    if (aiObj.has("huggingFaceToken")) prefsRepo.updateHuggingFaceToken(aiObj.optString("huggingFaceToken", ""))
+                }
 
                 // Top level or nested appearanceConfig
-                val appObj = json.optJSONObject("appearanceConfig") ?: json
-                if (appObj.has("appLanguage")) prefsRepo.updateAppLanguage(appObj.optString("appLanguage", "en"))
-                if (appObj.has("activeTheme")) prefsRepo.updateActiveTheme(appObj.optString("activeTheme", "AMOLED_HIGH"))
-                if (appObj.has("customThemeJson")) prefsRepo.updateCustomThemeJson(appObj.optString("customThemeJson", ""))
-                if (appObj.has("fontScale")) prefsRepo.updateFontScale(appObj.optDouble("fontScale", 1.0).toFloat())
-                if (appObj.has("fontMode")) prefsRepo.updateFontMode(appObj.optString("fontMode", "DEFAULT"))
-                if (appObj.has("settingsMode")) {
-                    val mode = if (appObj.optString("settingsMode", "SMART").equals("ADVANCED", ignoreCase = true)) {
-                        com.echo.recorder.data.SettingsMode.ADVANCED
-                    } else {
-                        com.echo.recorder.data.SettingsMode.SMART
+                if (importAppearance) {
+                    val appObj = json.optJSONObject("appearanceConfig") ?: json
+                    if (appObj.has("appLanguage")) prefsRepo.updateAppLanguage(appObj.optString("appLanguage", "en"))
+                    if (appObj.has("activeTheme")) prefsRepo.updateActiveTheme(appObj.optString("activeTheme", "AMOLED_HIGH"))
+                    if (appObj.has("customThemeJson")) prefsRepo.updateCustomThemeJson(appObj.optString("customThemeJson", ""))
+                    if (appObj.has("fontScale")) prefsRepo.updateFontScale(appObj.optDouble("fontScale", 1.0).toFloat())
+                    if (appObj.has("fontMode")) prefsRepo.updateFontMode(appObj.optString("fontMode", "DEFAULT"))
+                    if (appObj.has("recorderLayoutMode")) prefsRepo.updateRecorderLayoutMode(appObj.optString("recorderLayoutMode", "BOTH_TABS"))
+                    if (appObj.has("defaultAbortSelection")) prefsRepo.updateDefaultAbortSelection(appObj.optString("defaultAbortSelection", "ALL_FILES"))
+                    if (appObj.has("showLogsTab")) prefsRepo.updateShowLogsTab(appObj.optBoolean("showLogsTab", false))
+                    if (appObj.has("showAiTab")) prefsRepo.updateShowAiTab(appObj.optBoolean("showAiTab", true))
+                    if (appObj.has("settingsMode")) {
+                        val mode = if (appObj.optString("settingsMode", "SMART").equals("ADVANCED", ignoreCase = true)) {
+                            com.echo.recorder.data.SettingsMode.ADVANCED
+                        } else {
+                            com.echo.recorder.data.SettingsMode.SMART
+                        }
+                        prefsRepo.updateSettingsMode(mode)
                     }
-                    prefsRepo.updateSettingsMode(mode)
                 }
 
                 // Top level or nested storageConfig
-                val storageObj = json.optJSONObject("storageConfig") ?: json
-                if (storageObj.has("baseFolderPath")) prefsRepo.updateBaseFolderPath(storageObj.optString("baseFolderPath", ""))
-                if (storageObj.has("audioFolderPath")) prefsRepo.updateAudioFolderPath(storageObj.optString("audioFolderPath", ""))
-                if (storageObj.has("transcriptionFolderPath")) prefsRepo.updateTranscriptionFolderPath(storageObj.optString("transcriptionFolderPath", ""))
-                if (storageObj.has("notesFolderPath")) prefsRepo.updateNotesFolderPath(storageObj.optString("notesFolderPath", ""))
-                if (storageObj.has("logsFolderPath")) prefsRepo.updateLogsFolderPath(storageObj.optString("logsFolderPath", ""))
-                if (storageObj.has("pinnedCategories")) {
-                    val arr = storageObj.optJSONArray("pinnedCategories")
-                    if (arr != null) {
-                        val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
-                        prefsRepo.updatePinnedCategories(set)
+                if (importStorage) {
+                    val storageObj = json.optJSONObject("storageConfig") ?: json
+                    if (storageObj.has("baseFolderPath")) prefsRepo.updateBaseFolderPath(storageObj.optString("baseFolderPath", ""))
+                    if (storageObj.has("audioFolderPath")) prefsRepo.updateAudioFolderPath(storageObj.optString("audioFolderPath", ""))
+                    if (storageObj.has("transcriptionFolderPath")) prefsRepo.updateTranscriptionFolderPath(storageObj.optString("transcriptionFolderPath", ""))
+                    if (storageObj.has("notesFolderPath")) prefsRepo.updateNotesFolderPath(storageObj.optString("notesFolderPath", ""))
+                    if (storageObj.has("logsFolderPath")) prefsRepo.updateLogsFolderPath(storageObj.optString("logsFolderPath", ""))
+                    if (storageObj.has("logFileExtension")) prefsRepo.updateLogFileExtension(storageObj.optString("logFileExtension", "log"))
+                    if (storageObj.has("pinnedCategories")) {
+                        val arr = storageObj.optJSONArray("pinnedCategories")
+                        if (arr != null) {
+                            val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
+                            prefsRepo.updatePinnedCategories(set)
+                        }
                     }
-                }
-                if (storageObj.has("customCategories")) {
-                    val arr = storageObj.optJSONArray("customCategories")
-                    if (arr != null) {
-                        val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
-                        prefsRepo.updateCustomCategories(set)
+                    if (storageObj.has("customCategories")) {
+                        val arr = storageObj.optJSONArray("customCategories")
+                        if (arr != null) {
+                            val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
+                            prefsRepo.updateCustomCategories(set)
+                        }
                     }
                 }
 
                 withContext(Dispatchers.Main) {
-                    onComplete(true, "✅ Settings successfully sanitized and imported!")
+                    onComplete(true, "✅ Selected settings sections successfully imported!")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2215,6 +2295,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             action = AudioRecordingService.ACTION_STOP
         }
         context.startService(intent)
+    }
+
+    suspend fun getCurrentSessionSegments(): List<com.echo.recorder.data.AudioSegment> {
+        val sid = com.echo.recorder.audio.AudioRecordingState.currentSessionId.value
+        return if (sid.isNotBlank()) {
+            app.database.audioSegmentDao().getSegmentsBySessionId(sid)
+        } else {
+            emptyList()
+        }
+    }
+
+    fun abortRecordingSession(
+        context: Context,
+        segmentIdsToDelete: Set<Long>,
+        onComplete: (Int) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            stopRecordingService(context)
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            var deletedCount = 0
+            for (segId in segmentIdsToDelete) {
+                val seg = app.database.audioSegmentDao().getSegmentById(segId)
+                if (seg != null) {
+                    com.echo.recorder.util.AppStorageManager.deleteAudioSegmentArtifacts(
+                        context = app,
+                        audioFilePath = seg.filePath,
+                        customTransDir = prefs.transcriptionFolderPath,
+                        customNotesDir = prefs.notesFolderPath
+                    )
+                    transcriptionDao.deleteBySegmentId(segId)
+                    app.database.audioSegmentDao().deleteSegment(segId)
+                    deletedCount++
+                }
+            }
+            refreshStorageUsage()
+            withContext(Dispatchers.Main) {
+                onComplete(deletedCount)
+            }
+        }
     }
 
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {

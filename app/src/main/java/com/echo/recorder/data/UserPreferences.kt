@@ -73,7 +73,12 @@ data class UserPreferences(
     val pinnedCategories: Set<String> = setOf("Urgent", "Shopping"),
     val customCategories: Set<String> = emptySet(),
     val downloadedModels: Set<String> = emptySet(),
-    val logFileExtension: String = "log" // "log", "txt", "md"
+    val logFileExtension: String = "log", // "log", "txt", "md"
+    val huggingFaceToken: String = "",
+    val recorderLayoutMode: String = "BOTH_TABS", // "BOTH_TABS", "DEDICATED_TAB_ONLY", "BOTTOM_MEDIA_ONLY"
+    val defaultAbortSelection: String = "ALL_FILES", // "ALL_FILES", "LAST_FILE_ONLY"
+    val showLogsTab: Boolean = false, // Hidden by default for basic users
+    val showAiTab: Boolean = true // Visible by default for basic users
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.
@@ -146,12 +151,12 @@ Objectives:
             SttModelOption(
                 id = STT_MODEL_SHERPA_ONNX_HINDI,
                 name = "Sherpa-ONNX Hindi Zipformer",
-                tag = "SOTA TRANSDUCER • 65 MB",
-                description = "Next-gen Kaldi Zipformer transducer model via Sherpa-ONNX. State-of-the-art offline Hindi ASR accuracy with low latency and streaming support.",
+                tag = "MANUAL ZIP IMPORT • 65 MB",
+                description = "Next-gen Kaldi Zipformer transducer model via Sherpa-ONNX. Requires manual model ZIP/tar import via 'Import ZIP' button below.",
                 capability = SttCapability.BOTH,
-                isRecommended = true,
+                isRecommended = false,
                 sizeText = "65 MB",
-                downloadUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-hindi-2024-06-16.tar.bz2"
+                downloadUrl = null
             ),
             SttModelOption(
                 id = STT_MODEL_WHISPER_BASE,
@@ -208,72 +213,72 @@ Objectives:
                 isRecommended = true
             ),
             AiModelOption(
-                id = AI_MODEL_LOCAL_GEMMA_3_1B,
-                name = "Google Gemma 3 1B Instruct",
-                tag = "GEMMA 3 • 1.1 GB • MULTILINGUAL",
-                description = "Google DeepMind Gemma 3 ultra-compact edge model. State-of-the-art Hindi & English reasoning with minimal battery and RAM footprint.",
-                sizeText = "1.1 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-3-1b-it",
+                id = AI_MODEL_LOCAL_LLAMA,
+                name = "Meta Llama 3.2 (1B/3B)",
+                tag = "⭐ 100% UNGATED • 807 MB",
+                description = "Meta Llama 3.2 compact edge weights. Free public download without Hugging Face login or token. Fast on-device task extraction & reasoning.",
+                sizeText = "807 MB",
+                downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
                 isApi = false,
                 isRecommended = true
+            ),
+            AiModelOption(
+                id = "local_qwen",
+                name = "Alibaba Qwen 2.5 (1.5B)",
+                tag = "⭐ 100% UNGATED • 1.1 GB",
+                description = "Alibaba Qwen 2.5 multilingual model with exceptional Hindi & Hinglish support. Free public download without any login or token.",
+                sizeText = "1.1 GB",
+                downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                isApi = false,
+                isRecommended = true
+            ),
+            AiModelOption(
+                id = "local_phi3",
+                name = "Microsoft Phi-3.5 Mini",
+                tag = "100% UNGATED • 2.2 GB",
+                description = "Microsoft high-efficiency edge model with exceptional reasoning and logic capabilities. Free public download.",
+                sizeText = "2.2 GB",
+                downloadUrl = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = AI_MODEL_LOCAL_GEMMA_3_1B,
+                name = "Google Gemma 3 1B Instruct",
+                tag = "GATED • HF TOKEN REQUIRED • 1.1 GB",
+                description = "Google DeepMind Gemma 3 ultra-compact edge model. Requires entering your free Hugging Face token in Settings (due to Google license acceptance).",
+                sizeText = "1.1 GB",
+                downloadUrl = "https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf",
+                isApi = false,
+                isRecommended = false
             ),
             AiModelOption(
                 id = AI_MODEL_LOCAL_GEMMA_3_4B,
                 name = "Google Gemma 3 4B Instruct",
-                tag = "GEMMA 3 • 3.2 GB • HIGH REASONING",
-                description = "Google DeepMind Gemma 3 edge model. Exceptional reasoning, task grouping, and multilingual precision.",
+                tag = "GATED • HF TOKEN REQUIRED • 3.2 GB",
+                description = "Google DeepMind Gemma 3 edge model. Requires entering your free Hugging Face token in Settings (due to Google license acceptance).",
                 sizeText = "3.2 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-3-4b-it",
+                downloadUrl = "https://huggingface.co/bartowski/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
                 isApi = false,
-                isRecommended = true
+                isRecommended = false
             ),
             AiModelOption(
                 id = AI_MODEL_LOCAL_GEMMA_3_12B,
                 name = "Google Gemma 3 12B Instruct",
-                tag = "GEMMA 3 • 8.5 GB • FRONTIER",
+                tag = "GATED • 8.5 GB • FRONTIER",
                 description = "Flagship Google DeepMind Gemma 3 open model for local Ollama host or high-capacity workstations.",
                 sizeText = "8.5 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-3-12b-it",
+                downloadUrl = "https://huggingface.co/bartowski/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
                 isApi = false,
                 isRecommended = false
             ),
             AiModelOption(
                 id = AI_MODEL_LOCAL_GEMMA,
                 name = "Google Gemma 2 2B Instruct",
-                tag = "LOCAL LLM • 1.6 GB",
-                description = "Google DeepMind open weights for advanced on-device task intelligence and reasoning. Zero cloud API needed.",
+                tag = "GATED • HF TOKEN REQUIRED • 1.6 GB",
+                description = "Google DeepMind open weights. Requires entering your free Hugging Face token in Settings or importing downloaded GGUF file.",
                 sizeText = "1.6 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
-                isApi = false,
-                isRecommended = false
-            ),
-            AiModelOption(
-                id = AI_MODEL_LOCAL_LLAMA,
-                name = "Meta Llama 3.2 (1B/3B)",
-                tag = "LOCAL LLM • 1.3 GB",
-                description = "Meta Llama 3.2 compact edge weights for offline reasoning, task grouping, and RAG question answering.",
-                sizeText = "1.3 GB",
-                downloadUrl = "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
-                isApi = false,
-                isRecommended = false
-            ),
-            AiModelOption(
-                id = "local_qwen",
-                name = "Qwen 2.5 (1.5B)",
-                tag = "LOCAL LLM • 1.1 GB",
-                description = "Alibaba Qwen multilingual model with strong Hindi, Hinglish, and structured JSON instruction following.",
-                sizeText = "1.1 GB",
-                downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct",
-                isApi = false,
-                isRecommended = false
-            ),
-            AiModelOption(
-                id = "local_phi3",
-                name = "Microsoft Phi-3.5 Mini",
-                tag = "LOCAL LLM • 2.2 GB",
-                description = "Microsoft high-efficiency edge model with exceptional reasoning and logic capabilities.",
-                sizeText = "2.2 GB",
-                downloadUrl = "https://huggingface.co/microsoft/Phi-3.5-mini-instruct",
+                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it.Q4_K_M.gguf",
                 isApi = false,
                 isRecommended = false
             ),

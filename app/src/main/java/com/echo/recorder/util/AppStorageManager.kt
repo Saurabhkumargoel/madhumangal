@@ -1189,6 +1189,41 @@ object AppStorageManager {
         }
         return deletedCount
     }
+
+    /**
+     * Purges an audio segment file and all associated subtitles, markdown transcripts, and notes.
+     */
+    fun deleteAudioSegmentArtifacts(
+        context: Context,
+        audioFilePath: String,
+        customTransDir: String = "",
+        customNotesDir: String = ""
+    ) {
+        try {
+            val audioFile = File(audioFilePath)
+            val nameWithoutExt = audioFile.nameWithoutExtension
+            if (audioFile.exists()) {
+                audioFile.delete()
+                AppLogger.i("STORAGE", "Deleted audio chunk: ${audioFile.name}")
+            }
+            val transDir = getTranscriptionsDirectory(context, customTransDir)
+            transDir.listFiles()?.forEach { f ->
+                if (f.name.contains(nameWithoutExt)) {
+                    f.delete()
+                    AppLogger.i("STORAGE", "Deleted chunk transcript: ${f.name}")
+                }
+            }
+            val notesDir = getNotesDirectory(context, customNotesDir)
+            notesDir.listFiles()?.forEach { f ->
+                if (f.name.contains(nameWithoutExt)) {
+                    f.delete()
+                    AppLogger.i("STORAGE", "Deleted chunk note: ${f.name}")
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("STORAGE", "Error deleting artifacts for $audioFilePath", e)
+        }
+    }
 }
 
 

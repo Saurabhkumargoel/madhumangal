@@ -658,6 +658,64 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #16: Hugging Face HTTP 401 Gated Model Access, Sherpa Hindi 404, Vosk STT Native Memory Graph Retention, Missing Recording Abort Flow, and Fixed-Navigation Inflexibility
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **HTTP 401 Unauthorized on Google Gemma 2 / 3 Weights:**
+   - Attempting to download Google Gemma models directly from Hugging Face failed with HTTP 401 Unauthorized. Google classifies Gemma as a gated model requiring users to accept licensing terms on Hugging Face and authenticate using a personal access token (`hf_...`). Without sending `Authorization: Bearer <token>`, the connection was immediately rejected.
+2. **HTTP 404 on Sherpa ONNX Hindi Weights:**
+   - The Sherpa ONNX IndicConformer Hindi repository URL on GitHub returned HTTP 404 due to upstream asset relocation, causing immediate download failure when users selected Sherpa Hindi.
+3. **Vosk STT Acoustic Graph Native RAM Retention:**
+   - Vosk STT models create heavy native C++ graphs (~1.5 GB memory footprint) during speech recognition. If the `Recognizer` and `Model` references were retained in the engine instance after file transcription finished, the garbage collector could not reclaim the native heap, leaving the app vulnerable to Out-Of-Memory (OOM) during subsequent AI LLM operations.
+4. **Lack of Recording Abort Feature:**
+   - Users who accidentally started recording or wanted to discard the current session had to wait, press Stop, and then manually find and delete individual audio chunks, markdown notes, SRT subtitles, and database records across multiple screens.
+5. **Fixed-Navigation Inflexibility:**
+   - Standard users were exposed to low-level developer/system logs by default in the bottom navigation bar. Furthermore, users who preferred compact, docked recorder controls on the Media tab had no way to hide the redundant dedicated Recorder tab.
+
+#### What AI Did Wrong
+- Did not account for Hugging Face gated model licensing and token authentication headers.
+- Pointed to a volatile upstream GitHub release URL for Sherpa ONNX Hindi without providing fallback to manual import.
+- Failed to aggressively dereference native STT objects and invoke `System.gc()` in the `finally` block of the Vosk engine.
+- Implemented Stop recording without an Abort (discard & purge) workflow.
+- Enforced a hardcoded 6-tab bottom navigation bar regardless of user expertise or layout preference.
+
+#### What User Did Wrong / Communication Gap
+- None; user provided detailed runtime session logs highlighting the HTTP 401 and 404 errors, requested explicit RAM lifecycle management, an Abort recording feature, and customizable layout preferences.
+
+#### How It Was Fixed
+1. **Hugging Face Bearer Token Authorization (`MainViewModel.kt` & `UserPreferences.kt`):**
+   - Added `huggingFaceToken` preference with secure password-masked UI in Section 0 of Settings.
+   - When initiating downloads to `huggingface.co` or `hf.co`, `startOrResumeModelDownload` automatically attaches `Authorization: Bearer $hfToken` if configured.
+   - Tagged Gemma models in catalog and settings with "🔑 HF Token Required", and promoted 100% ungated open-source alternatives: Meta Llama 3.2 1B (807 MB) and Alibaba Qwen 2.5 1.5B (1.1 GB).
+2. **Sherpa Hindi Fallback to Manual ZIP Import (`UserPreferences.kt`):**
+   - Set `downloadUrl = null` for Sherpa ONNX Hindi, gracefully directing users to "Import ZIP" via the SAF file picker.
+3. **Vosk STT Native RAM Cleanup (`VoskSTTEngine.kt`):**
+   - In `transcribeFile()`, added a strict `finally` block that immediately closes the recognizer, sets `recognizer = null` and `model = null`, and triggers `System.gc()`, guaranteeing that the ~1.5 GB native graph is evicted from memory before any AI tasks begin.
+4. **Session Abort Feature with Selective Chunk Purge (`AbortSessionDialog.kt`, `RecorderTab.kt`, `TranscriptsTab.kt`, `MainViewModel.kt`):**
+   - Added Abort button and touch-and-hold (long-press) on the Stop Record button.
+   - Created `AbortSessionDialog` allowing users to selectively choose which session chunks to delete (with Select All, Deselect All, Invert, and Select Last Chunk).
+   - In `MainViewModel.abortRecordingSession`, stops recording, purges selected audio chunks and associated markdown/SRT artifacts from disk via `AppStorageManager.deleteAudioSegmentArtifacts`, and deletes corresponding Room database records (`transcriptions` and cascading `note_tasks`).
+5. **Configurable Recorder Layout Modes (`UserPreferences.kt`, `MainScreen.kt`, `TranscriptsTab.kt`):**
+   - Added `recorderLayoutMode`: `BOTH_TABS` (both dedicated tab and docked bottom media recorder), `BOTTOM_MEDIA_ONLY` (no dedicated recorder tab; docked bottom recorder only), `DEDICATED_TAB_ONLY` (dedicated recorder tab only).
+   - Dynamic `visibleTabs` in `MainScreen.kt` omits the Recorder tab when `BOTTOM_MEDIA_ONLY` is selected.
+6. **Smart Mode vs Advanced Mode Navigation Bar Customization (`MainScreen.kt` & `SettingsTab.kt`):**
+   - `showLogsTab` defaults to `false` for basic/smart mode users, decluttering the bottom navigation bar. Advanced users can toggle it in Section 0.
+   - `showAiTab` defaults to `true`, toggleable in Advanced mode.
+7. **Merged Log Disk Export (`LogsTab.kt`):**
+   - When exporting selected session logs as `.md` or `.txt`, writes `${latestBaseName}_merged.${ext}` directly to `AppStorageManager.getLogsDirectory(context)` and opens the Android share chooser.
+8. **Visual JSON Import with Section Toggles (`SettingsTab.kt` & `MainViewModel.kt`):**
+   - Upgraded the settings import dialog to include individual section checkboxes (`audio`, `stt`, `ai`, `appearance`, `storage`) with All/None buttons, a SAF `.json` file picker, and smart JSON sanitization.
+
+#### Automated Prevention
+- Always attach standard `Authorization: Bearer <token>` headers when connecting to gated model repositories like Hugging Face.
+- In native C++/JNI bindings (Vosk, whisper.cpp, llama.cpp), null out references and prompt GC in `finally` blocks to release off-heap buffers immediately.
+- For destructive operations like Abort recording, implement selective checklist dialogs with quick action helpers and cascading artifact cleanup.
+- Build dynamic navigation bars driven by reactive preference flows rather than hardcoded tab indices.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

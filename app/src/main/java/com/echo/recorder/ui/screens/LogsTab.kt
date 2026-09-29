@@ -16,12 +16,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -78,7 +81,9 @@ import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.theme.TextPrimary
 import com.echo.recorder.ui.theme.TextSecondary
 import com.echo.recorder.util.AppLogger
+import com.echo.recorder.util.AppStorageManager
 import com.echo.recorder.util.LogEntry
+import androidx.core.content.FileProvider
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -98,8 +103,9 @@ fun LogsTab(
     var selectedFiles by remember { mutableStateOf<Set<File>>(emptySet()) }
     var showClearLogsConfirm by remember { mutableStateOf(false) }
     var showDeleteFilesConfirm by remember { mutableStateOf(false) }
+    var refreshFilesTrigger by remember { mutableStateOf(0) }
 
-    val sessionFiles = remember(logs.size, isManageFilesExpanded) { AppLogger.getSessionFiles(context) }
+    val sessionFiles = remember(logs.size, isManageFilesExpanded, refreshFilesTrigger) { AppLogger.getSessionFiles(context) }
 
     // ── Dialog: Confirm Clear Logs ──
     if (showClearLogsConfirm) {
@@ -142,6 +148,7 @@ fun LogsTab(
                             if (f.delete()) deletedCount++
                         }
                         selectedFiles = emptySet()
+                        refreshFilesTrigger++
                         showDeleteFilesConfirm = false
                         Toast.makeText(context, if (isHindi) "$deletedCount लॉग फ़ाइल(ें) हटाई गईं" else "Deleted $deletedCount log file(s)", Toast.LENGTH_SHORT).show()
                     },
@@ -505,12 +512,26 @@ fun LogsTab(
                                 OutlinedButton(
                                     onClick = {
                                         val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        val latestBaseName = selectedFiles.maxByOrNull { it.lastModified() }?.nameWithoutExtension ?: "session"
+                                        val logsDir = AppStorageManager.getLogsDirectory(context)
+                                        val mergedFile = File(logsDir, "${latestBaseName}_merged.md")
+                                        mergedFile.writeText(combined)
+                                        refreshFilesTrigger++
+                                        val uri = try {
+                                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", mergedFile)
+                                        } catch (e: Exception) { null }
+
                                         val sendIntent = Intent().apply {
                                             action = Intent.ACTION_SEND
                                             putExtra(Intent.EXTRA_TEXT, combined)
+                                            if (uri != null) {
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
                                             type = "text/markdown"
                                         }
                                         context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.md)"))
+                                        Toast.makeText(context, if (isHindi) "सहेजी गई: ${mergedFile.name}" else "Saved & shared: ${mergedFile.name}", Toast.LENGTH_SHORT).show()
                                     },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.height(26.dp)
@@ -522,12 +543,26 @@ fun LogsTab(
                                 OutlinedButton(
                                     onClick = {
                                         val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        val latestBaseName = selectedFiles.maxByOrNull { it.lastModified() }?.nameWithoutExtension ?: "session"
+                                        val logsDir = AppStorageManager.getLogsDirectory(context)
+                                        val mergedFile = File(logsDir, "${latestBaseName}_merged.txt")
+                                        mergedFile.writeText(combined)
+                                        refreshFilesTrigger++
+                                        val uri = try {
+                                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", mergedFile)
+                                        } catch (e: Exception) { null }
+
                                         val sendIntent = Intent().apply {
                                             action = Intent.ACTION_SEND
                                             putExtra(Intent.EXTRA_TEXT, combined)
+                                            if (uri != null) {
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
                                             type = "text/plain"
                                         }
                                         context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.txt)"))
+                                        Toast.makeText(context, if (isHindi) "सहेजी गई: ${mergedFile.name}" else "Saved & shared: ${mergedFile.name}", Toast.LENGTH_SHORT).show()
                                     },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.height(26.dp)
@@ -559,7 +594,10 @@ fun LogsTab(
                     } else {
                         Column(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.height(if (sessionFiles.size > 4) 140.dp else androidx.compose.ui.unit.Dp.Unspecified)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .verticalScroll(rememberScrollState())
                         ) {
                             sessionFiles.forEach { file ->
                                 val isChecked = file in selectedFiles

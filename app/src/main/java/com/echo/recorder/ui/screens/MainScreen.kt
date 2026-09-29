@@ -25,12 +25,14 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.echo.recorder.data.UserPreferences
+import com.echo.recorder.ui.components.AbortSessionDialog
 import com.echo.recorder.ui.components.AiAskBottomSheet
 import com.echo.recorder.ui.theme.AccentPurple
 import com.echo.recorder.ui.theme.DarkBackground
@@ -45,6 +48,15 @@ import com.echo.recorder.ui.theme.PrimaryBlue
 import com.echo.recorder.ui.theme.SurfaceDark
 import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.viewmodel.MainViewModel
+
+enum class MainTab {
+    DASHBOARD,
+    RECORDER,
+    AI,
+    MEDIA,
+    LOGS,
+    SETTINGS
+}
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +73,7 @@ fun MainScreen(
     onRequestPermission: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(1) } // Default to Recorder Tab
+    val scope = rememberCoroutineScope()
     var showAiAskSheet by remember { mutableStateOf(false) }
 
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
@@ -74,124 +86,167 @@ fun MainScreen(
 
     val isHindi = userPreferences.appLanguage == "hi"
 
+    val visibleTabs = remember(userPreferences.recorderLayoutMode, userPreferences.showAiTab, userPreferences.showLogsTab) {
+        buildList {
+            add(MainTab.DASHBOARD)
+            if (userPreferences.recorderLayoutMode != "BOTTOM_MEDIA_ONLY") {
+                add(MainTab.RECORDER)
+            }
+            if (userPreferences.showAiTab) {
+                add(MainTab.AI)
+            }
+            add(MainTab.MEDIA)
+            if (userPreferences.showLogsTab) {
+                add(MainTab.LOGS)
+            }
+            add(MainTab.SETTINGS)
+        }
+    }
+
+    var selectedTab by remember {
+        mutableStateOf(
+            if (userPreferences.recorderLayoutMode == "BOTTOM_MEDIA_ONLY") MainTab.MEDIA else MainTab.RECORDER
+        )
+    }
+
+    LaunchedEffect(visibleTabs) {
+        if (selectedTab !in visibleTabs) {
+            selectedTab = if (MainTab.RECORDER in visibleTabs) MainTab.RECORDER else visibleTabs.firstOrNull() ?: MainTab.DASHBOARD
+        }
+    }
+
+    var showAbortDialog by remember { mutableStateOf(false) }
+    var abortSegments by remember { mutableStateOf<List<com.echo.recorder.data.AudioSegment>>(emptyList()) }
+
+    if (showAbortDialog) {
+        AbortSessionDialog(
+            segments = abortSegments,
+            defaultSelectionMode = userPreferences.defaultAbortSelection,
+            onConfirmAbort = { idsToDelete ->
+                showAbortDialog = false
+                viewModel.abortRecordingSession(context, idsToDelete) { count ->
+                    android.widget.Toast.makeText(
+                        context,
+                        if (isHindi) "सत्र निरस्त किया गया। $count फ़ाइलें हटाई गईं।" else "Session aborted. $count audio chunks deleted.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onDismiss = { showAbortDialog = false },
+            isHindi = isHindi
+        )
+    }
     Scaffold(
         containerColor = DarkBackground,
         bottomBar = {
             NavigationBar(
                 containerColor = SurfaceDark
             ) {
-                // 0: Tasks / Dashboard
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.CheckCircle, contentDescription = "Dashboard") },
-                    label = { Text(com.echo.recorder.util.AppStrings.get("tab_dashboard", isHindi), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PrimaryBlue,
-                        selectedTextColor = PrimaryBlue,
-                        indicatorColor = DarkBackground,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
-                    )
-                )
-
-                // 1: Recorder
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.Mic, contentDescription = "Recorder") },
-                    label = { Text(com.echo.recorder.util.AppStrings.get("tab_recorder", isHindi), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PrimaryBlue,
-                        selectedTextColor = PrimaryBlue,
-                        indicatorColor = DarkBackground,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
-                    )
-                )
-
-                // 2: Ask AI (Dedicated Tab)
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = {
-                        androidx.compose.material3.Surface(
-                            shape = androidx.compose.foundation.shape.CircleShape,
-                            color = if (selectedTab == 2) AccentPurple else AccentPurple.copy(alpha = 0.2f),
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "Ask AI",
-                                    tint = if (selectedTab == 2) Color.White else AccentPurple,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    },
-                    label = {
-                        Text(
-                            text = com.echo.recorder.util.AppStrings.get("tab_ai", isHindi),
-                            fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedTab == 2) AccentPurple else TextMuted,
-                            fontSize = 10.sp
+                visibleTabs.forEach { tab ->
+                    when (tab) {
+                        MainTab.DASHBOARD -> NavigationBarItem(
+                            selected = selectedTab == MainTab.DASHBOARD,
+                            onClick = { selectedTab = MainTab.DASHBOARD },
+                            icon = { Icon(Icons.Default.CheckCircle, contentDescription = "Dashboard") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_dashboard", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
                         )
-                    },
-                    colors = NavigationBarItemDefaults.colors(
-                        indicatorColor = Color.Transparent
-                    )
-                )
-
-                // 3: Media
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.PermMedia, contentDescription = "Media") },
-                    label = { Text(com.echo.recorder.util.AppStrings.get("tab_media", isHindi), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PrimaryBlue,
-                        selectedTextColor = PrimaryBlue,
-                        indicatorColor = DarkBackground,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
-                    )
-                )
-
-                // 4: Logs (Restored tab!)
-                NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
-                    icon = { Icon(Icons.Default.Terminal, contentDescription = "Logs") },
-                    label = { Text(com.echo.recorder.util.AppStrings.get("tab_logs", isHindi), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PrimaryBlue,
-                        selectedTextColor = PrimaryBlue,
-                        indicatorColor = DarkBackground,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
-                    )
-                )
-
-                // 5: Settings
-                NavigationBarItem(
-                    selected = selectedTab == 5,
-                    onClick = { selectedTab = 5 },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text(com.echo.recorder.util.AppStrings.get("tab_settings", isHindi), fontSize = 10.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PrimaryBlue,
-                        selectedTextColor = PrimaryBlue,
-                        indicatorColor = DarkBackground,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted
-                    )
-                )
+                        MainTab.RECORDER -> NavigationBarItem(
+                            selected = selectedTab == MainTab.RECORDER,
+                            onClick = { selectedTab = MainTab.RECORDER },
+                            icon = { Icon(Icons.Default.Mic, contentDescription = "Recorder") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_recorder", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
+                        MainTab.AI -> NavigationBarItem(
+                            selected = selectedTab == MainTab.AI,
+                            onClick = { selectedTab = MainTab.AI },
+                            icon = {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = if (selectedTab == MainTab.AI) AccentPurple else AccentPurple.copy(alpha = 0.2f),
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = "Ask AI",
+                                            tint = if (selectedTab == MainTab.AI) Color.White else AccentPurple,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = com.echo.recorder.util.AppStrings.get("tab_ai", isHindi),
+                                    fontWeight = if (selectedTab == MainTab.AI) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selectedTab == MainTab.AI) AccentPurple else TextMuted,
+                                    fontSize = 10.sp
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        MainTab.MEDIA -> NavigationBarItem(
+                            selected = selectedTab == MainTab.MEDIA,
+                            onClick = { selectedTab = MainTab.MEDIA },
+                            icon = { Icon(Icons.Default.PermMedia, contentDescription = "Media") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_media", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
+                        MainTab.LOGS -> NavigationBarItem(
+                            selected = selectedTab == MainTab.LOGS,
+                            onClick = { selectedTab = MainTab.LOGS },
+                            icon = { Icon(Icons.Default.Terminal, contentDescription = "Logs") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_logs", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
+                        MainTab.SETTINGS -> NavigationBarItem(
+                            selected = selectedTab == MainTab.SETTINGS,
+                            onClick = { selectedTab = MainTab.SETTINGS },
+                            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_settings", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
+                    }
+                }
             }
         }
     ) { paddingValues ->
         when (selectedTab) {
-            0 -> DashboardTab(
+            MainTab.DASHBOARD -> DashboardTab(
                 tasks = noteTasks,
                 lowHangingFruits = lowHangingFruits,
                 userPreferences = userPreferences,
@@ -220,7 +275,9 @@ fun MainScreen(
                         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                     }
                 },
-                onOpenAiAsk = { selectedTab = 2 },
+                onOpenAiAsk = {
+                    if (MainTab.AI in visibleTabs) selectedTab = MainTab.AI else showAiAskSheet = true
+                },
                 onEditTask = { id, title, desc, prio, fruit, due ->
                     viewModel.editTask(id, title, desc, prio, fruit, due)
                 },
@@ -245,12 +302,13 @@ fun MainScreen(
                     if (isServiceRunning) {
                         viewModel.stopRecordingService(context)
                     } else {
+                        onRequestPermission()
                         viewModel.startRecordingService(context)
                     }
                 },
                 modifier = Modifier.padding(paddingValues)
             )
-            1 -> RecorderTab(
+            MainTab.RECORDER -> RecorderTab(
                 viewModel = viewModel,
                 isServiceRunning = isServiceRunning,
                 currentAmplitude = currentAmplitude,
@@ -264,12 +322,12 @@ fun MainScreen(
                 onRequestPermission = onRequestPermission,
                 modifier = Modifier.padding(paddingValues)
             )
-            2 -> AiTab(
+            MainTab.AI -> AiTab(
                 viewModel = viewModel,
                 tasks = noteTasks,
                 modifier = Modifier.padding(paddingValues)
             )
-            3 -> TranscriptsTab(
+            MainTab.MEDIA -> TranscriptsTab(
                 transcriptions = transcriptions,
                 allTasks = noteTasks,
                 transcribingIds = transcribingIds,
@@ -324,16 +382,33 @@ fun MainScreen(
                         android.widget.Toast.makeText(context, if (success) "✅ $msg" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
                     }
                 },
+                isRecording = isServiceRunning,
+                elapsedSeconds = elapsedSeconds,
+                onToggleRecording = {
+                    if (isServiceRunning) {
+                        viewModel.stopRecordingService(context)
+                    } else {
+                        onRequestPermission()
+                        viewModel.startRecordingService(context)
+                    }
+                },
+                onAbortRecording = {
+                    scope.launch {
+                        abortSegments = viewModel.getCurrentSessionSegments()
+                        showAbortDialog = true
+                    }
+                },
+                recorderLayoutMode = userPreferences.recorderLayoutMode,
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )
-            4 -> LogsTab(
+            MainTab.LOGS -> LogsTab(
                 viewModel = viewModel,
                 userPreferences = userPreferences,
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )
-            5 -> SettingsTab(
+            MainTab.SETTINGS -> SettingsTab(
                 viewModel = viewModel,
                 userPreferences = userPreferences,
                 modifier = Modifier.padding(paddingValues)
