@@ -604,6 +604,60 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #15: Whisper Base HTML Page Download Instead of GGML Binary, Coroutine Pause/Resume Socket Deadlock, HTTP 416 Range Failure, and Uncaught CoroutineScheduler Worker Crashes
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Whisper Base Instant Fake Download (HTML Landing Page):**
+   - In `UserPreferences.kt`, `downloadUrl` for `STT_MODEL_WHISPER_BASE` was set to the Hugging Face web repository URL (`https://huggingface.co/openai/whisper-base`). When users clicked download, `downloadModel` fetched the ~50 KB HTML landing page in 1 second, renamed it to `whisper_base.gguf`, and reported "Model ready". Because Whisper is a GGML binary STT engine (expecting `whisper-base.bin` ~148 MB), offline transcription failed.
+2. **Socket Blocking & Concurrent Write Collisions on Pause/Resume:**
+   - When a download was paused, `pauseFlags[modelId]` was set, but the underlying `HttpURLConnection` socket was not disconnected. The coroutine remained blocked inside `input.read(buffer)`. When users tapped "Resume", a second coroutine was launched on `Dispatchers.IO` while the first was still alive. Both coroutines concurrently wrote to the same `.part` file, causing socket resets (`Connection reset`), stream corruptions, and deadlocks.
+3. **HTTP 416 (Range Not Satisfiable) Permanent Failure:**
+   - If a partial download file on disk became corrupted or exceeded the remote file length, servers returned HTTP 416. The download failed immediately without deleting the bad partial file or restarting from byte 0.
+4. **Uncaught Coroutine Worker Crashes (`CoroutineScheduler$Worker.run`):**
+   - Methods like `deleteModel` and sections of `startOrResumeModelDownload` lacked `catch (t: Throwable)` coverage. When unexpected filesystem or socket errors occurred, unhandled exceptions escaped to `CoroutineScheduler$Worker.run`, crashing the thread worker.
+5. **False Positive Model Installation Checks:**
+   - `isSttModelRequirementFulfilled` only checked whether a file existed on disk without verifying that its size exceeded the model threshold (>50 MB for Whisper Base, >25 MB for Whisper Tiny). This allowed corrupt or HTML dummy files to masquerade as valid models.
+
+#### What AI Did Wrong
+- Configured a repository landing page URL instead of a direct raw weights link (`resolve/main/ggml-base.bin`).
+- Failed to manage the socket lifecycle (`connection.disconnect()`) and cancel the running coroutine Job when pausing downloads.
+- Did not handle HTTP 416 by auto-clearing stale partial files.
+- Omitted `Throwable` catch handlers in `deleteModel` and coroutine entry points.
+- Relied on bare file existence checks without minimum size sanity checks.
+
+#### What User Did Wrong / Communication Gap
+- None; user exported real device session logs demonstrating `whisper_base` downloading in 1 second, `vosk_hindi_large` pausing and resuming, and `CoroutineScheduler$Worker.run` traces.
+
+#### How It Was Fixed
+1. **Direct GGML Binary URL & Correct File Extensions (`UserPreferences.kt` & `MainViewModel.kt`):**
+   - Updated `STT_MODEL_WHISPER_BASE` URL to `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin` (~148 MB) and `STT_MODEL_WHISPER_TINY` to `ggml-tiny.bin` (~77 MB).
+   - In `MainViewModel.kt`, routed Whisper downloads to `.part.bin` and finalized as `whisper-base.bin` (and `whisper_base.bin`), eliminating `.gguf` misnomers.
+2. **Active Connection Tracking & Immediate Socket Disconnect on Pause (`MainViewModel.kt`):**
+   - Added `activeConnections = ConcurrentHashMap<String, HttpURLConnection>()`.
+   - `pauseModelDownload(modelId)` and `cancelModelDownload(modelId)` immediately disconnect the active socket and cancel `activeDownloadJobs[modelId]`, instantly freeing blocked I/O threads.
+   - `startOrResumeModelDownload` cancels any lingering jobs before launching a fresh download, guaranteeing single-writer isolation.
+3. **HTTP 416 Auto-Reset (`MainViewModel.kt`):**
+   - Added automatic detection for HTTP 416. Deletes the partial file, resets byte counter to 0, and restarts the download from the beginning.
+4. **Full `Throwable` Error Isolation (`MainViewModel.kt`):**
+   - Enclosed `deleteModel` and `startOrResumeModelDownload` in `try { ... } catch (t: Throwable) { ... }`, preventing any unhandled error from reaching `CoroutineScheduler$Worker`.
+5. **Byte-Size Model Validation (`UserPreferences.kt`):**
+   - Updated `isSttModelRequirementFulfilled` to require Whisper Base files to be > 50 MB and Whisper Tiny to be > 25 MB, preventing HTML landing pages or partial files from showing as installed.
+6. **Explicit Named Arguments (`SettingsTab.kt`):**
+   - Updated download callbacks in `SettingsTab.kt` to explicitly use `onComplete = { ... }`, preventing lambda parameter ambiguity.
+7. **Lifecycle Session Isolation (`MainActivity.kt`):**
+   - Cold starts now cleanly initialize a new session file via `AppLogger.startNewSession(this)` when `savedInstanceState == null`.
+   - Added `if (isFinishing)` check before `logSafeExit()` in `onDestroy()`.
+
+#### Automated Prevention
+- Always verify external download URLs point directly to raw binary octet-streams, never web UI landing pages.
+- Track active `HttpURLConnection` references and invoke `disconnect()` upon pause/cancel to unblock synchronous network reads.
+- Always validate on-disk model artifacts with minimum file-size assertions before marking them as fulfilled.
+- Catch `Throwable` in top-level coroutine dispatchers to prevent worker thread aborts.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

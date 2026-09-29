@@ -161,7 +161,7 @@ Objectives:
                 capability = SttCapability.FILE_ONLY,
                 isRecommended = false,
                 sizeText = "145 MB",
-                downloadUrl = "https://huggingface.co/openai/whisper-base"
+                downloadUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
             ),
             SttModelOption(
                 id = STT_MODEL_VOSK_EN_IN,
@@ -358,7 +358,22 @@ Objectives:
                 STT_MODEL_VOSK_HINDI_LARGE -> downloadedModels.contains(modelId) || com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
                 STT_MODEL_SHERPA_ONNX_HINDI -> downloadedModels.contains(modelId) || java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "sherpa-onnx-hindi").exists()
                 STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
-                STT_MODEL_WHISPER_BASE, STT_MODEL_WHISPER_TINY -> downloadedModels.contains(modelId) || java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "whisper-base.bin").exists()
+                STT_MODEL_WHISPER_BASE -> {
+                    val dir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(context)
+                    val files = dir.listFiles() ?: emptyArray()
+                    val hasValidBase = files.any { f ->
+                        (f.name.equals("whisper-base.bin", true) || f.name.equals("whisper_base.bin", true) || f.name.equals("ggml-base.bin", true)) && f.length() > 50 * 1024 * 1024L
+                    }
+                    hasValidBase || (downloadedModels.contains(modelId) && hasValidBase)
+                }
+                STT_MODEL_WHISPER_TINY -> {
+                    val dir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(context)
+                    val files = dir.listFiles() ?: emptyArray()
+                    val hasValidTiny = files.any { f ->
+                        (f.name.equals("whisper-tiny.bin", true) || f.name.equals("whisper_tiny.bin", true) || f.name.equals("ggml-tiny.bin", true)) && f.length() > 25 * 1024 * 1024L
+                    }
+                    hasValidTiny || (downloadedModels.contains(modelId) && hasValidTiny)
+                }
                 STT_MODEL_CLOUD_GEMINI, STT_MODEL_WHISPER_LARGE -> cloudApiKey.isNotBlank()
                 else -> false
             }

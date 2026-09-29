@@ -33,6 +33,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (savedInstanceState == null) {
+            com.echo.recorder.util.AppLogger.startNewSession(this)
+        }
+
         checkAndRequestPermissions()
 
         setContent {
@@ -88,6 +92,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        com.echo.recorder.util.AppLogger.logSafeExit()
+        if (isFinishing) {
+            com.echo.recorder.util.AppLogger.logSafeExit()
+        }
     }
 }

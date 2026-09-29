@@ -74,6 +74,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val activeDownloadJobs = ConcurrentHashMap<String, Job>()
     private val pauseFlags = ConcurrentHashMap<String, AtomicBoolean>()
+    private val activeConnections = ConcurrentHashMap<String, java.net.HttpURLConnection>()
 
     val userPreferences: StateFlow<UserPreferences> = prefsRepo.userPreferencesFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, UserPreferences())
@@ -409,59 +410,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        pauseFlags[modelId] = AtomicBoolean(false)
+        // Clean up any stale job or connection for this model
+        activeDownloadJobs[modelId]?.cancel()
+        activeDownloadJobs.remove(modelId)
+        activeConnections[modelId]?.let { try { it.disconnect() } catch (_: Throwable) {} }
+        activeConnections.remove(modelId)
+
+        val pauseFlag = AtomicBoolean(false)
+        pauseFlags[modelId] = pauseFlag
 
         val job = viewModelScope.launch(Dispatchers.IO) {
-            com.echo.recorder.util.AppLogger.i("MODEL", "Starting/resuming download for model: $modelId")
-            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
-
-            // Resolve target URL and file paths
-            val isEnIn = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN
-            val isHindiLarge = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE
-            val isVosk = isEnIn || isHindiLarge || modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI
-
-            val modelUrl = when {
-                isEnIn -> "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
-                isHindiLarge -> "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
-                modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI -> "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
-                modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_1B -> "https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
-                modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_4B -> "https://huggingface.co/bartowski/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
-                modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_12B -> "https://huggingface.co/bartowski/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf"
-                modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA -> "https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it.Q4_K_M.gguf"
-                modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_LLAMA -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-                modelId == "local_qwen" -> "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-                modelId == "local_phi3" -> "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
-                else -> {
-                    com.echo.recorder.data.UserPreferences.AVAILABLE_AI_MODELS.find { it.id == modelId }?.downloadUrl
-                        ?: com.echo.recorder.data.UserPreferences.AVAILABLE_STT_MODELS.find { it.id == modelId }?.downloadUrl
-                        ?: ""
-                }
-            }
-
-            if (modelUrl.isBlank() || !modelUrl.startsWith("http")) {
-                prefsRepo.setModelDownloaded(modelId, true)
-                _modelDownloadStates.update { it + (modelId to ModelDownloadProgress(modelId, ModelDownloadStatus.COMPLETED, 1f)) }
-                withContext(Dispatchers.Main) {
-                    onProgress(1f)
-                    onComplete(true)
-                }
-                return@launch
-            }
-
-            val partFile = if (isVosk) File(modelsDir, "${modelId}.part.zip") else File(modelsDir, "${modelId}.part.gguf")
-            val targetFinalFile = if (isVosk) {
-                val dirName = when {
-                    isEnIn -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN
-                    isHindiLarge -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE
-                    else -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME
-                }
-                File(modelsDir, dirName)
-            } else {
-                File(modelsDir, if (modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA) "gemma-2-2b-it.gguf" else "${modelId}.gguf")
-            }
-
             try {
-                val existingBytes = if (partFile.exists()) partFile.length() else 0L
+                com.echo.recorder.util.AppLogger.i("MODEL", "Starting/resuming download for model: $modelId")
+                val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+
+                // Resolve target URL and file paths
+                val isEnIn = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN
+                val isHindiLarge = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE
+                val isVosk = isEnIn || isHindiLarge || modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI
+                val isWhisper = modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE ||
+                                modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY
+
+                val modelUrl = when {
+                    isEnIn -> "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
+                    isHindiLarge -> "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
+                    modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI -> "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
+                    modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE -> "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+                    modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY -> "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+                    modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_1B -> "https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
+                    modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_4B -> "https://huggingface.co/bartowski/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+                    modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_12B -> "https://huggingface.co/bartowski/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf"
+                    modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA -> "https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it.Q4_K_M.gguf"
+                    modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_LLAMA -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+                    modelId == "local_qwen" -> "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                    modelId == "local_phi3" -> "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
+                    else -> {
+                        com.echo.recorder.data.UserPreferences.AVAILABLE_AI_MODELS.find { it.id == modelId }?.downloadUrl
+                            ?: com.echo.recorder.data.UserPreferences.AVAILABLE_STT_MODELS.find { it.id == modelId }?.downloadUrl
+                            ?: ""
+                    }
+                }
+
+                if (modelUrl.isBlank() || !modelUrl.startsWith("http")) {
+                    prefsRepo.setModelDownloaded(modelId, true)
+                    _modelDownloadStates.update { it + (modelId to ModelDownloadProgress(modelId, ModelDownloadStatus.COMPLETED, 1f)) }
+                    withContext(Dispatchers.Main) {
+                        onProgress(1f)
+                        onComplete(true)
+                    }
+                    return@launch
+                }
+
+                val partFile = when {
+                    isVosk -> File(modelsDir, "${modelId}.part.zip")
+                    isWhisper -> File(modelsDir, "${modelId}.part.bin")
+                    else -> File(modelsDir, "${modelId}.part.gguf")
+                }
+
+                val targetFinalFile = when {
+                    isVosk -> {
+                        val dirName = when {
+                            isEnIn -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN
+                            isHindiLarge -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE
+                            else -> com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME
+                        }
+                        File(modelsDir, dirName)
+                    }
+                    isWhisper -> {
+                        File(modelsDir, if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE) "whisper-base.bin" else "whisper-tiny.bin")
+                    }
+                    else -> {
+                        File(modelsDir, if (modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA) "gemma-2-2b-it.gguf" else "${modelId}.gguf")
+                    }
+                }
+
+                var existingBytes = if (partFile.exists()) partFile.length() else 0L
                 var currentUrl = modelUrl
                 var connection: HttpURLConnection? = null
                 var redirects = 0
@@ -478,6 +501,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             setRequestProperty("Range", "bytes=$existingBytes-")
                         }
                     }
+                    activeConnections[modelId] = conn
                     conn.connect()
                     responseCode = conn.responseCode
                     if (responseCode in 300..399) {
@@ -497,7 +521,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     break
                 }
 
-                val conn = connection ?: throw java.io.IOException("Failed to connect to $modelUrl")
+                var conn = connection ?: throw java.io.IOException("Failed to connect to $modelUrl")
+
+                // Handle HTTP 416 (Requested Range Not Satisfiable): partial file is invalid/outdated, restart from byte 0
+                if (responseCode == 416 && existingBytes > 0) {
+                    com.echo.recorder.util.AppLogger.w("MODEL", "Server returned HTTP 416 for $modelId. Resetting partial file and restarting from byte 0.")
+                    conn.disconnect()
+                    partFile.delete()
+                    existingBytes = 0L
+
+                    currentUrl = modelUrl
+                    redirects = 0
+                    while (redirects < maxRedirects) {
+                        val retryConn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 35_000
+                            readTimeout = 60_000
+                            instanceFollowRedirects = false
+                            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                        }
+                        activeConnections[modelId] = retryConn
+                        retryConn.connect()
+                        responseCode = retryConn.responseCode
+                        if (responseCode in 300..399) {
+                            val location = retryConn.getHeaderField("Location")
+                            retryConn.disconnect()
+                            if (!location.isNullOrEmpty()) {
+                                currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) location else URL(URL(currentUrl), location).toString()
+                                redirects++
+                                continue
+                            }
+                        }
+                        conn = retryConn
+                        break
+                    }
+                }
+
                 if (responseCode !in 200..299) {
                     val errDetails = conn.errorStream?.bufferedReader()?.use { it.readText().take(500) } ?: "HTTP $responseCode"
                     conn.disconnect()
@@ -506,7 +564,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val isRangeAccepted = responseCode == 206
                 val serverContentLength = conn.contentLengthLong
-                val totalBytes = if (isRangeAccepted) existingBytes + serverContentLength else serverContentLength.coerceAtLeast(1L)
+                val totalBytes = if (isRangeAccepted && serverContentLength > 0) {
+                    existingBytes + serverContentLength
+                } else if (serverContentLength > 0) {
+                    serverContentLength
+                } else {
+                    existingBytes.coerceAtLeast(1L)
+                }
                 val append = isRangeAccepted && existingBytes > 0
                 var downloadedBytes = if (append) existingBytes else 0L
 
@@ -527,7 +591,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         var lastReportTime = System.currentTimeMillis()
 
                         while (input.read(buffer).also { read = it } != -1) {
-                            if (pauseFlags[modelId]?.get() == true) {
+                            if (pauseFlag.get()) {
                                 _modelDownloadStates.update {
                                     it + (modelId to ModelDownloadProgress(
                                         modelId = modelId,
@@ -598,9 +662,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     partFile.delete()
                 } else {
-                    // For GGUF, rename .part.gguf to target
+                    // For GGUF / Whisper BIN, rename .part file to target
                     if (targetFinalFile.exists()) targetFinalFile.delete()
                     partFile.renameTo(targetFinalFile)
+                    // If Whisper base, also copy to whisper_base.bin for dual compatibility
+                    if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE) {
+                        val altFile = File(modelsDir, "whisper_base.bin")
+                        if (!altFile.exists() && targetFinalFile.exists()) {
+                            try { targetFinalFile.copyTo(altFile, overwrite = true) } catch (_: Throwable) {}
+                        }
+                    }
                 }
 
                 prefsRepo.setModelDownloaded(modelId, true)
@@ -618,20 +689,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     onProgress(1f)
                     onComplete(true)
                 }
-            } catch (e: Exception) {
-                if (pauseFlags[modelId]?.get() == true) {
+            } catch (t: Throwable) {
+                if (pauseFlag.get() || !coroutineContext.isActive) {
                     return@launch
                 }
-                com.echo.recorder.util.AppLogger.e("MODEL", "Failed downloading model $modelId", e)
+                com.echo.recorder.util.AppLogger.e("MODEL", "Failed downloading model $modelId", t)
                 _modelDownloadStates.update {
                     it + (modelId to ModelDownloadProgress(
                         modelId = modelId,
                         status = ModelDownloadStatus.ERROR,
-                        errorMessage = e.localizedMessage ?: "Download failed"
+                        errorMessage = t.localizedMessage ?: "Download failed"
                     ))
                 }
                 withContext(Dispatchers.Main) { onComplete(false) }
             } finally {
+                activeConnections[modelId]?.let { try { it.disconnect() } catch (_: Throwable) {} }
+                activeConnections.remove(modelId)
                 activeDownloadJobs.remove(modelId)
             }
         }
@@ -640,18 +713,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun pauseModelDownload(modelId: String) {
         pauseFlags[modelId]?.set(true)
+        activeConnections[modelId]?.let { conn ->
+            try { conn.disconnect() } catch (_: Throwable) {}
+        }
+        activeConnections.remove(modelId)
+        activeDownloadJobs[modelId]?.cancel()
+        activeDownloadJobs.remove(modelId)
+        _modelDownloadStates.update { current ->
+            val prev = current[modelId]
+            if (prev != null) {
+                current + (modelId to prev.copy(status = ModelDownloadStatus.PAUSED))
+            } else current
+        }
+        com.echo.recorder.util.AppLogger.i("MODEL", "Download paused for model: $modelId")
     }
 
     fun cancelModelDownload(modelId: String) {
         pauseFlags[modelId]?.set(true)
+        activeConnections[modelId]?.let { conn ->
+            try { conn.disconnect() } catch (_: Throwable) {}
+        }
+        activeConnections.remove(modelId)
         activeDownloadJobs[modelId]?.cancel()
         activeDownloadJobs.remove(modelId)
         pauseFlags.remove(modelId)
         val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
         modelsDir.listFiles()?.filter { it.name.startsWith(modelId) && (it.name.contains(".part") || it.name.contains(".tmp")) }?.forEach {
-            try { it.delete() } catch (_: Exception) {}
+            try { it.delete() } catch (_: Throwable) {}
         }
         _modelDownloadStates.update { it - modelId }
+        com.echo.recorder.util.AppLogger.i("MODEL", "Download cancelled for model: $modelId")
     }
 
     fun importModelZipFromUri(
@@ -774,32 +865,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteModel(modelId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
-            if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI) {
-                val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
-                if (voskDir.exists()) voskDir.deleteRecursively()
-            } else if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN) {
-                val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
-                if (voskDir.exists()) voskDir.deleteRecursively()
-            } else if (modelId == com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE) {
-                val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
-                if (voskDir.exists()) voskDir.deleteRecursively()
-            } else {
-                val modelFile = File(modelsDir, "${modelId}.bin")
-                if (modelFile.exists()) modelFile.delete()
-                val ggufFile = File(modelsDir, "gemma-2-2b-it.gguf")
-                if (modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA && ggufFile.exists()) {
-                    ggufFile.delete()
+            try {
+                cancelModelDownload(modelId)
+                val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(app)
+                when (modelId) {
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI -> {
+                        val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_EN_IN -> {
+                        val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> {
+                        val voskDir = File(modelsDir, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_BASE -> {
+                        File(modelsDir, "whisper-base.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_base.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_base.gguf").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "ggml-base.bin").let { if (it.exists()) it.delete() }
+                    }
+                    com.echo.recorder.data.UserPreferences.STT_MODEL_WHISPER_TINY -> {
+                        File(modelsDir, "whisper-tiny.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_tiny.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_tiny.gguf").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "ggml-tiny.bin").let { if (it.exists()) it.delete() }
+                    }
+                    else -> {
+                        val modelFile = File(modelsDir, "${modelId}.bin")
+                        if (modelFile.exists()) modelFile.delete()
+                        val ggufFile = File(modelsDir, "gemma-2-2b-it.gguf")
+                        if (modelId == com.echo.recorder.data.UserPreferences.AI_MODEL_LOCAL_GEMMA && ggufFile.exists()) {
+                            ggufFile.delete()
+                        }
+                        val specificGguf = File(modelsDir, "${modelId}.gguf")
+                        if (specificGguf.exists()) specificGguf.delete()
+                    }
                 }
-                val specificGguf = File(modelsDir, "${modelId}.gguf")
-                if (specificGguf.exists()) specificGguf.delete()
+                modelsDir.listFiles()?.filter { it.name.startsWith(modelId) && (it.name.contains(".part") || it.name.contains(".tmp")) }?.forEach {
+                    try { it.delete() } catch (_: Throwable) {}
+                }
+                _modelDownloadStates.update { it - modelId }
+                prefsRepo.setModelDownloaded(modelId, false)
+                com.echo.recorder.util.AppLogger.i("MODEL", "Deleted model $modelId")
+            } catch (t: Throwable) {
+                com.echo.recorder.util.AppLogger.e("MODEL", "Failed deleting model $modelId", t)
             }
-            modelsDir.listFiles()?.filter { it.name.startsWith(modelId) && (it.name.contains(".part") || it.name.contains(".tmp")) }?.forEach {
-                try { it.delete() } catch (_: Exception) {}
-            }
-            _modelDownloadStates.update { it - modelId }
-            prefsRepo.setModelDownloaded(modelId, false)
-            com.echo.recorder.util.AppLogger.i("MODEL", "Deleted model $modelId")
         }
     }
 

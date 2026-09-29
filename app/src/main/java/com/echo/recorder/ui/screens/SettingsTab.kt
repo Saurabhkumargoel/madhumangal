@@ -1465,23 +1465,23 @@ fun SettingsTab(
                                                 sizeText = model.sizeText,
                                                 downloadProgress = downloadProgress,
                                                 onStartDownload = {
-                                                    viewModel.startOrResumeModelDownload(model.id) { success ->
+                                                    viewModel.startOrResumeModelDownload(modelId = model.id, onComplete = { success ->
                                                         if (success) {
                                                             viewModel.updateSttModel(model.id)
                                                             Toast.makeText(context, "✅ ${model.name} installed and selected!", Toast.LENGTH_SHORT).show()
                                                         } else {
                                                             Toast.makeText(context, "❌ Download failed. Check connection.", Toast.LENGTH_SHORT).show()
                                                         }
-                                                    }
+                                                    })
                                                 },
                                                 onPauseDownload = { viewModel.pauseModelDownload(model.id) },
                                                 onResumeDownload = {
-                                                    viewModel.startOrResumeModelDownload(model.id) { success ->
+                                                    viewModel.startOrResumeModelDownload(modelId = model.id, onComplete = { success ->
                                                         if (success) {
                                                             viewModel.updateSttModel(model.id)
                                                             Toast.makeText(context, "✅ ${model.name} installed and selected!", Toast.LENGTH_SHORT).show()
                                                         }
-                                                    }
+                                                    })
                                                 },
                                                 onCancelDownload = { viewModel.cancelModelDownload(model.id) },
                                                 onImportManual = {
@@ -1676,23 +1676,23 @@ fun SettingsTab(
                                                             sizeText = model.sizeText,
                                                             downloadProgress = downloadProgress,
                                                             onStartDownload = {
-                                                                viewModel.startOrResumeModelDownload(model.id) { success ->
+                                                                viewModel.startOrResumeModelDownload(modelId = model.id, onComplete = { success ->
                                                                     if (success) {
                                                                         viewModel.updateAiModel(model.id)
                                                                         Toast.makeText(context, "✅ ${model.name} downloaded & selected!", Toast.LENGTH_SHORT).show()
                                                                     } else {
                                                                         Toast.makeText(context, "❌ Download failed.", Toast.LENGTH_SHORT).show()
                                                                     }
-                                                                }
+                                                                })
                                                             },
                                                             onPauseDownload = { viewModel.pauseModelDownload(model.id) },
                                                             onResumeDownload = {
-                                                                viewModel.startOrResumeModelDownload(model.id) { success ->
+                                                                viewModel.startOrResumeModelDownload(modelId = model.id, onComplete = { success ->
                                                                     if (success) {
                                                                         viewModel.updateAiModel(model.id)
                                                                         Toast.makeText(context, "✅ ${model.name} downloaded & selected!", Toast.LENGTH_SHORT).show()
                                                                     }
-                                                                }
+                                                                })
                                                             },
                                                             onCancelDownload = { viewModel.cancelModelDownload(model.id) },
                                                             onImportManual = {
