@@ -321,7 +321,8 @@ class AudioRecordingService : Service() {
                 endTimeMillis = endTimeMillis,
                 durationSeconds = durationSeconds,
                 overlapSeconds = overlapSeconds,
-                status = AudioSegment.STATUS_PENDING
+                status = AudioSegment.STATUS_PENDING,
+                sessionId = "session_$sessionTimestamp"
             )
             val segmentId = app.database.audioSegmentDao().insertSegment(segment)
             AudioRecordingState.createdSegmentsCount.value = AudioRecordingState.createdSegmentsCount.value + 1

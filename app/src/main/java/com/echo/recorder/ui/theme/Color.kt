@@ -2,17 +2,17 @@ package com.echo.recorder.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val DarkBackground = Color(0xFF0F172A)
-val SurfaceDark = Color(0xFF1E293B)
-val SurfaceVariantDark = Color(0xFF334155)
+val DarkBackground: Color get() = AppThemeColors.darkBackground
+val SurfaceDark: Color get() = AppThemeColors.surfaceDark
+val SurfaceVariantDark: Color get() = AppThemeColors.surfaceVariantDark
 
-val PrimaryBlue = Color(0xFF38BDF8)
-val PrimaryVariant = Color(0xFF0284C7)
-val AccentPurple = Color(0xFFA855F7)
-val ActiveRed = Color(0xFFEF4444)
+val PrimaryBlue: Color get() = AppThemeColors.primaryBlue
+val PrimaryVariant: Color get() = AppThemeColors.primaryBlue
+val AccentPurple: Color get() = AppThemeColors.accentPurple
+val ActiveRed: Color get() = AppThemeColors.activeRed
 
-val TextPrimary = Color(0xFFF8FAFC)
-val TextSecondary = Color(0xFF94A3B8)
-val TextMuted = Color(0xFF64748B)
+val TextPrimary: Color get() = AppThemeColors.textPrimary
+val TextSecondary: Color get() = AppThemeColors.textSecondary
+val TextMuted: Color get() = AppThemeColors.textMuted
 
-val CardBorder = Color(0xFF475569)
+val CardBorder: Color get() = AppThemeColors.cardBorder

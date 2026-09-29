@@ -513,6 +513,38 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 #### Automated Prevention
 - Added `TinyAiProcessorTest.testRealWorldSabziListExtraction()` validating that `"सब्जी कौन कौन से गांधी है आलू टमाटर भिंडी करेla बैंगन"` correctly yields `Shopping` category tasks with individual vegetable items and no verbatim dump into Ideas.
 
+## ⚡ Mistake #13: Stale Hardcoded APK Versioning, Premature Stoppage Before Git Push, and Localized Test Assertion Mismatch
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Stale APK File Overwrite in `.shared`:** The `versionName` in `app/build.gradle.kts` remained hardcoded to `0.0.2026.09.29.0021`. When `exportApkToShared` executed, it silently overwrote yesterday's APK with the same name. From the user's perspective, no new app appeared in `.shared/` for today (`2026.09.30`), creating the impression that no new build was produced.
+2. **Premature Stoppage Before Git Ship:** The autonomous development loop specified in `.agrules` (Rule 5: Code → Build → Test → Ship) was paused after building, leaving uncommitted modified files in the working tree without executing `git add .`, `git commit`, and `git push`.
+3. **Localized Test Assertion Failure:** `TinyAiProcessorTest.testRealWorldSabziListExtraction()` failed during `./gradlew test` because it had a hardcoded English assertion `tasks.any { it.title.startsWith("Buy Vegetables:") }`, but `TinyAiProcessor` properly localized Hindi transcript master tasks into `"सब्जियां खरीदें:"` when `aiLanguage` was `auto`.
+
+#### What AI Did Wrong
+- Did not update `versionName` to match the current date (`2026.09.30`) before running `assembleDebug`.
+- Did not execute the autonomous shipping step (`git add .`, `git commit`, `git push`) immediately following successful build verification.
+- Implemented Hindi localization in `TinyAiProcessor` without updating the corresponding test assertion to allow localized master headers.
+
+#### What User Did Wrong / Communication Gap
+- None; user correctly noted that repository changes were unpushed and the `.shared` directory did not contain a new timestamped APK.
+
+#### How It Was Fixed
+1. **Updated Build Versioning (`app/build.gradle.kts`):**
+   - Bumped `versionCode = 2` and `versionName = "0.0.2026.09.30.0010"`.
+   - Assembled APK exported to `.shared/GoodEcho_v0.0.2026.09.30.0010.apk` (59,453 KB).
+2. **Fixed Unit Test Assertion (`TinyAiProcessorTest.kt`):**
+   - Updated assertion: `assertTrue(tasks.any { it.title.startsWith("Buy Vegetables:") || it.title.startsWith("सब्जियां खरीदें:") })`.
+   - All 13 unit tests passed with 100% green status.
+3. **Executed Autonomous Ship Pipeline:**
+   - Staged all modified files, committed with descriptive message, and pushed to remote repository.
+
+#### Automated Prevention
+- Always run `./gradlew test` and `./gradlew assembleDebug` with timestamped versioning.
+- Ensure all test assertions for multilingual pipelines accommodate localized strings (`hi` vs `en`).
+- Strictly complete the full autonomous cycle (Code → Build → Test → Ship) without waiting for user reminders.
+
 ---
 
 *End of Recommendations Document. Maintained automatically per `.agrules`.*

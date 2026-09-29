@@ -178,6 +178,48 @@ object AppStorageManager {
     }
 
     /**
+     * Strips metadata headers, markdown tables, sections, and extracted tasks from .md content,
+     * returning ONLY the pure spoken verbatim transcript text.
+     */
+    fun stripMetadataFromTranscript(rawContent: String): String {
+        if (rawContent.isBlank()) return ""
+        var text = rawContent.trim()
+
+        // 1. If it contains "## 📝 Verbatim Transcript" or "## Verbatim Transcript" or "## Transcription" or "### Transcript"
+        val markerRegex = Regex("""(?i)##\s*(?:📝\s*)?(?:Verbatim\s+Transcript|Transcription|Transcript)""")
+        val match = markerRegex.find(text)
+        if (match != null) {
+            val afterMarker = text.substring(match.range.last + 1).trim()
+            val cutoffRegex = Regex("""(?m)^(?:---|\s*##\s+)""")
+            val cutoffMatch = cutoffRegex.find(afterMarker)
+            text = if (cutoffMatch != null) {
+                afterMarker.substring(0, cutoffMatch.range.first).trim()
+            } else {
+                afterMarker
+            }
+        }
+
+        // 2. Filter out any remaining metadata lines, header comments, and task checklists
+        val cleanLines = text.lines().map { it.trim() }.filter { line ->
+            line.isNotBlank() &&
+            !line.startsWith("#") &&
+            !line.startsWith("- **Audio Source:") &&
+            !line.startsWith("- **Timestamp:") &&
+            !line.startsWith("- **Duration:") &&
+            !line.startsWith("- **STT Engine:") &&
+            !line.startsWith("- **Versioned File:") &&
+            !line.startsWith("- **") &&
+            !line.startsWith("---") &&
+            !line.startsWith("- [ ]") &&
+            !line.startsWith("- [x]") &&
+            !line.startsWith(">")
+        }
+
+        val result = cleanLines.joinToString(" ").trim()
+        return if (result.isNotBlank()) result else rawContent.trim()
+    }
+
+    /**
      * Saves transcription text to a persistent, versioned Markdown (.md) file.
      * Retains history of all transcriptions even when re-transcribed.
      * Always writes a new versioned file (vYYYYMMDD_HHmmss.md) and updates the latest file.
@@ -200,6 +242,8 @@ object AppStorageManager {
 
         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
+        val cleanSpokenText = stripMetadataFromTranscript(text)
+
         val content = buildString {
             appendLine("# 🎙️ Audio Transcription: $baseName")
             appendLine()
@@ -213,7 +257,7 @@ object AppStorageManager {
             appendLine()
             appendLine("## 📝 Verbatim Transcript")
             appendLine()
-            appendLine(text.ifBlank { "*(No speech detected in this audio segment)*" })
+            appendLine(cleanSpokenText.ifBlank { "*(No speech detected in this audio segment)*" })
             appendLine()
 
             if (tasks.isNotEmpty()) {
@@ -442,7 +486,11 @@ object AppStorageManager {
             // 1. Copy absolute path to clipboard so user can always paste in file explorer
             copyPathToClipboard(context, folder.absolutePath)
 
-            // 2. Try launching system DocumentsUI / SAF viewer for external storage
+            // 2. Build folder content URI with FileProvider or documents URI
+            val contentUri = try {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", folder)
+            } catch (_: Exception) { null }
+
             val relativePath = if (folder.absolutePath.contains("/storage/emulated/0/")) {
                 folder.absolutePath.substringAfter("/storage/emulated/0/")
             } else {
@@ -451,38 +499,33 @@ object AppStorageManager {
             val encodedPath = relativePath.replace("/", "%2F")
             val docUri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3A$encodedPath")
 
-            val intentDocuments = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(docUri, "vnd.android.document/directory")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val folderIntent = Intent(Intent.ACTION_VIEW).apply {
+                if (contentUri != null) {
+                    setDataAndType(contentUri, "resource/folder")
+                } else {
+                    setDataAndType(docUri, "vnd.android.document/directory")
+                }
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            if (tryStartActivity(context, intentDocuments)) {
+
+            // Always present system chooser popup so user is asked where they want to open it
+            val chooser = Intent.createChooser(folderIntent, "Open folder with...").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            if (tryStartActivity(context, chooser)) {
                 android.widget.Toast.makeText(context, "📁 Opening folder: ${folder.name}", android.widget.Toast.LENGTH_SHORT).show()
                 return true
             }
 
-            // 3. Try standard folder mime types with FileProvider
-            try {
-                val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", folder)
-                val folderIntent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(contentUri, "resource/folder")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                if (tryStartActivity(context, folderIntent)) {
-                    android.widget.Toast.makeText(context, "📁 Opening folder: ${folder.name}", android.widget.Toast.LENGTH_SHORT).show()
-                    return true
-                }
-            } catch (_: Exception) {}
-
-            // 4. Try Downloads intent
+            // Fallback: Downloads intent
             val dlIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             if (tryStartActivity(context, dlIntent)) {
-                android.widget.Toast.makeText(context, "📁 Opening Downloads (Path copied to clipboard)", android.widget.Toast.LENGTH_SHORT).show()
                 return true
             }
 
-            // 5. Toast path copied
             android.widget.Toast.makeText(
                 context,
                 "📁 Path copied to clipboard: ${folder.absolutePath}",
@@ -550,6 +593,186 @@ object AppStorageManager {
         }
     }
 
+    data class SyncResult(
+        val discoveredCount: Int,
+        val alreadyTrackedCount: Int,
+        val totalAudioOnDisk: Int,
+        val message: String
+    )
+
+    /**
+     * Scans storage folders (configured base directory, custom source, Downloads public folder, and app storage)
+     * for existing WAV/M4A audio files and matching Markdown transcriptions.
+     * Inserts any untracked audio segments and transcriptions into Room database so they are never lost.
+     */
+    suspend fun syncStorageFilesWithDatabase(
+        context: Context,
+        database: com.echo.recorder.data.AppDatabase,
+        customBasePath: String? = null,
+        customSourcePath: String? = null
+    ): SyncResult {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val audioDao = database.audioSegmentDao()
+            val transDao = database.transcriptionDao()
+            val existingSegments = audioDao.getAllSegmentsList()
+            val existingPaths = existingSegments.map { it.filePath }.toSet()
+            val existingFileNames = existingSegments.map { File(it.filePath).name }.toSet()
+
+            val dirsToSearch = linkedSetOf<File>()
+
+            // 1. Current configured base directory audio folder
+            val activeBase = getBaseDirectory(context, customBasePath)
+            dirsToSearch.add(File(activeBase, FOLDER_AUDIO))
+            dirsToSearch.add(activeBase)
+
+            // 2. Custom Source Path if set
+            if (!customSourcePath.isNullOrBlank()) {
+                val srcFile = File(customSourcePath)
+                if (srcFile.exists()) {
+                    dirsToSearch.add(File(srcFile, FOLDER_AUDIO))
+                    dirsToSearch.add(srcFile)
+                }
+            }
+
+            // 3. Default standard Downloads public path
+            try {
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val defaultYesbossAudio = File(downloads, "App data/poc/yesboss/audio")
+                if (defaultYesbossAudio.exists()) dirsToSearch.add(defaultYesbossAudio)
+                val defaultYesboss = File(downloads, "App data/poc/yesboss")
+                if (defaultYesboss.exists()) dirsToSearch.add(defaultYesboss)
+            } catch (_: Exception) {}
+
+            // 4. App internal directories
+            try {
+                dirsToSearch.add(File(context.filesDir, "audio_chunks"))
+                dirsToSearch.add(File(context.filesDir, "poc/yesboss/audio"))
+                dirsToSearch.add(context.filesDir)
+                val extFiles = context.getExternalFilesDir(null)
+                if (extFiles != null) {
+                    dirsToSearch.add(File(extFiles, "poc/yesboss/audio"))
+                    dirsToSearch.add(File(extFiles, "audio"))
+                }
+            } catch (_: Exception) {}
+
+            var discoveredCount = 0
+            var alreadyTracked = 0
+            var totalFilesOnDisk = 0
+
+            // Directories containing potential transcript markdown files
+            val transDirs = mutableListOf<File>()
+            transDirs.add(File(activeBase, FOLDER_TRANSCRIPTIONS))
+            transDirs.add(File(activeBase, FOLDER_NOTES))
+            if (!customSourcePath.isNullOrBlank()) {
+                transDirs.add(File(File(customSourcePath), FOLDER_TRANSCRIPTIONS))
+                transDirs.add(File(File(customSourcePath), FOLDER_NOTES))
+            }
+            try {
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                transDirs.add(File(downloads, "App data/poc/yesboss/transcriptions"))
+                transDirs.add(File(downloads, "App data/poc/yesboss/notes"))
+            } catch (_: Exception) {}
+
+            for (dir in dirsToSearch) {
+                if (!dir.exists() || !dir.isDirectory) continue
+                val files = dir.listFiles() ?: continue
+                for (file in files) {
+                    if (!file.isFile) continue
+                    val ext = file.extension.lowercase(Locale.ROOT)
+                    if (ext != "wav" && ext != "m4a" && ext != "mp3" && ext != "aac") continue
+
+                    totalFilesOnDisk++
+
+                    // Check if already known
+                    if (existingPaths.contains(file.absolutePath) || existingFileNames.contains(file.name)) {
+                        alreadyTracked++
+                        continue
+                    }
+
+                    // Discover audio duration (16kHz 16-bit mono WAV: 32000 bytes per second)
+                    val rawDuration = try {
+                        val pcmBytes = (file.length() - 44).coerceAtLeast(0)
+                        (pcmBytes / 32000).toInt().coerceAtLeast(1)
+                    } catch (_: Exception) {
+                        5
+                    }
+
+                    // Extract session ID from chunk filename (e.g. chunk_20260928_163357_1.wav)
+                    val nameWithoutExt = file.nameWithoutExtension
+                    val sessionId = if (nameWithoutExt.startsWith("chunk_")) {
+                        val parts = nameWithoutExt.split("_")
+                        if (parts.size >= 3) "session_${parts[1]}" else "session_restored"
+                    } else if (nameWithoutExt.startsWith("session_")) {
+                        nameWithoutExt.substringBeforeLast("_")
+                    } else {
+                        "session_discovered"
+                    }
+
+                    // Look for matching transcript .md file
+                    var foundTranscriptText = ""
+                    for (tDir in transDirs) {
+                        if (!tDir.exists()) continue
+                        val candidates = listOf(
+                            File(tDir, "transcription_${nameWithoutExt}.md"),
+                            File(tDir, "transcription_${file.name}.md"),
+                            File(tDir, "${nameWithoutExt}.md"),
+                            File(tDir, "${nameWithoutExt}.txt")
+                        )
+                        for (cand in candidates) {
+                            if (cand.exists() && cand.length() > 0) {
+                                try {
+                                    val fullMd = cand.readText()
+                                    foundTranscriptText = stripMetadataFromTranscript(fullMd)
+                                    break
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        if (foundTranscriptText.isNotBlank()) break
+                    }
+
+                    if (foundTranscriptText.isBlank()) {
+                        foundTranscriptText = "Audio slice captured (${rawDuration}s) — ready for transcription."
+                    }
+
+                    val now = if (file.lastModified() > 0) file.lastModified() else System.currentTimeMillis()
+
+                    val segment = com.echo.recorder.data.AudioSegment(
+                        filePath = file.absolutePath,
+                        startTimeMillis = now,
+                        endTimeMillis = now + (rawDuration * 1000L),
+                        durationSeconds = rawDuration,
+                        overlapSeconds = 3,
+                        status = com.echo.recorder.data.AudioSegment.STATUS_COMPLETED,
+                        sessionId = sessionId
+                    )
+                    val segId = audioDao.insertSegment(segment)
+
+                    val transcription = com.echo.recorder.data.Transcription(
+                        segmentId = segId,
+                        text = foundTranscriptText,
+                        timestampMillis = now,
+                        durationSeconds = rawDuration,
+                        confidence = 1.0f
+                    )
+                    transDao.insertTranscription(transcription)
+                    discoveredCount++
+                    AppLogger.i("STORAGE", "Discovered & restored existing audio chunk: ${file.name} (Duration: ${rawDuration}s, Session: $sessionId)")
+                }
+            }
+
+            val summary = if (discoveredCount > 0) {
+                "✅ Restored $discoveredCount audio recordings & transcriptions from disk!"
+            } else if (alreadyTracked > 0) {
+                "All $alreadyTracked audio recordings on disk are already in sync."
+            } else {
+                "No external audio files found in storage directories."
+            }
+
+            AppLogger.i("STORAGE", "Sync completed: $discoveredCount discovered, $alreadyTracked tracked, $totalFilesOnDisk total on disk.")
+            SyncResult(discoveredCount, alreadyTracked, totalFilesOnDisk, summary)
+        }
+    }
+
     data class ExportResult(
         val totalAudioMoved: Int,
         val totalTranscriptsMoved: Int,
@@ -568,6 +791,8 @@ object AppStorageManager {
     suspend fun exportAllMediaToCurrentLocation(
         context: Context,
         database: com.echo.recorder.data.AppDatabase,
+        sourceBasePath: String? = null,
+        targetBasePath: String? = null,
         customAudioDir: String? = null,
         customTranscriptionsDir: String? = null,
         customNotesDir: String? = null,
@@ -581,11 +806,14 @@ object AppStorageManager {
             var logsMoved = 0
             var modelsMoved = 0
 
-            val targetAudioDir = getAudioDirectory(context, customAudioDir)
-            val targetTranscriptionsDir = getTranscriptionsDirectory(context, customTranscriptionsDir)
-            val targetNotesDir = getNotesDirectory(context, customNotesDir)
-            val targetLogsDir = getLogsDirectory(context, customLogsDir)
-            val targetModelsDir = getModelsDirectory(context, customModelsDir)
+            val targetBase = if (!targetBasePath.isNullOrBlank()) File(targetBasePath).apply { mkdirs() } else getBaseDirectory(context)
+            val targetAudioDir = if (!customAudioDir.isNullOrBlank()) File(customAudioDir).apply { mkdirs() } else File(targetBase, FOLDER_AUDIO).apply { if (!exists()) mkdirs() }
+            val targetTranscriptionsDir = if (!customTranscriptionsDir.isNullOrBlank()) File(customTranscriptionsDir).apply { mkdirs() } else File(targetBase, FOLDER_TRANSCRIPTIONS).apply { if (!exists()) mkdirs() }
+            val targetNotesDir = if (!customNotesDir.isNullOrBlank()) File(customNotesDir).apply { mkdirs() } else File(targetBase, FOLDER_NOTES).apply { if (!exists()) mkdirs() }
+            val targetLogsDir = if (!customLogsDir.isNullOrBlank()) File(customLogsDir).apply { mkdirs() } else File(targetBase, FOLDER_LOGS).apply { if (!exists()) mkdirs() }
+            val targetModelsDir = if (!customModelsDir.isNullOrBlank()) File(customModelsDir).apply { mkdirs() } else File(targetBase, FOLDER_MODELS).apply { if (!exists()) mkdirs() }
+
+            val sourceBaseDir = if (!sourceBasePath.isNullOrBlank()) File(sourceBasePath) else null
 
             try {
                 // 1. Move all audio segments tracked in database
@@ -614,13 +842,17 @@ object AppStorageManager {
                     }
                 }
 
-                // 2. Scan internal audio dirs (e.g. files/audio_chunks or cacheDir) for untracked WAV files
-                val internalDirsToScan = listOf(
+                // 2. Scan internal and source audio dirs for untracked WAV files
+                val internalDirsToScan = mutableListOf(
                     context.filesDir,
                     File(context.filesDir, "audio_chunks"),
                     File(context.filesDir, "poc/yesboss/audio"),
                     context.cacheDir
                 )
+                if (sourceBaseDir != null && sourceBaseDir.exists()) {
+                    internalDirsToScan.add(File(sourceBaseDir, "audio"))
+                    internalDirsToScan.add(sourceBaseDir)
+                }
 
                 for (scanDir in internalDirsToScan) {
                     if (scanDir.exists() && scanDir.isDirectory) {
@@ -648,17 +880,21 @@ object AppStorageManager {
                 }
 
                 // 3. Migrate Markdown transcription files
-                val transcriptScanDirs = listOf(
+                val transcriptScanDirs = mutableListOf(
                     context.filesDir,
                     File(context.filesDir, "transcriptions"),
                     File(context.filesDir, "poc/yesboss/transcriptions"),
                     getBaseDirectory(context)
                 )
+                if (sourceBaseDir != null && sourceBaseDir.exists()) {
+                    transcriptScanDirs.add(File(sourceBaseDir, "transcriptions"))
+                    transcriptScanDirs.add(sourceBaseDir)
+                }
 
                 for (scanDir in transcriptScanDirs) {
                     if (scanDir.exists() && scanDir.isDirectory) {
                         scanDir.listFiles()?.forEach { file ->
-                            if (file.isFile && file.name.startsWith("transcription_") && file.extension.lowercase(Locale.ROOT) == "md") {
+                            if (file.isFile && file.name.startsWith("transcription_") && (file.extension.lowercase(Locale.ROOT) in listOf("md", "srt"))) {
                                 val isAlreadyInTarget = try {
                                     file.parentFile?.canonicalPath == targetTranscriptionsDir.canonicalPath
                                 } catch (e: Exception) {
@@ -679,12 +915,16 @@ object AppStorageManager {
                 }
 
                 // 4. Migrate AI Notes files (.md and .html)
-                val notesScanDirs = listOf(
+                val notesScanDirs = mutableListOf(
                     context.filesDir,
                     File(context.filesDir, "notes"),
                     File(context.filesDir, "poc/yesboss/notes"),
                     getBaseDirectory(context)
                 )
+                if (sourceBaseDir != null && sourceBaseDir.exists()) {
+                    notesScanDirs.add(File(sourceBaseDir, "notes"))
+                    notesScanDirs.add(sourceBaseDir)
+                }
 
                 for (scanDir in notesScanDirs) {
                     if (scanDir.exists() && scanDir.isDirectory) {
@@ -712,11 +952,15 @@ object AppStorageManager {
                 }
 
                 // 5. Migrate Session Logs (.log and app_logs.txt)
-                val logScanDirs = listOf(
+                val logScanDirs = mutableListOf(
                     context.filesDir,
                     File(context.filesDir, "logs"),
                     File(context.filesDir, "poc/yesboss/logs")
                 )
+                if (sourceBaseDir != null && sourceBaseDir.exists()) {
+                    logScanDirs.add(File(sourceBaseDir, "logs"))
+                    logScanDirs.add(sourceBaseDir)
+                }
 
                 for (scanDir in logScanDirs) {
                     if (scanDir.exists() && scanDir.isDirectory) {
@@ -739,13 +983,17 @@ object AppStorageManager {
                 }
 
                 // 6. Migrate and backup Models (Vosk models, GGUF weights, zips)
-                val modelScanDirs = listOf(
+                val modelScanDirs = mutableListOf(
                     context.filesDir,
                     File(context.filesDir, "models"),
                     File(context.filesDir, "poc/yesboss/models"),
                     context.cacheDir,
                     File(context.cacheDir, "models")
                 )
+                if (sourceBaseDir != null && sourceBaseDir.exists()) {
+                    modelScanDirs.add(File(sourceBaseDir, "models"))
+                    modelScanDirs.add(sourceBaseDir)
+                }
 
                 for (scanDir in modelScanDirs) {
                     if (scanDir.exists() && scanDir.isDirectory) {
@@ -762,12 +1010,14 @@ object AppStorageManager {
                                 fileOrDir.name.endsWith(".bin"))
                             ) {
                                 val dest = File(targetModelsDir, fileOrDir.name)
-                                if (fileOrDir.isDirectory) {
-                                    fileOrDir.copyRecursively(dest, overwrite = true)
-                                } else {
-                                    fileOrDir.copyTo(dest, overwrite = true)
+                                if (!dest.exists() || (fileOrDir.isFile && dest.length() != fileOrDir.length())) {
+                                    if (fileOrDir.isDirectory) {
+                                        fileOrDir.copyRecursively(dest, overwrite = true)
+                                    } else {
+                                        fileOrDir.copyTo(dest, overwrite = true)
+                                    }
+                                    modelsMoved++
                                 }
-                                modelsMoved++
                             }
                         }
                     }
@@ -777,7 +1027,12 @@ object AppStorageManager {
                 database.transcriptionDao().cleanupPendingErrorTexts()
 
                 val baseTargetPath = targetAudioDir.parentFile?.absolutePath ?: targetAudioDir.absolutePath
-                val summaryMsg = "Successfully exported $audioMoved audio recordings, $transcriptsMoved transcriptions, $notesMoved notes, $logsMoved logs, and $modelsMoved models to: $baseTargetPath"
+                val totalMoved = audioMoved + transcriptsMoved + notesMoved + logsMoved + modelsMoved
+                val summaryMsg = if (totalMoved > 0) {
+                    "Successfully exported $audioMoved audio recordings, $transcriptsMoved transcriptions, $notesMoved notes, $logsMoved logs, and $modelsMoved models to: $baseTargetPath"
+                } else {
+                    "All media and transcript files are already in sync at: $baseTargetPath"
+                }
                 AppLogger.i("STORAGE", summaryMsg)
 
                 ExportResult(
@@ -904,6 +1159,10 @@ object AppStorageManager {
      * while preserving genuine models.
      */
     fun cleanupWasteModels(context: Context): Int {
+        val sp = context.getSharedPreferences("app_internal_cleanup", Context.MODE_PRIVATE)
+        if (sp.getBoolean("waste_models_cleaned_v2", false)) {
+            return 0
+        }
         var deletedCount = 0
         try {
             val modelsDir = getModelsDirectory(context)
@@ -924,9 +1183,12 @@ object AppStorageManager {
                     }
                 }
             }
+            sp.edit().putBoolean("waste_models_cleaned_v2", true).apply()
         } catch (e: Exception) {
             AppLogger.e("STORAGE", "Error cleaning up waste models", e)
         }
         return deletedCount
     }
 }
+
+

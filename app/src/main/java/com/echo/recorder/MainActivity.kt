@@ -36,7 +36,13 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
 
         setContent {
-            GoodEchoTheme {
+            val userPreferences by viewModel.userPreferences.collectAsState()
+            GoodEchoTheme(
+                themeName = userPreferences.activeTheme,
+                customThemeJson = userPreferences.customThemeJson,
+                fontScale = userPreferences.fontScale,
+                fontMode = userPreferences.fontMode
+            ) {
                 val isServiceRunning by viewModel.isServiceRunning.collectAsState()
                 val currentAmplitude by viewModel.currentAmplitude.collectAsState()
                 val currentDb by viewModel.currentDb.collectAsState()

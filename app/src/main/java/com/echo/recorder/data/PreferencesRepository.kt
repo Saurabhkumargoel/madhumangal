@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -31,8 +32,21 @@ class PreferencesRepository(private val context: Context) {
         val NOTES_FOLDER_PATH = stringPreferencesKey("notes_folder_path")
         val LOGS_FOLDER_PATH = stringPreferencesKey("logs_folder_path")
         val BASE_FOLDER_PATH = stringPreferencesKey("base_folder_path")
+        val LAST_EXPORT_SOURCE_PATH = stringPreferencesKey("last_export_source_path")
+        val ACTIVE_THEME = stringPreferencesKey("active_theme")
+        val PINNED_CATEGORIES = androidx.datastore.preferences.core.stringSetPreferencesKey("pinned_categories")
+        val CUSTOM_CATEGORIES = androidx.datastore.preferences.core.stringSetPreferencesKey("custom_categories")
         val DOWNLOADED_MODELS = androidx.datastore.preferences.core.stringSetPreferencesKey("downloaded_models")
         val SETTINGS_MODE = stringPreferencesKey("settings_mode")
+        val APP_LANGUAGE = stringPreferencesKey("app_language")
+        val IS_WEB_SEARCH_ENABLED = booleanPreferencesKey("is_web_search_enabled")
+        val CUSTOM_SYSTEM_PROMPT = stringPreferencesKey("custom_system_prompt")
+        val AI_LANGUAGE = stringPreferencesKey("ai_language")
+        val FONT_SCALE = floatPreferencesKey("font_scale")
+        val FONT_MODE = stringPreferencesKey("font_mode")
+        val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
+        val CUSTOM_AI_MODELS = stringPreferencesKey("custom_ai_models")
+        val TTS_SPEED = floatPreferencesKey("tts_speed")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -53,6 +67,19 @@ class PreferencesRepository(private val context: Context) {
             notesFolderPath = preferences[PreferencesKeys.NOTES_FOLDER_PATH] ?: "",
             logsFolderPath = preferences[PreferencesKeys.LOGS_FOLDER_PATH] ?: "",
             baseFolderPath = preferences[PreferencesKeys.BASE_FOLDER_PATH] ?: "",
+            lastExportSourcePath = preferences[PreferencesKeys.LAST_EXPORT_SOURCE_PATH] ?: "",
+            activeTheme = preferences[PreferencesKeys.ACTIVE_THEME] ?: "MIDNIGHT_BLUE",
+            appLanguage = preferences[PreferencesKeys.APP_LANGUAGE] ?: "en",
+            isWebSearchEnabled = preferences[PreferencesKeys.IS_WEB_SEARCH_ENABLED] ?: true,
+            customSystemPrompt = preferences[PreferencesKeys.CUSTOM_SYSTEM_PROMPT] ?: "",
+            aiLanguage = preferences[PreferencesKeys.AI_LANGUAGE] ?: "auto",
+            fontScale = preferences[PreferencesKeys.FONT_SCALE] ?: 1.0f,
+            fontMode = preferences[PreferencesKeys.FONT_MODE] ?: "DEFAULT",
+            customThemeJson = preferences[PreferencesKeys.CUSTOM_THEME_JSON] ?: "",
+            customAiModels = preferences[PreferencesKeys.CUSTOM_AI_MODELS] ?: "",
+            ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f,
+            pinnedCategories = preferences[PreferencesKeys.PINNED_CATEGORIES] ?: setOf("Urgent", "Shopping"),
+            customCategories = preferences[PreferencesKeys.CUSTOM_CATEGORIES] ?: emptySet(),
             downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
         )
     }
@@ -147,6 +174,30 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun updateLastExportSourcePath(path: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_EXPORT_SOURCE_PATH] = path.trim()
+        }
+    }
+
+    suspend fun updateActiveTheme(theme: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ACTIVE_THEME] = theme
+        }
+    }
+
+    suspend fun updatePinnedCategories(pinned: Set<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PINNED_CATEGORIES] = pinned
+        }
+    }
+
+    suspend fun updateCustomCategories(custom: Set<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CUSTOM_CATEGORIES] = custom
+        }
+    }
+
     suspend fun setModelDownloaded(modelId: String, isDownloaded: Boolean) {
         context.dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
@@ -157,6 +208,60 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateSettingsMode(mode: SettingsMode) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SETTINGS_MODE] = mode.name
+        }
+    }
+
+    suspend fun updateAppLanguage(lang: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.APP_LANGUAGE] = lang
+        }
+    }
+
+    suspend fun updateCustomSystemPrompt(prompt: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CUSTOM_SYSTEM_PROMPT] = prompt
+        }
+    }
+
+    suspend fun updateWebSearchEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_WEB_SEARCH_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateAiLanguage(lang: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AI_LANGUAGE] = lang
+        }
+    }
+
+    suspend fun updateFontScale(scale: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FONT_SCALE] = scale
+        }
+    }
+
+    suspend fun updateFontMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FONT_MODE] = mode
+        }
+    }
+
+    suspend fun updateCustomThemeJson(json: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CUSTOM_THEME_JSON] = json
+        }
+    }
+
+    suspend fun updateCustomAiModels(json: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CUSTOM_AI_MODELS] = json
+        }
+    }
+
+    suspend fun updateTtsSpeed(speed: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TTS_SPEED] = speed
         }
     }
 }

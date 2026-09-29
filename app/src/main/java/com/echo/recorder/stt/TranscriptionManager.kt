@@ -92,12 +92,15 @@ class TranscriptionManager(
 
         // Process with Tiny AI to extract NoteTasks ONLY if real speech is present!
         val extractedTasks = if (!textToUse.startsWith("[Ambient") && !textToUse.startsWith("[Silence") && !textToUse.startsWith("[Audio Recorded")) {
-            tinyAiProcessor.processTranscription(textToUse, transcriptionId)
+            val hierarchical = tinyAiProcessor.processTranscriptionHierarchical(textToUse, transcriptionId)
+            val saved = tinyAiProcessor.saveHierarchicalTasksToDatabase(noteTaskDao, hierarchical)
+            com.echo.recorder.util.AppLogger.i("AI", "Extracted ${saved.size} background tasks into Dashboard:")
+            for ((idx, task) in saved.withIndex()) {
+                com.echo.recorder.util.AppLogger.i("AI", "  [Task #${idx + 1}] \"${task.title}\" | Group: ${task.categoryGroup} | Prio: ${task.priority}")
+            }
+            saved
         } else {
             emptyList()
-        }
-        for (task in extractedTasks) {
-            noteTaskDao.insertTask(task)
         }
 
         // Save transcription and AI notes files to user configured folders (default: Download/App data/poc/yesboss)

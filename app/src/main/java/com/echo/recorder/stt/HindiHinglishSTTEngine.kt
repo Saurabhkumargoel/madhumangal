@@ -41,8 +41,27 @@ class HindiHinglishSTTEngine(
         }
 
         // ── 1. VOSK: Real 100% offline neural transcription of audio files ──────
-        if (model == UserPreferences.STT_MODEL_VOSK_HINDI || model == UserPreferences.STT_MODEL_VOSK_EN_IN) {
-            val dirName = if (model == UserPreferences.STT_MODEL_VOSK_EN_IN) VoskSTTEngine.MODEL_DIR_EN_IN else VoskSTTEngine.MODEL_DIR_NAME
+        if (model == UserPreferences.STT_MODEL_VOSK_HINDI || 
+            model == UserPreferences.STT_MODEL_VOSK_EN_IN || 
+            model == UserPreferences.STT_MODEL_VOSK_HINDI_LARGE) {
+            
+            val dirName = when (model) {
+                UserPreferences.STT_MODEL_VOSK_EN_IN -> VoskSTTEngine.MODEL_DIR_EN_IN
+                UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> VoskSTTEngine.MODEL_DIR_HINDI_LARGE
+                else -> VoskSTTEngine.MODEL_DIR_NAME
+            }
+            
+            if (!VoskSTTEngine.ModelStatus.isInstalled(context, dirName)) {
+                val modelName = when (model) {
+                    UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> "Vosk Hindi Full / Large (1.5GB)"
+                    UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk Indian English"
+                    else -> "Vosk Hindi Small"
+                }
+                val errMsg = "$modelName is not downloaded. Please download it first in Settings → Speech-To-Text (STT) Models."
+                AppLogger.w("STT_ENGINE", errMsg)
+                return@withContext Result.failure(IllegalStateException(errMsg))
+            }
+            
             AppLogger.i("STT_ENGINE", "Routing to VoskSTTEngine for offline file transcription (dir=$dirName)")
             val voskResult = VoskSTTEngine(context, dirName).transcribeAudioFile(audioFile)
             return@withContext if (voskResult.isSuccess) {
@@ -73,17 +92,18 @@ class HindiHinglishSTTEngine(
             }
         }
 
-        // ── 3. Offline fallback: If Vosk Hindi or Vosk En is installed, decode via Vosk! ──
-        val voskHindiInstalled = VoskSTTEngine.ModelStatus.isInstalled(context, VoskSTTEngine.MODEL_DIR_NAME)
-        val voskEnInstalled = VoskSTTEngine.ModelStatus.isInstalled(context, VoskSTTEngine.MODEL_DIR_EN_IN)
-
-        if (voskHindiInstalled || voskEnInstalled) {
-            val fallbackDir = if (model == UserPreferences.STT_MODEL_VOSK_EN_IN || (!voskHindiInstalled && voskEnInstalled))
-                VoskSTTEngine.MODEL_DIR_EN_IN else VoskSTTEngine.MODEL_DIR_NAME
-            AppLogger.i("STT_ENGINE", "Model '$model' requested for audio file. Decoding with on-device neural Vosk engine ($fallbackDir)...")
-            val fallbackResult = VoskSTTEngine(context, fallbackDir).transcribeAudioFile(audioFile)
-            if (fallbackResult.isSuccess) {
-                return@withContext fallbackResult
+        // ── 3. Fallback for Live-Only Google Speech on Saved Audio Files ──────────
+        // Google Speech Recognizer cannot decode saved WAV files directly on Android.
+        if (model == UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+            val voskHindiInstalled = VoskSTTEngine.ModelStatus.isInstalled(context, VoskSTTEngine.MODEL_DIR_NAME)
+            val voskEnInstalled = VoskSTTEngine.ModelStatus.isInstalled(context, VoskSTTEngine.MODEL_DIR_EN_IN)
+            if (voskHindiInstalled || voskEnInstalled) {
+                val fallbackDir = if (voskHindiInstalled) VoskSTTEngine.MODEL_DIR_NAME else VoskSTTEngine.MODEL_DIR_EN_IN
+                AppLogger.i("STT_ENGINE", "Google Speech Recognizer is live-streaming only. Decoding saved audio file with installed Vosk engine ($fallbackDir)...")
+                val fallbackResult = VoskSTTEngine(context, fallbackDir).transcribeAudioFile(audioFile)
+                if (fallbackResult.isSuccess) {
+                    return@withContext fallbackResult
+                }
             }
         }
 

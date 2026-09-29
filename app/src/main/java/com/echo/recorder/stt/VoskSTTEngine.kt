@@ -28,6 +28,7 @@ class VoskSTTEngine(
     companion object {
         /** Sub-directory inside the models folder that holds the extracted Vosk Hindi model */
         const val MODEL_DIR_NAME = "vosk_hindi"
+        const val MODEL_DIR_HINDI_LARGE = "vosk_hindi_large"
         const val MODEL_DIR_EN_IN = "vosk_en_in"
 
         private const val TAG = "VOSK_STT"
@@ -52,11 +53,15 @@ class VoskSTTEngine(
 
             val modelDir = getModelDir(context)
             if (modelDir == null || !modelDir.exists() || modelDir.listFiles().isNullOrEmpty()) {
-                val displayName = if (modelDirName == MODEL_DIR_EN_IN) "Vosk Indian English" else "Vosk Hindi"
-                AppLogger.w(TAG, "$displayName model not found at expected path. Download it first.")
+                val displayName = when (modelDirName) {
+                    MODEL_DIR_EN_IN -> "Vosk Indian English"
+                    MODEL_DIR_HINDI_LARGE -> "Vosk Hindi Full / Large (1.5GB)"
+                    else -> "Vosk Hindi Small"
+                }
+                AppLogger.w(TAG, "$displayName model not found at expected path (${modelDir?.absolutePath ?: modelDirName}). Download it first.")
                 return@withContext Result.failure(
                     IllegalStateException(
-                        "$displayName model not installed. Tap 'Download Model' in Settings → Transcription Models."
+                        "$displayName model is not installed. Please download it first in Settings → Speech-To-Text (STT) Models."
                     )
                 )
             }

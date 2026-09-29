@@ -12,7 +12,8 @@ data class AudioSegment(
     val endTimeMillis: Long,
     val durationSeconds: Int,
     val overlapSeconds: Int = 5,
-    val status: String = STATUS_PENDING
+    val status: String = STATUS_PENDING,
+    val sessionId: String = ""
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"

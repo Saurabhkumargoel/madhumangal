@@ -13,8 +13,8 @@ android {
         applicationId = "com.echo.recorder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "0.0.2026.09.30.0010"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -78,3 +78,27 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation("junit:junit:4.13.2")
 }
+
+tasks.register("exportApkToShared") {
+    description = "Exports the built APK to .shared directory in the project root"
+    doLast {
+        val sharedDir = File(rootDir, ".shared")
+        if (!sharedDir.exists()) {
+            sharedDir.mkdirs()
+        }
+        val versionName = android.defaultConfig.versionName ?: "unknown"
+        val apkSource = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        if (apkSource.exists()) {
+            val destFile = File(sharedDir, "GoodEcho_v${versionName}.apk")
+            apkSource.copyTo(destFile, overwrite = true)
+            println("✅ [EXPORT] Successfully exported APK to: ${destFile.absolutePath} (${destFile.length() / 1024} KB)")
+        } else {
+            println("⚠️ [EXPORT] APK source not found at: ${apkSource.absolutePath}")
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    finalizedBy("exportApkToShared")
+}
+

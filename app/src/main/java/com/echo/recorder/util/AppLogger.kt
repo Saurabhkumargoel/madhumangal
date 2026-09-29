@@ -168,16 +168,32 @@ object AppLogger {
             ?: emptyList()
     }
 
+    fun getFilteredLogsText(filter: String, entries: List<LogEntry>): String {
+        val sb = StringBuilder()
+        val activeFile = getCurrentSessionFile()
+        sb.append("====================================================\n")
+        sb.append("   GOODECHO SESSION LOGS\n")
+        sb.append("   Session File: ${activeFile?.name ?: "active"}\n")
+        sb.append("   Filter Applied: $filter\n")
+        sb.append("   Total Matching Entries: ${entries.size}\n")
+        sb.append("   Exported At: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
+        sb.append("====================================================\n\n")
+
+        for (entry in entries) {
+            sb.append("[${entry.timestamp}] [${entry.level}] [${entry.tag}] ${entry.message}\n")
+        }
+        return sb.toString()
+    }
+
     @Synchronized
-    fun clearLogs() {
+    fun clearLogs(context: Context? = null) {
         logList.clear()
         _logsFlow.value = emptyList()
-        try {
-            appLogFile?.writeText("")
-            sessionLogFile?.writeText("")
-        } catch (e: Exception) {
-            // Ignore
+        val ctx = context ?: appContext
+        if (ctx != null) {
+            val sessionTimestamp = sessionDateFormat.format(Date())
+            sessionLogFile = File(sessionLogsDir ?: AppStorageManager.getLogsDirectory(ctx, customLogsDirPath), "session_${sessionTimestamp}.log")
         }
-        i("SYSTEM", "Logs cleared by user")
+        i("SYSTEM", "Display cleared by user. New session started: ${sessionLogFile?.name ?: "active"}")
     }
 }

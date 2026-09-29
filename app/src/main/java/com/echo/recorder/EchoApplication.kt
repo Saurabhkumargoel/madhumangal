@@ -26,6 +26,16 @@ class EchoApplication : Application() {
         super.onCreate()
         instance = this
         com.echo.recorder.util.AppLogger.init(this)
+
+        // Global crash handler: logs any unhandled crash with stack trace to persistent session log
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                com.echo.recorder.util.AppLogger.e("CRASH", "FATAL UNCAUGHT CRASH on thread '${thread.name}': ${throwable.message}", throwable)
+            } catch (_: Exception) {}
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         createNotificationChannel()
     }
 

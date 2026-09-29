@@ -13,6 +13,14 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.zIndex
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -95,6 +103,9 @@ fun RecorderTab(
 ) {
     val context = LocalContext.current
     var validationError by remember { mutableStateOf<com.echo.recorder.data.ModelValidationResult?>(null) }
+    var showHomeFloatingMenu by remember { mutableStateOf(false) }
+    var showSpeedPresets by remember { mutableStateOf(false) }
+    var playbackSpeed by remember { mutableStateOf(1.0f) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -138,31 +149,40 @@ fun RecorderTab(
         }
     }
 
+    val isHindi = userPreferences.appLanguage == "hi"
+
     val qualityLabel = when (userPreferences.sampleRate) {
-        UserPreferences.QUALITY_TINIEST -> "8 kHz (Tiniest Quality)"
-        UserPreferences.QUALITY_SPEECH -> "16 kHz (Speech)"
+        UserPreferences.QUALITY_TINIEST -> if (isHindi) "8 kHz (न्यूनतम आकार)" else "8 kHz (Tiniest Quality)"
+        UserPreferences.QUALITY_SPEECH -> if (isHindi) "16 kHz (ध्वनि)" else "16 kHz (Speech)"
         UserPreferences.QUALITY_STANDARD -> "22.05 kHz"
-        else -> "44.1 kHz (HD)"
+        else -> if (isHindi) "44.1 kHz (एचडी)" else "44.1 kHz (HD)"
     }
 
     val activeModelName = when (userPreferences.selectedSttModel) {
         UserPreferences.STT_MODEL_VOSK_HINDI -> "Vosk Hindi"
+        UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> "Vosk Hindi (Large)"
         UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk Indian English"
+        UserPreferences.STT_MODEL_SHERPA_ONNX_HINDI -> "Sherpa Hindi (Zipformer)"
+        UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
+        UserPreferences.STT_MODEL_WHISPER_LARGE -> "Whisper Large-v3"
         UserPreferences.STT_MODEL_CLOUD_GEMINI -> "Gemini 1.5 Flash"
         UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper Tiny"
-        UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper Base"
         UserPreferences.STT_MODEL_INDIC_CONFORMER -> "IndicConformer"
         else -> "Google Speech"
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBackground)
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // App Header & Live Status Badge
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -177,7 +197,7 @@ fun RecorderTab(
                     color = TextPrimary
                 )
                 Text(
-                    text = "$qualityLabel • ${userPreferences.bufferLengthSeconds}s Chunks",
+                    text = if (isHindi) "$qualityLabel • ${userPreferences.bufferLengthSeconds} से. टुकड़े" else "$qualityLabel • ${userPreferences.bufferLengthSeconds}s Chunks",
                     style = MaterialTheme.typography.labelSmall,
                     color = PrimaryBlue
                 )
@@ -204,7 +224,7 @@ fun RecorderTab(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isServiceRunning) "RECORDING LIVE" else "STANDBY",
+                        text = if (isServiceRunning) (if (isHindi) "लाइव रिकॉर्डिंग" else "RECORDING LIVE") else (if (isHindi) "तैयार" else "STANDBY"),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isServiceRunning) ActiveRed else TextMuted
@@ -235,7 +255,8 @@ fun RecorderTab(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "$currentDb dB • ${if (isSpeechDetected) "Voice Active 🎤" else "Ambient / Silence"}",
+                        text = if (isHindi) "$currentDb dB • ${if (isSpeechDetected) "आवाज सक्रिय 🎤" else "शांत / परिवेश"}"
+                               else "$currentDb dB • ${if (isSpeechDetected) "Voice Active 🎤" else "Ambient / Silence"}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = if (isSpeechDetected) PrimaryBlue else TextMuted
@@ -244,7 +265,7 @@ fun RecorderTab(
             }
         } else {
             Text(
-                text = "Tap Start Recording below to begin continuous listening",
+                text = if (isHindi) "निरंतर सुनने के लिए नीचे 'रिकॉर्डिंग शुरू करें' पर टैप करें" else "Tap Start Recording below to begin continuous listening",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 modifier = Modifier.padding(vertical = 12.dp)
@@ -300,7 +321,7 @@ fun RecorderTab(
             ) {
                 Icon(
                     imageVector = if (isServiceRunning) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = if (isServiceRunning) "Stop Recording" else "Start Recording",
+                    contentDescription = if (isServiceRunning) (if (isHindi) "रिकॉर्डिंग रोकें" else "Stop Recording") else (if (isHindi) "रिकॉर्डिंग शुरू करें" else "Start Recording"),
                     tint = TextPrimary,
                     modifier = Modifier.size(52.dp)
                 )
@@ -334,7 +355,7 @@ fun RecorderTab(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (isServiceRunning) "STOP RECORDING" else "START RECORDING",
+                text = if (isServiceRunning) (if (isHindi) "रिकॉर्डिंग रोकें" else "STOP RECORDING") else (if (isHindi) "रिकॉर्डिंग शुरू करें" else "START RECORDING"),
                 fontWeight = FontWeight.Bold,
                 color = if (isServiceRunning) TextPrimary else DarkBackground,
                 fontSize = 15.sp
@@ -358,7 +379,7 @@ fun RecorderTab(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "📁 Files for Audio Source",
+                text = if (isHindi) "📁 ऑडियो फ़ाइल चुनें" else "📁 Files for Audio Source",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary
@@ -390,7 +411,7 @@ fun RecorderTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Live Speech Transcribe",
+                            text = if (isHindi) "लाइव वाक् प्रतिलेखन" else "Live Speech Transcribe",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -417,9 +438,11 @@ fun RecorderTab(
                     text = if (liveTranscript.isNotBlank() && isServiceRunning) {
                         liveTranscript
                     } else if (isServiceRunning) {
-                        "Listening with $activeModelName for voice in Hindi, Hinglish, or English... Speak now to transcribe."
+                        if (isHindi) "$activeModelName के साथ हिंदी, हिंग्लिश या अंग्रेजी में सुन रहा है... बोलने पर तुरंत लिखा जाएगा।"
+                        else "Listening with $activeModelName for voice in Hindi, Hinglish, or English... Speak now to transcribe."
                     } else {
-                        "Start recording to transcribe and extract action items with $activeModelName."
+                        if (isHindi) "$activeModelName के साथ प्रतिलेखन और कार्य निकालने के लिए रिकॉर्डिंग शुरू करें।"
+                        else "Start recording to transcribe and extract action items with $activeModelName."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (liveTranscript.isNotBlank() && isServiceRunning) TextPrimary else TextMuted,
@@ -429,7 +452,8 @@ fun RecorderTab(
                 if (isServiceRunning) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "AI Model: $activeModelName • Slices saved every ${userPreferences.bufferLengthSeconds}s • Synced to Dashboard",
+                        text = if (isHindi) "एआई मॉडल: $activeModelName • प्रत्येक ${userPreferences.bufferLengthSeconds}s पर टुकड़े सहेजे गए • डैशबोर्ड से सिंक"
+                               else "AI Model: $activeModelName • Slices saved every ${userPreferences.bufferLengthSeconds}s • Synced to Dashboard",
                         style = MaterialTheme.typography.labelSmall,
                         color = AccentPurple
                     )
@@ -461,7 +485,7 @@ fun RecorderTab(
                         color = PrimaryBlue
                     )
                     Text(
-                        text = "Chunk Cycle",
+                        text = if (isHindi) "टुकड़ा चक्र" else "Chunk Cycle",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
@@ -482,7 +506,7 @@ fun RecorderTab(
                         color = AccentPurple
                     )
                     Text(
-                        text = "Quality",
+                        text = if (isHindi) "गुणवत्ता" else "Quality",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
@@ -503,7 +527,7 @@ fun RecorderTab(
                         color = TextPrimary
                     )
                     Text(
-                        text = "Audio Slices",
+                        text = if (isHindi) "ऑडियो टुकड़े" else "Audio Slices",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
@@ -520,11 +544,11 @@ fun RecorderTab(
                 title = {
                     Text(
                         text = when (err) {
-                            is com.echo.recorder.data.ModelValidationResult.IncompatibleMode -> "Mode & Model Mismatch"
-                            is com.echo.recorder.data.ModelValidationResult.MissingDownload -> "Model Not Downloaded"
-                            is com.echo.recorder.data.ModelValidationResult.MissingApiKey -> "API Key Required"
-                            is com.echo.recorder.data.ModelValidationResult.ServiceUnavailable -> "Service Unavailable"
-                            else -> "Invalid Selection"
+                            is com.echo.recorder.data.ModelValidationResult.IncompatibleMode -> if (isHindi) "मोड और मॉडल असंगत" else "Mode & Model Mismatch"
+                            is com.echo.recorder.data.ModelValidationResult.MissingDownload -> if (isHindi) "मॉडल डाउनलोड नहीं है" else "Model Not Downloaded"
+                            is com.echo.recorder.data.ModelValidationResult.MissingApiKey -> if (isHindi) "एपीआई कुंजी आवश्यक" else "API Key Required"
+                            is com.echo.recorder.data.ModelValidationResult.ServiceUnavailable -> if (isHindi) "सेवा अनुपलब्ध" else "Service Unavailable"
+                            else -> if (isHindi) "अमान्य चयन" else "Invalid Selection"
                         },
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -538,14 +562,15 @@ fun RecorderTab(
                                 is com.echo.recorder.data.ModelValidationResult.MissingDownload -> err.message
                                 is com.echo.recorder.data.ModelValidationResult.MissingApiKey -> err.message
                                 is com.echo.recorder.data.ModelValidationResult.ServiceUnavailable -> err.message
-                                else -> "Selected model is not valid for recording."
+                                else -> if (isHindi) "चयनित मॉडल रिकॉर्डिंग के लिए अमान्य है।" else "Selected model is not valid for recording."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "💡 Tip: You can also tap 'Files for Audio Source' to pick and transcribe pre-recorded audio files directly without microphone recording.",
+                            text = if (isHindi) "💡 संकेत: आप बिना माइक्रोफ़ोन के सीधे 'ऑडियो फ़ाइल चुनें' पर टैप करके ऑडियो ट्रांसक्राइब कर सकते हैं।"
+                                   else "💡 Tip: You can also tap 'Files for Audio Source' to pick and transcribe pre-recorded audio files directly without microphone recording.",
                             style = MaterialTheme.typography.labelSmall,
                             color = PrimaryBlue
                         )
@@ -562,25 +587,25 @@ fun RecorderTab(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                         ) {
-                            Text("Auto-Fix & Record", color = DarkBackground, fontWeight = FontWeight.Bold)
+                            Text(if (isHindi) "स्वतः ठीक करें और रिकॉर्ड करें" else "Auto-Fix & Record", color = DarkBackground, fontWeight = FontWeight.Bold)
                         }
                     } else if (err is com.echo.recorder.data.ModelValidationResult.MissingDownload) {
                         Button(
                             onClick = {
                                 viewModel.downloadModel(err.modelId)
                                 validationError = null
-                                Toast.makeText(context, "Download started! Monitor progress in Settings.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, if (isHindi) "डाउनलोड शुरू हुआ! सेटिंग्स में प्रगति देखें।" else "Download started! Monitor progress in Settings.", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                         ) {
-                            Text("Download Model", color = DarkBackground, fontWeight = FontWeight.Bold)
+                            Text(if (isHindi) "मॉडल डाउनलोड करें" else "Download Model", color = DarkBackground, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         Button(
                             onClick = { validationError = null },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                         ) {
-                            Text("OK", color = DarkBackground, fontWeight = FontWeight.Bold)
+                            Text(if (isHindi) "ठीक है" else "OK", color = DarkBackground, fontWeight = FontWeight.Bold)
                         }
                     }
                 },
@@ -591,11 +616,190 @@ fun RecorderTab(
                             audioPickerLauncher.launch("audio/*")
                         }
                     ) {
-                        Text("Pick Audio File", color = TextPrimary)
+                        Text(if (isHindi) "ऑडियो फ़ाइल चुनें" else "Pick Audio File", color = TextPrimary)
                     }
                 },
                 containerColor = SurfaceDark
             )
+        }
+    }
+
+        // ── Floating Action Menu (Bottom Left) with Outside Touch Collapse ──
+        if (showHomeFloatingMenu) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(24f)
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showHomeFloatingMenu = false
+                        showSpeedPresets = false
+                    }
+            )
+        }
+
+        Column(
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(bottom = 76.dp, start = 16.dp)
+                .zIndex(25f)
+        ) {
+            AnimatedVisibility(
+                visible = showHomeFloatingMenu,
+                enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+                exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Speed Presets Popup
+                    AnimatedVisibility(
+                        visible = showSpeedPresets,
+                        enter = fadeIn(tween(120)) + expandVertically(tween(120)),
+                        exit = fadeOut(tween(120)) + shrinkVertically(tween(120))
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = SurfaceDark,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
+                            shadowElevation = 8.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { spd ->
+                                    val isSelected = Math.abs(playbackSpeed - spd) < 0.05f
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.clickable {
+                                            playbackSpeed = spd
+                                            showSpeedPresets = false
+                                            Toast.makeText(context, "Speed: ${spd}x", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "${spd}x",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) DarkBackground else TextPrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 1. Current Speed Button
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = SurfaceDark,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.clickable { showSpeedPresets = !showSpeedPresets }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Speed, contentDescription = "Speed", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${String.format(java.util.Locale.US, "%.2fx", playbackSpeed)}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue
+                            )
+                        }
+                    }
+
+                    // 2. Play Button (Start Recording or Play)
+                    Surface(
+                        shape = CircleShape,
+                        color = PrimaryBlue,
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clickable {
+                                if (!isServiceRunning) {
+                                    onStartRecordingAttempt()
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = DarkBackground, modifier = Modifier.size(22.dp))
+                        }
+                    }
+
+                    // 3. Pause Button
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFFF59E0B),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clickable {
+                                if (isServiceRunning) {
+                                    viewModel.stopRecordingService(context)
+                                    Toast.makeText(context, "Recording paused", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Pause, contentDescription = "Pause", tint = DarkBackground, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // 4. Stop Button
+                    Surface(
+                        shape = CircleShape,
+                        color = ActiveRed,
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clickable {
+                                if (isServiceRunning) {
+                                    viewModel.stopRecordingService(context)
+                                    Toast.makeText(context, "Recording stopped", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+
+            // Bottom-Left Floating Hamburger Trigger Button
+            Surface(
+                shape = CircleShape,
+                color = if (showHomeFloatingMenu) AccentPurple else SurfaceDark,
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (showHomeFloatingMenu) AccentPurple else CardBorder),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clickable {
+                        showHomeFloatingMenu = !showHomeFloatingMenu
+                        if (!showHomeFloatingMenu) showSpeedPresets = false
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(
+                        imageVector = if (showHomeFloatingMenu) Icons.Default.Close else Icons.Default.Menu,
+                        contentDescription = "Menu",
+                        tint = if (showHomeFloatingMenu) Color.White else PrimaryBlue,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
         }
     }
 }

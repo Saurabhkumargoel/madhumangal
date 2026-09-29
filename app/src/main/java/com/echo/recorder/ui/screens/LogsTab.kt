@@ -2,6 +2,8 @@ package com.echo.recorder.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,8 +68,10 @@ import com.echo.recorder.ui.theme.TextSecondary
 import com.echo.recorder.util.AppLogger
 import com.echo.recorder.util.LogEntry
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LogsTab(
+    isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -80,7 +84,7 @@ fun LogsTab(
         when (selectedFilter) {
             "ALL" -> logs
             "ERROR" -> logs.filter { it.level == "ERROR" || it.level == "WARN" }
-            "STT" -> logs.filter { it.tag == "STT" }
+            "STT" -> logs.filter { it.tag == "STT" || it.tag == "STT_ENGINE" }
             "AUDIO" -> logs.filter { it.tag == "AUDIO" || it.tag == "SERVICE" }
             "AI" -> logs.filter { it.tag == "AI" }
             else -> logs
@@ -108,13 +112,13 @@ fun LogsTab(
         ) {
             Column {
                 Text(
-                    text = "System & AI Logs",
+                    text = if (isHindi) "सिस्टम और एआई लॉग्स" else "System & AI Logs",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Text(
-                    text = "Real-time background audio, STT, and AI events",
+                    text = if (isHindi) "रीयल-टाइम बैकग्राउंड ऑडियो, वाक् व एआई घटनाएं" else "Real-time background audio, STT, and AI events",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
@@ -126,7 +130,7 @@ fun LogsTab(
                 border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue)
             ) {
                 Text(
-                    text = "${logs.size} entries",
+                    text = if (isHindi) "${logs.size} प्रविष्टियां" else "${logs.size} entries",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = PrimaryBlue,
@@ -153,7 +157,7 @@ fun LogsTab(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "📄 Active: ${sessionFile?.name ?: "session_active.log"}",
+                        text = if (isHindi) "📄 सक्रिय: ${sessionFile?.name ?: "session_active.log"}" else "📄 Active: ${sessionFile?.name ?: "session_active.log"}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = PrimaryBlue
@@ -170,19 +174,21 @@ fun LogsTab(
                     OutlinedButton(
                         onClick = {
                             AppLogger.startNewSession(context)
-                            Toast.makeText(context, "Started new session log file!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (isHindi) "नया सत्र लॉग फ़ाइल शुरू हुआ!" else "Started new session log file!", Toast.LENGTH_SHORT).show()
                         },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue)
                     ) {
-                        Text("➕ New Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(if (isHindi) "➕ नया लॉग" else "➕ New Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
                         onClick = {
                             val activeFile = AppLogger.getCurrentSessionFile()
-                            val textToExport = if (activeFile != null && activeFile.exists()) {
+                            val textToExport = if (selectedFilter != "ALL") {
+                                AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
+                            } else if (activeFile != null && activeFile.exists()) {
                                 activeFile.readText()
                             } else {
                                 AppLogger.getAllLogsText()
@@ -201,7 +207,7 @@ fun LogsTab(
                     ) {
                         Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("Export", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(if (isHindi) "निर्यात" else "Export", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -216,9 +222,13 @@ fun LogsTab(
         ) {
             Button(
                 onClick = {
-                    val allText = AppLogger.getAllLogsText()
+                    val allText = if (selectedFilter != "ALL") {
+                        AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
+                    } else {
+                        AppLogger.getAllLogsText()
+                    }
                     clipboardManager.setText(AnnotatedString(allText))
-                    Toast.makeText(context, "Current session logs copied (${logs.size})!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (isHindi) "लॉग कॉपी किए गए (${filteredLogs.size})!" else "Logs copied (${filteredLogs.size})!", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                 shape = RoundedCornerShape(10.dp),
@@ -227,18 +237,22 @@ fun LogsTab(
             ) {
                 Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Copy", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(if (isHindi) "कॉपी" else "Copy", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             OutlinedButton(
                 onClick = {
-                    val allText = AppLogger.getAllLogsText()
+                    val allText = if (selectedFilter != "ALL") {
+                        AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
+                    } else {
+                        AppLogger.getAllLogsText()
+                    }
                     val sendIntent = Intent().apply {
                         action = Intent.ACTION_SEND
                         putExtra(Intent.EXTRA_TEXT, allText)
                         type = "text/plain"
                     }
-                    val shareIntent = Intent.createChooser(sendIntent, "Share Current Session Logs")
+                    val shareIntent = Intent.createChooser(sendIntent, "Share Logs ($selectedFilter)")
                     context.startActivity(shareIntent)
                 },
                 shape = RoundedCornerShape(10.dp),
@@ -247,7 +261,7 @@ fun LogsTab(
             ) {
                 Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Share", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(if (isHindi) "शेयर" else "Share", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             OutlinedButton(
@@ -265,13 +279,13 @@ fun LogsTab(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                 modifier = Modifier.weight(1.3f)
             ) {
-                Text("🌐 All Logs", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(if (isHindi) "🌐 सभी लॉग" else "🌐 All Logs", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
 
             OutlinedButton(
                 onClick = {
-                    AppLogger.clearLogs()
-                    Toast.makeText(context, "Logs cleared", Toast.LENGTH_SHORT).show()
+                    AppLogger.clearLogs(context)
+                    Toast.makeText(context, if (isHindi) "लॉग साफ़ किए गए" else "Logs cleared", Toast.LENGTH_SHORT).show()
                 },
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
@@ -289,6 +303,12 @@ fun LogsTab(
         ) {
             listOf("ALL", "STT", "AUDIO", "AI", "ERROR").forEach { filterTag ->
                 val isSelected = selectedFilter == filterTag
+                val label = when (filterTag) {
+                    "ALL" -> if (isHindi) "सभी" else "ALL"
+                    "AUDIO" -> if (isHindi) "ऑडियो" else "AUDIO"
+                    "ERROR" -> if (isHindi) "त्रुटि" else "ERROR"
+                    else -> filterTag
+                }
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
@@ -297,7 +317,7 @@ fun LogsTab(
                         .clickable { selectedFilter = filterTag }
                 ) {
                     Text(
-                        text = filterTag,
+                        text = label,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isSelected) DarkBackground else TextPrimary,
@@ -320,25 +340,58 @@ fun LogsTab(
             if (filteredLogs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = if (logs.isEmpty()) "No logs captured yet.\nStart recording or transcribing to see activity." else "No logs match '$selectedFilter' filter.",
+                        text = if (logs.isEmpty()) (if (isHindi) "अभी तक कोई लॉग रिकॉर्ड नहीं हुआ।\nगतिविधि देखने के लिए रिकॉर्डिंग या प्रतिलेखन शुरू करें।" else "No logs captured yet.\nStart recording or transcribing to see activity.")
+                               else (if (isHindi) "'$selectedFilter' फ़िल्टर से कोई लॉग मेल नहीं खाता।" else "No logs match '$selectedFilter' filter."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextMuted,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             } else {
+                val logSections = remember(filteredLogs) {
+                    val sections = mutableListOf<LogSection>()
+                    var currentHeader: LogEntry? = null
+                    var currentList = mutableListOf<LogEntry>()
+
+                    for (entry in filteredLogs) {
+                        val isSessionHeader = entry.message.contains("=== New Session Started:") ||
+                                entry.message.contains("Active session file:") ||
+                                entry.message.contains("rolled over to new session:")
+                        if (isSessionHeader) {
+                            if (currentHeader != null || currentList.isNotEmpty()) {
+                                sections.add(LogSection(currentHeader, currentList))
+                                currentList = mutableListOf()
+                            }
+                            currentHeader = entry
+                        } else {
+                            currentList.add(entry)
+                        }
+                    }
+                    if (currentHeader != null || currentList.isNotEmpty()) {
+                        sections.add(LogSection(currentHeader, currentList))
+                    }
+                    sections
+                }
+
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(filteredLogs) { entry ->
-                        val isSessionHeader = entry.message.contains("=== New Session Started:") ||
-                                entry.message.contains("Active session file:") ||
-                                entry.message.contains("rolled over to new session:")
-                        if (isSessionHeader) {
-                            SessionDividerRow(entry)
-                        } else {
+                    logSections.forEachIndexed { index, section ->
+                        if (section.header != null) {
+                            stickyHeader(key = "log_header_${index}_${section.header.timestamp}") {
+                                SessionDividerRow(
+                                    entry = section.header,
+                                    selectedFilter = selectedFilter,
+                                    filteredLogs = filteredLogs
+                                )
+                            }
+                        }
+                        items(
+                            items = section.logs,
+                            key = { "${it.timestamp}_${it.tag}_${it.message.hashCode()}_${it.level}" }
+                        ) { entry ->
                             LogItemRow(entry)
                         }
                     }
@@ -348,16 +401,26 @@ fun LogsTab(
     }
 }
 
+private data class LogSection(
+    val header: LogEntry?,
+    val logs: List<LogEntry>
+)
+
 @Composable
-fun SessionDividerRow(entry: LogEntry) {
+fun SessionDividerRow(
+    entry: LogEntry,
+    selectedFilter: String = "ALL",
+    filteredLogs: List<LogEntry> = emptyList()
+) {
     val context = LocalContext.current
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = PrimaryBlue.copy(alpha = 0.12f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f))
+        color = SurfaceDark,
+        border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
+        shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
@@ -389,7 +452,9 @@ fun SessionDividerRow(entry: LogEntry) {
                     }
                     val files = AppLogger.getSessionFiles(context)
                     val targetFile = files.find { it.name == sessionName }
-                    val contentToShare = if (targetFile != null && targetFile.exists()) {
+                    val contentToShare = if (selectedFilter != "ALL") {
+                        AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
+                    } else if (targetFile != null && targetFile.exists()) {
                         targetFile.readText()
                     } else {
                         AppLogger.getAllLogsText()

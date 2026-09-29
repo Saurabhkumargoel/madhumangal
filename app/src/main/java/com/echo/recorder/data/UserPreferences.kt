@@ -35,6 +35,7 @@ data class AiModelOption(
     val name: String,
     val tag: String,
     val description: String,
+    val sizeText: String = "Built-in",
     val downloadUrl: String? = null,
     val isApi: Boolean = false,
     val isRecommended: Boolean = false
@@ -58,9 +59,31 @@ data class UserPreferences(
     val notesFolderPath: String = "",
     val logsFolderPath: String = "",
     val baseFolderPath: String = "",
+    val lastExportSourcePath: String = "",
+    val activeTheme: String = "MIDNIGHT_BLUE",
+    val appLanguage: String = "en", // "en" for English, "hi" for Hindi
+    val isWebSearchEnabled: Boolean = true,
+    val customSystemPrompt: String = "",
+    val aiLanguage: String = "auto", // "auto", "hi", "en"
+    val fontScale: Float = 1.0f,
+    val fontMode: String = "DEFAULT", // "DEFAULT", "THIN", "BOLD"
+    val customThemeJson: String = "",
+    val customAiModels: String = "",
+    val ttsSpeed: Float = 1.0f,
+    val pinnedCategories: Set<String> = setOf("Urgent", "Shopping"),
+    val customCategories: Set<String> = emptySet(),
     val downloadedModels: Set<String> = emptySet()
 ) {
     companion object {
+        const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.
+Objectives:
+1. Analyze spoken audio transcripts, notes, and user messages in Hindi, Hinglish, and English.
+2. Group tasks into existing categories or dynamically create logical new category groups when relevant.
+3. Extract nested attributes (varieties like green/yellow/red, sizes, quantities, specifications) as hierarchical child tasks.
+4. Extract temporal deadlines (e.g., today, tomorrow, this evening, specific times).
+5. For entities, produce clean, singular-language names without confusing bilingual duplicates (e.g., output 'टमाटर' for Hindi or 'Tomato' for English; never 'टमाटर(tamatar(tomato))').
+6. Avoid emojis in task titles unless explicitly requested. Provide concise, direct, and actionable answers."""
+
         const val QUALITY_TINIEST = 8000    // 8 kHz (lowest file size, speech optimized)
         const val QUALITY_SPEECH = 16000   // 16 kHz (standard STT)
         const val QUALITY_STANDARD = 22050 // 22.05 kHz
@@ -69,14 +92,20 @@ data class UserPreferences(
         // STT Models
         const val STT_MODEL_GOOGLE_SPEECH = "google_speech"     // Live mic only (offline pack supported)
         const val STT_MODEL_VOSK_HINDI = "vosk_hindi"          // Real offline model ✅ (Files & Fallback)
+        const val STT_MODEL_VOSK_HINDI_LARGE = "vosk_hindi_large" // Real offline 1.5GB full acoustic model
+        const val STT_MODEL_SHERPA_ONNX_HINDI = "sherpa_onnx_hindi" // SOTA Zipformer transducer Hindi
         const val STT_MODEL_VOSK_EN_IN = "vosk_en_in"          // Vosk Indian English ✅ (Files)
+        const val STT_MODEL_WHISPER_BASE = "whisper_base"      // Whisper Base Multilingual
+        const val STT_MODEL_WHISPER_LARGE = "cloud_whisper_large" // Whisper Large-v3
         const val STT_MODEL_CLOUD_GEMINI = "cloud_gemini"      // Gemini 1.5 Flash (Both Live & Files)
         const val STT_MODEL_WHISPER_TINY = "whisper_tiny"     // Legacy ID reference
-        const val STT_MODEL_WHISPER_BASE = "whisper_base"     // Legacy ID reference
         const val STT_MODEL_INDIC_CONFORMER = "indic_conformer" // Legacy ID reference
 
         // AI Note & Task Extractor Models
         const val AI_MODEL_LOCAL_TINY = "local_tiny"
+        const val AI_MODEL_LOCAL_GEMMA_3_1B = "local_gemma3_1b"
+        const val AI_MODEL_LOCAL_GEMMA_3_4B = "local_gemma3_4b"
+        const val AI_MODEL_LOCAL_GEMMA_3_12B = "local_gemma3_12b"
         const val AI_MODEL_LOCAL_GEMMA = "local_gemma"
         const val AI_MODEL_LOCAL_LLAMA = "local_llama"
         const val AI_MODEL_CLOUD_GEMINI = "cloud_gemini"
@@ -95,13 +124,43 @@ data class UserPreferences(
             ),
             SttModelOption(
                 id = STT_MODEL_VOSK_HINDI,
-                name = "Vosk Hindi (Offline)",
+                name = "Vosk Hindi Small (Offline)",
                 tag = "TRULY OFFLINE • 45 MB",
-                description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Supports Hindi & Hinglish.",
+                description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Fast and lightweight.",
                 capability = SttCapability.FILE_ONLY,
                 isRecommended = true,
                 sizeText = "45 MB",
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
+            ),
+            SttModelOption(
+                id = STT_MODEL_VOSK_HINDI_LARGE,
+                name = "Vosk Hindi Full / Large (Offline)",
+                tag = "HIGH ACCURACY • 1.5 GB",
+                description = "Full-scale Alpha Cephei Hindi acoustic model (vosk-model-hi-0.22). Massive vocabulary, vastly superior recognition for rapid, formal, or accented Hindi.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = true,
+                sizeText = "1.5 GB",
+                downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
+            ),
+            SttModelOption(
+                id = STT_MODEL_SHERPA_ONNX_HINDI,
+                name = "Sherpa-ONNX Hindi Zipformer",
+                tag = "SOTA TRANSDUCER • 65 MB",
+                description = "Next-gen Kaldi Zipformer transducer model via Sherpa-ONNX. State-of-the-art offline Hindi ASR accuracy with low latency and streaming support.",
+                capability = SttCapability.BOTH,
+                isRecommended = true,
+                sizeText = "65 MB",
+                downloadUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-hindi-2024-06-16.tar.bz2"
+            ),
+            SttModelOption(
+                id = STT_MODEL_WHISPER_BASE,
+                name = "OpenAI Whisper Base (Multilingual)",
+                tag = "TRANSFORMER • 145 MB",
+                description = "OpenAI Whisper multilingual model for on-device/edge execution. Robust contextual understanding of mixed Hindi-English (Hinglish) audio.",
+                capability = SttCapability.FILE_ONLY,
+                isRecommended = false,
+                sizeText = "145 MB",
+                downloadUrl = "https://huggingface.co/openai/whisper-base"
             ),
             SttModelOption(
                 id = STT_MODEL_VOSK_EN_IN,
@@ -122,6 +181,16 @@ data class UserPreferences(
                 isRecommended = false,
                 sizeText = "Cloud API",
                 downloadUrl = "https://aistudio.google.com/app/apikey"
+            ),
+            SttModelOption(
+                id = STT_MODEL_WHISPER_LARGE,
+                name = "OpenAI Whisper Large-v3",
+                tag = "NEAR-HUMAN ACCURACY • API/SERVER",
+                description = "OpenAI flagship Whisper Large-v3. Highest benchmark accuracy for noisy background audio and conversational Hindi/Hinglish.",
+                capability = SttCapability.BOTH,
+                isRecommended = false,
+                sizeText = "Cloud / Server API",
+                downloadUrl = "https://platform.openai.com/docs/guides/speech-to-text"
             )
         )
 
@@ -132,24 +201,87 @@ data class UserPreferences(
                 name = "On-Device Tiny AI",
                 tag = "OFFLINE 0MB • INSTANT",
                 description = "Lightweight on-device semantic parser. Categorizes into Work, Shopping, Personal & flags Low-Hanging Fruits without any network or model download.",
+                sizeText = "0 MB",
                 downloadUrl = null,
                 isApi = false,
                 isRecommended = true
             ),
             AiModelOption(
-                id = AI_MODEL_LOCAL_GEMMA,
-                name = "Google Gemma 2B",
-                tag = "LOCAL LLM • 1.6 GB",
-                description = "Google DeepMind open weights for advanced on-device task intelligence and reasoning. Zero cloud API needed.",
-                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
+                id = AI_MODEL_LOCAL_GEMMA_3_1B,
+                name = "Google Gemma 3 1B Instruct",
+                tag = "GEMMA 3 • 1.1 GB • MULTILINGUAL",
+                description = "Google DeepMind Gemma 3 ultra-compact edge model. State-of-the-art Hindi & English reasoning with minimal battery and RAM footprint.",
+                sizeText = "1.1 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-3-1b-it",
                 isApi = false,
                 isRecommended = true
+            ),
+            AiModelOption(
+                id = AI_MODEL_LOCAL_GEMMA_3_4B,
+                name = "Google Gemma 3 4B Instruct",
+                tag = "GEMMA 3 • 3.2 GB • HIGH REASONING",
+                description = "Google DeepMind Gemma 3 edge model. Exceptional reasoning, task grouping, and multilingual precision.",
+                sizeText = "3.2 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-3-4b-it",
+                isApi = false,
+                isRecommended = true
+            ),
+            AiModelOption(
+                id = AI_MODEL_LOCAL_GEMMA_3_12B,
+                name = "Google Gemma 3 12B Instruct",
+                tag = "GEMMA 3 • 8.5 GB • FRONTIER",
+                description = "Flagship Google DeepMind Gemma 3 open model for local Ollama host or high-capacity workstations.",
+                sizeText = "8.5 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-3-12b-it",
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = AI_MODEL_LOCAL_GEMMA,
+                name = "Google Gemma 2 2B Instruct",
+                tag = "LOCAL LLM • 1.6 GB",
+                description = "Google DeepMind open weights for advanced on-device task intelligence and reasoning. Zero cloud API needed.",
+                sizeText = "1.6 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-2-2b-it",
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = AI_MODEL_LOCAL_LLAMA,
+                name = "Meta Llama 3.2 (1B/3B)",
+                tag = "LOCAL LLM • 1.3 GB",
+                description = "Meta Llama 3.2 compact edge weights for offline reasoning, task grouping, and RAG question answering.",
+                sizeText = "1.3 GB",
+                downloadUrl = "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = "local_qwen",
+                name = "Qwen 2.5 (1.5B)",
+                tag = "LOCAL LLM • 1.1 GB",
+                description = "Alibaba Qwen multilingual model with strong Hindi, Hinglish, and structured JSON instruction following.",
+                sizeText = "1.1 GB",
+                downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct",
+                isApi = false,
+                isRecommended = false
+            ),
+            AiModelOption(
+                id = "local_phi3",
+                name = "Microsoft Phi-3.5 Mini",
+                tag = "LOCAL LLM • 2.2 GB",
+                description = "Microsoft high-efficiency edge model with exceptional reasoning and logic capabilities.",
+                sizeText = "2.2 GB",
+                downloadUrl = "https://huggingface.co/microsoft/Phi-3.5-mini-instruct",
+                isApi = false,
+                isRecommended = false
             ),
             AiModelOption(
                 id = AI_MODEL_CLOUD_GEMINI,
                 name = "Google Gemini 1.5 Flash",
                 tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud transcription and summarization if an external Gemini API key is provided.",
+                sizeText = "Cloud API",
                 downloadUrl = "https://aistudio.google.com/app/apikey",
                 isApi = true,
                 isRecommended = false
@@ -159,6 +291,7 @@ data class UserPreferences(
                 name = "OpenAI GPT-4o-mini",
                 tag = "CLOUD API • HIGH ACCURACY",
                 description = "Optional cloud API for task extraction with an OpenAI API key.",
+                sizeText = "Cloud API",
                 downloadUrl = "https://platform.openai.com/api-keys",
                 isApi = true,
                 isRecommended = false
@@ -221,8 +354,11 @@ data class UserPreferences(
             return when (modelId) {
                 STT_MODEL_GOOGLE_SPEECH -> android.speech.SpeechRecognizer.isRecognitionAvailable(context)
                 STT_MODEL_VOSK_HINDI -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                STT_MODEL_VOSK_HINDI_LARGE -> downloadedModels.contains(modelId) || com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+                STT_MODEL_SHERPA_ONNX_HINDI -> downloadedModels.contains(modelId) || java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "sherpa-onnx-hindi").exists()
                 STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
-                STT_MODEL_CLOUD_GEMINI -> cloudApiKey.isNotBlank()
+                STT_MODEL_WHISPER_BASE, STT_MODEL_WHISPER_TINY -> downloadedModels.contains(modelId) || java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "whisper-base.bin").exists()
+                STT_MODEL_CLOUD_GEMINI, STT_MODEL_WHISPER_LARGE -> cloudApiKey.isNotBlank()
                 else -> false
             }
         }
@@ -235,18 +371,49 @@ data class UserPreferences(
         ): Boolean {
             return when (modelId) {
                 AI_MODEL_LOCAL_TINY -> true // Always ready on-device zero-MB built-in parser
+                AI_MODEL_LOCAL_GEMMA_3_1B -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-1b-it-Q4_K_M.gguf").exists()
+                }
+                AI_MODEL_LOCAL_GEMMA_3_4B -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-4b-it-Q4_K_M.gguf").exists()
+                }
+                AI_MODEL_LOCAL_GEMMA_3_12B -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-12b-it-Q4_K_M.gguf").exists()
+                }
                 AI_MODEL_LOCAL_GEMMA -> {
                     downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
                     java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.bin").exists() ||
-                    (com.echo.recorder.util.AppStorageManager.getModelsDirectory(context).listFiles()?.any { it.isFile && it.extension.equals("gguf", ignoreCase = true) } == true)
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.Q4_K_M.gguf").exists()
                 }
                 AI_MODEL_LOCAL_LLAMA -> {
                     downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists()
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "Llama-3.2-1B-Instruct-Q4_K_M.gguf").exists()
+                }
+                "local_qwen" -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "local_qwen.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "qwen2.5-1.5b-instruct-q4_k_m.gguf").exists()
+                }
+                "local_phi3" -> {
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "local_phi3.gguf").exists() ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "Phi-3.5-mini-instruct-Q4_K_M.gguf").exists()
                 }
                 AI_MODEL_CLOUD_GEMINI, AI_MODEL_CLOUD_OPENAI -> cloudApiKey.isNotBlank()
-                else -> false
+                else -> {
+                    // Check if a custom file exists
+                    downloadedModels.contains(modelId) ||
+                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists()
+                }
             }
         }
     }

@@ -46,8 +46,8 @@ class TinyAiProcessorTest {
         assertTrue("Should extract tasks from sabzi list", tasks.isNotEmpty())
         // All tasks must be categorized into Shopping (NOT Ideas!)
         assertTrue("All items must be in Shopping", tasks.all { it.categoryGroup == "Shopping" })
-        // Must contain master Buy Vegetables task
-        assertTrue("Must contain master vegetables task", tasks.any { it.title.startsWith("Buy Vegetables:") })
+        // Must contain master Buy Vegetables task (English or Hindi localized)
+        assertTrue("Must contain master vegetables task", tasks.any { it.title.startsWith("Buy Vegetables:") || it.title.startsWith("सब्जियां खरीदें:") })
         // Must split individual items
         assertTrue("Must have task for aalu", tasks.any { it.title.contains("आलू") })
         assertTrue("Must have task for tamatar", tasks.any { it.title.contains("टमाटर") })

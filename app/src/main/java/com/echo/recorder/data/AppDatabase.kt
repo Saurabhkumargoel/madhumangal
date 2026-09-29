@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [AudioSegment::class, Transcription::class, NoteTask::class],
-    version = 2,
+    entities = [AudioSegment::class, Transcription::class, NoteTask::class, AiChatMessageEntity::class],
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -15,6 +15,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun audioSegmentDao(): AudioSegmentDao
     abstract fun transcriptionDao(): TranscriptionDao
     abstract fun noteTaskDao(): NoteTaskDao
+    abstract fun aiChatDao(): AiChatDao
 
     companion object {
         @Volatile
