@@ -462,19 +462,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val existingBytes = if (partFile.exists()) partFile.length() else 0L
-                val connection = URL(modelUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 30_000
-                connection.readTimeout = 60_000
-                connection.instanceFollowRedirects = true
+                var currentUrl = modelUrl
+                var connection: HttpURLConnection? = null
+                var redirects = 0
+                val maxRedirects = 6
+                var responseCode = -1
 
-                if (existingBytes > 0) {
-                    connection.setRequestProperty("Range", "bytes=$existingBytes-")
+                while (redirects < maxRedirects) {
+                    val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 35_000
+                        readTimeout = 60_000
+                        instanceFollowRedirects = false // Manual follow across protocols/domains (e.g. HuggingFace -> S3/Cloudflare CDN)
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                        if (existingBytes > 0) {
+                            setRequestProperty("Range", "bytes=$existingBytes-")
+                        }
+                    }
+                    conn.connect()
+                    responseCode = conn.responseCode
+                    if (responseCode in 300..399) {
+                        val location = conn.getHeaderField("Location")
+                        conn.disconnect()
+                        if (!location.isNullOrEmpty()) {
+                            currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                                location
+                            } else {
+                                URL(URL(currentUrl), location).toString()
+                            }
+                            redirects++
+                            continue
+                        }
+                    }
+                    connection = conn
+                    break
                 }
 
-                connection.connect()
-                val responseCode = connection.responseCode
+                val conn = connection ?: throw java.io.IOException("Failed to connect to $modelUrl")
+                if (responseCode !in 200..299) {
+                    val errDetails = conn.errorStream?.bufferedReader()?.use { it.readText().take(500) } ?: "HTTP $responseCode"
+                    conn.disconnect()
+                    throw java.io.IOException("Download failed with HTTP $responseCode: $errDetails")
+                }
+
                 val isRangeAccepted = responseCode == 206
-                val serverContentLength = connection.contentLengthLong
+                val serverContentLength = conn.contentLengthLong
                 val totalBytes = if (isRangeAccepted) existingBytes + serverContentLength else serverContentLength.coerceAtLeast(1L)
                 val append = isRangeAccepted && existingBytes > 0
                 var downloadedBytes = if (append) existingBytes else 0L
@@ -489,7 +520,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ))
                 }
 
-                connection.inputStream.use { input ->
+                conn.inputStream.use { input ->
                     FileOutputStream(partFile, append).use { output ->
                         val buffer = ByteArray(32768)
                         var read: Int
@@ -1286,6 +1317,143 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val index = siblingSubtasks.indexOfFirst { it.id == subtask.id }
         if (index in 0 until siblingSubtasks.size - 1) {
             reorderTasks(index, index + 1, siblingSubtasks)
+        }
+    }
+
+    fun reorderTasksBulk(selectedIds: Set<Long>, moveUp: Boolean, siblingTasks: List<NoteTask>) {
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = siblingTasks.toMutableList()
+            val n = list.size
+            if (moveUp) {
+                // Moving up: scan from top (index 1 to n-1)
+                // A selected task at index i can swap with unselected at i-1
+                for (i in 1 until n) {
+                    if (list[i].id in selectedIds && list[i - 1].id !in selectedIds) {
+                        val temp = list[i]
+                        list[i] = list[i - 1]
+                        list[i - 1] = temp
+                    }
+                }
+            } else {
+                // Moving down: scan from bottom (index n-2 down to 0)
+                // A selected task at index i can swap with unselected at i+1
+                for (i in n - 2 downTo 0) {
+                    if (list[i].id in selectedIds && list[i + 1].id !in selectedIds) {
+                        val temp = list[i]
+                        list[i] = list[i + 1]
+                        list[i + 1] = temp
+                    }
+                }
+            }
+            list.forEachIndexed { index, task ->
+                noteTaskDao.updateTaskOrder(task.id, index)
+            }
+        }
+    }
+
+    fun deleteTasksBulk(taskIds: Set<Long>) {
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            taskIds.forEach { id ->
+                noteTaskDao.deleteSubtasks(id)
+                noteTaskDao.deleteTask(id)
+            }
+        }
+    }
+
+    fun importTasksFromJson(rawJsonStr: String, onComplete: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var cleanStr = rawJsonStr.trim()
+                if (cleanStr.startsWith("```json")) {
+                    cleanStr = cleanStr.removePrefix("```json").substringBeforeLast("```").trim()
+                } else if (cleanStr.startsWith("```")) {
+                    cleanStr = cleanStr.removePrefix("```").substringBeforeLast("```").trim()
+                }
+                cleanStr = cleanStr.lines().map { line ->
+                    if (line.contains("//")) line.substringBefore("//").trim() else line
+                }.joinToString("\n").trim()
+
+                if (cleanStr.isBlank() || cleanStr == "{}" || cleanStr == "[]") {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "JSON is empty. No tasks imported.")
+                    }
+                    return@launch
+                }
+
+                val tasksArray: JSONArray = if (cleanStr.startsWith("[")) {
+                    JSONArray(cleanStr)
+                } else {
+                    val root = JSONObject(cleanStr)
+                    root.optJSONArray("tasks") ?: root.optJSONArray("data") ?: JSONArray().apply { put(root) }
+                }
+
+                var importedCount = 0
+                for (i in 0 until tasksArray.length()) {
+                    val taskObj = tasksArray.optJSONObject(i) ?: continue
+                    val title = taskObj.optString("title", "").trim()
+                    if (title.isBlank()) continue
+
+                    val desc = taskObj.optString("description", "")
+                    val cat = taskObj.optString("category", taskObj.optString("categoryGroup", "General"))
+                    val priority = taskObj.optInt("priority", NoteTask.PRIORITY_MEDIUM)
+                    val isQuick = taskObj.optBoolean("isLowHangingFruit", false)
+                    val isDone = taskObj.optBoolean("isCompleted", false)
+                    val autoDone = taskObj.optBoolean("autoCompleteOnSubtasksDone", true)
+                    val dueMillis = if (taskObj.has("dueDateMillis") && !taskObj.isNull("dueDateMillis")) taskObj.getLong("dueDateMillis") else null
+                    val dueText = taskObj.optString("dueTimeText", "")
+
+                    val parentTask = NoteTask(
+                        title = title,
+                        description = desc,
+                        categoryGroup = cat,
+                        priority = priority,
+                        isLowHangingFruit = isQuick,
+                        isCompleted = isDone,
+                        autoCompleteOnSubtasksDone = autoDone,
+                        dueDateMillis = dueMillis,
+                        dueTimeText = dueText
+                    )
+                    val parentId = noteTaskDao.insertTask(parentTask)
+                    importedCount++
+
+                    val subtasksArray = taskObj.optJSONArray("subtasks") ?: taskObj.optJSONArray("children")
+                    if (subtasksArray != null) {
+                        for (s in 0 until subtasksArray.length()) {
+                            val subObj = subtasksArray.optJSONObject(s)
+                            val subTitle = if (subObj != null) subObj.optString("title", "").trim() else subtasksArray.optString(s, "").trim()
+                            if (subTitle.isNotBlank()) {
+                                val subtask = NoteTask(
+                                    parentId = parentId,
+                                    title = subTitle,
+                                    categoryGroup = cat,
+                                    priority = subObj?.optInt("priority", NoteTask.PRIORITY_MEDIUM) ?: NoteTask.PRIORITY_MEDIUM,
+                                    isCompleted = subObj?.optBoolean("isCompleted", false) ?: false
+                                )
+                                noteTaskDao.insertTask(subtask)
+                                importedCount++
+                            }
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "Successfully imported $importedCount task(s)!")
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.e("IMPORT", "Failed importing tasks from JSON", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Failed to import tasks: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun updateLogFileExtension(ext: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLogFileExtension(ext)
+            com.echo.recorder.util.AppLogger.setLogFileExtension(ext)
         }
     }
 

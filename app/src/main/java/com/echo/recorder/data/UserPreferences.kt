@@ -72,7 +72,8 @@ data class UserPreferences(
     val ttsSpeed: Float = 1.0f,
     val pinnedCategories: Set<String> = setOf("Urgent", "Shopping"),
     val customCategories: Set<String> = emptySet(),
-    val downloadedModels: Set<String> = emptySet()
+    val downloadedModels: Set<String> = emptySet(),
+    val logFileExtension: String = "log" // "log", "txt", "md"
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.
@@ -369,50 +370,44 @@ Objectives:
             cloudApiKey: String,
             downloadedModels: Set<String>
         ): Boolean {
+            if (modelId == AI_MODEL_LOCAL_TINY) return true
+            if (modelId in listOf(AI_MODEL_CLOUD_GEMINI, AI_MODEL_CLOUD_OPENAI)) return cloudApiKey.isNotBlank()
+            if (downloadedModels.contains(modelId)) return true
+
+            val modelsDir = com.echo.recorder.util.AppStorageManager.getModelsDirectory(context)
+            val files = modelsDir.listFiles() ?: emptyArray()
+
             return when (modelId) {
-                AI_MODEL_LOCAL_TINY -> true // Always ready on-device zero-MB built-in parser
                 AI_MODEL_LOCAL_GEMMA_3_1B -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-1b-it-Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("1b", true) && it.name.contains("gemma", true) } ||
+                    files.any { it.name.equals("${modelId}.gguf", true) || it.name.contains("gemma-3-1b", true) }
                 }
                 AI_MODEL_LOCAL_GEMMA_3_4B -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-4b-it-Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("4b", true) && it.name.contains("gemma", true) } ||
+                    files.any { it.name.equals("${modelId}.gguf", true) || it.name.contains("gemma-3-4b", true) }
                 }
                 AI_MODEL_LOCAL_GEMMA_3_12B -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-3-12b-it-Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("12b", true) && it.name.contains("gemma", true) } ||
+                    files.any { it.name.equals("${modelId}.gguf", true) || it.name.contains("gemma-3-12b", true) }
                 }
                 AI_MODEL_LOCAL_GEMMA -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "gemma-2-2b-it.Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("gemma", true) && !it.name.contains("gemma-3", true) && !it.name.contains("gemma3", true) } ||
+                    files.any { it.name.equals("${modelId}.gguf", true) }
                 }
                 AI_MODEL_LOCAL_LLAMA -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "llama-3.2-1b.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "Llama-3.2-1B-Instruct-Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("llama", true) } ||
+                    files.any { it.name.equals("${modelId}.gguf", true) }
                 }
                 "local_qwen" -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "local_qwen.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "qwen2.5-1.5b-instruct-q4_k_m.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("qwen", true) } ||
+                    files.any { it.name.equals("local_qwen.gguf", true) }
                 }
                 "local_phi3" -> {
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "local_phi3.gguf").exists() ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "Phi-3.5-mini-instruct-Q4_K_M.gguf").exists()
+                    files.any { it.isFile && it.name.endsWith(".gguf", true) && it.name.contains("phi", true) } ||
+                    files.any { it.name.equals("local_phi3.gguf", true) }
                 }
-                AI_MODEL_CLOUD_GEMINI, AI_MODEL_CLOUD_OPENAI -> cloudApiKey.isNotBlank()
                 else -> {
-                    // Check if a custom file exists
-                    downloadedModels.contains(modelId) ||
-                    java.io.File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "${modelId}.gguf").exists()
+                    files.any { it.name.equals("${modelId}.gguf", true) } || files.any { it.isFile && it.name.endsWith(".gguf", true) }
                 }
             }
         }

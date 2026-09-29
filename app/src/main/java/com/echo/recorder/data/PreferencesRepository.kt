@@ -42,6 +42,7 @@ class PreferencesRepository(private val context: Context) {
         val IS_WEB_SEARCH_ENABLED = booleanPreferencesKey("is_web_search_enabled")
         val CUSTOM_SYSTEM_PROMPT = stringPreferencesKey("custom_system_prompt")
         val AI_LANGUAGE = stringPreferencesKey("ai_language")
+        val LOG_FILE_EXTENSION = stringPreferencesKey("log_file_extension")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FONT_MODE = stringPreferencesKey("font_mode")
         val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
@@ -80,7 +81,8 @@ class PreferencesRepository(private val context: Context) {
             ttsSpeed = preferences[PreferencesKeys.TTS_SPEED] ?: 1.0f,
             pinnedCategories = preferences[PreferencesKeys.PINNED_CATEGORIES] ?: setOf("Urgent", "Shopping"),
             customCategories = preferences[PreferencesKeys.CUSTOM_CATEGORIES] ?: emptySet(),
-            downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet()
+            downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet(),
+            logFileExtension = preferences[PreferencesKeys.LOG_FILE_EXTENSION] ?: "log"
         )
     }
 
@@ -262,6 +264,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateTtsSpeed(speed: Float) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.TTS_SPEED] = speed
+        }
+    }
+
+    suspend fun updateLogFileExtension(ext: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOG_FILE_EXTENSION] = ext
         }
     }
 }

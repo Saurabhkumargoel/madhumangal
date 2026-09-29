@@ -547,6 +547,63 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 
 ---
 
+## ⚡ Mistake #14: LazyColumn Duplicate Key Crash, Room Query Order Overriding Custom Reorder, Hugging Face 302 Redirect Failures, and Selection Mode UX Gaps
+
+### Applicable Sections: Generic + Specific
+
+#### Description & Impact
+1. **Fatal LazyColumn Crash on Grouped Tasks (`IllegalArgumentException`):**
+   - When rendering tasks grouped by category or when tasks/subtasks shared IDs across hierarchy groups, `LazyColumn` crashed with `IllegalArgumentException: Key was already used` because item keys were simply task IDs (`it.id`) rather than being scoped to their group context.
+2. **Task Reordering Ignored by Room Database Query:**
+   - In `NoteTaskDao.kt`, `getAllTasksSortedByPriority()` was hardcoded to `ORDER BY priority DESC, timestampMillis DESC`. When users reordered tasks (modifying `orderIndex`), the changes were correctly persisted to Room, but the UI query re-sorted them by priority, causing manual reordering and bulk reordering to appear non-functional.
+3. **Hugging Face Direct Download 302 Redirect Failure:**
+   - Downloading models from Hugging Face URLs failed or returned truncated/corrupt HTML files because Hugging Face issues HTTP 302 redirects to CDN endpoints (`cdn-lfs.huggingface.co`). Java/Android `HttpURLConnection` does not follow redirects across differing protocols (HTTP -> HTTPS) or cross-domain CDN re-routes automatically.
+4. **Existing Downloaded Models Flagged as Missing:**
+   - Models residing in `models/` directory were marked as not downloaded or missing due to case-sensitive filename checks and rigid family key comparisons in `UserPreferences.isAiModelRequirementFulfilled()`.
+5. **Selection & Reordering UX Deficiencies:**
+   - Lack of a distinct selection mode meant accidental taps opened task editing dialogs instead of selecting items.
+   - Radio buttons were ambiguously used for task completion instead of standard checkboxes.
+   - Bulk move (`▲`/`▼`) was missing, and dialog inputs used center-floating labels that disappeared or overlapped when empty.
+   - Deletions lacked safety confirmation dialogs, risking accidental data loss.
+
+#### What AI Did Wrong
+- Used bare `it.id` as `LazyColumn` item keys across grouped sections without namespacing by group identifier.
+- Overlooked the underlying SQL query ordering in `NoteTaskDao` when implementing UI task reordering.
+- Assumed standard `HttpURLConnection` handles CDN 302/303/307 redirects out of the box.
+- Checked model presence using strict case-sensitive file checks without inspecting directory contents.
+- Combined click and edit gestures without a dedicated multi-select mode state.
+
+#### What User Did Wrong / Communication Gap
+- None; user provided detailed runtime logs and exact reproduction requirements for crash behavior, download redirects, and ergonomic UX expectations.
+
+#### How It Was Fixed
+1. **Namespaced LazyColumn Keys (`DashboardTab.kt`):**
+   - Changed item key generator to `key = { "${group.id}_task_${it.id}" }`, completely preventing key collisions across groups and sticky scroll sections.
+2. **Room Query Ordering & Custom Sort Default (`NoteTaskDao.kt` & `DashboardTab.kt`):**
+   - Updated `getAllTasksSortedByPriority()` in `NoteTaskDao.kt` to `ORDER BY orderIndex ASC, timestampMillis DESC`.
+   - Defaulted `selectedSort` to `TaskSortOption.CUSTOM` in `DashboardTab.kt` so user reordering reflects immediately in real-time.
+3. **Multi-Hop CDN Redirect Loop (`MainViewModel.kt`):**
+   - Implemented an iterative HTTP redirect loop (supporting HTTP 301, 302, 303, 307, 308) up to 6 hops:
+     - Detects `Location` header, resolves relative URLs against current URL, and reopens connections with preserved headers and timeouts.
+4. **Case-Insensitive Disk Model Discovery (`UserPreferences.kt`):**
+   - Enhanced `UserPreferences.isAiModelRequirementFulfilled()` to inspect the target directory with case-insensitive matching for `.gguf` and `.bin` weights.
+5. **Complete Selection & Bulk Move Suite (`DashboardTab.kt`):**
+   - Touch & hold (long press) activates selection mode; while active, tap toggles selection without opening the edit dialog.
+   - Replaced all completion radio buttons with `Icons.Default.CheckBox` and `Icons.Default.CheckBoxOutlineBlank`.
+   - Added bulk move up/down (`▲`/`▼`) preserving relative order, with boundary packing logic and disabled boundary arrows when items are packed at bounds.
+   - Added permanent resting header labels above input fields in Add Task, Add Subtask, Add Category, Add Group, and Edit Task dialogs.
+   - Added `AlertDialog` confirmation dialogs for all deletions (task, subtask, category, bulk selection, model, logs).
+   - Added `HintIconButton` with haptic feedback and toast hints on touch-and-hold.
+   - Added 5-format task export: Copy to Clipboard, `.md`, `.txt`, `.json`, `.html`.
+
+#### Automated Prevention
+- Always namespace `LazyColumn` item keys with parent/group identifiers when items can appear in multiple lists or sections.
+- Verify that Room `@Query` sorting directives align with the app's default UI sort options.
+- Always implement explicit multi-hop redirect handling for external file downloads from CDN providers (Hugging Face, GitHub Releases, S3).
+- Run full unit tests (`./gradlew test`) and debug assembly (`./gradlew assembleDebug`) with timestamped APK export on every iteration.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

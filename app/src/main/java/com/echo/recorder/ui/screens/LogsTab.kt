@@ -27,16 +27,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.selection.SelectionContainer
+import com.echo.recorder.ui.viewmodel.MainViewModel
+import com.echo.recorder.data.UserPreferences
+import java.io.File
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,6 +83,8 @@ import com.echo.recorder.util.LogEntry
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LogsTab(
+    viewModel: MainViewModel? = null,
+    userPreferences: UserPreferences? = null,
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -79,6 +93,71 @@ fun LogsTab(
     val logs by AppLogger.logsFlow.collectAsState()
     var selectedFilter by remember { mutableStateOf("ALL") }
     val listState = rememberLazyListState()
+
+    var isManageFilesExpanded by remember { mutableStateOf(false) }
+    var selectedFiles by remember { mutableStateOf<Set<File>>(emptySet()) }
+    var showClearLogsConfirm by remember { mutableStateOf(false) }
+    var showDeleteFilesConfirm by remember { mutableStateOf(false) }
+
+    val sessionFiles = remember(logs.size, isManageFilesExpanded) { AppLogger.getSessionFiles(context) }
+
+    // ── Dialog: Confirm Clear Logs ──
+    if (showClearLogsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearLogsConfirm = false },
+            title = { Text(if (isHindi) "🗑️ लॉग साफ़ करें?" else "🗑️ Clear All Logs?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text(if (isHindi) "क्या आप वाकई वर्तमान सत्र और मेमोरी से सभी लॉग हटाना चाहते हैं?" else "Are you sure you want to clear all in-memory and active session logs?", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        AppLogger.clearLogs(context)
+                        showClearLogsConfirm = false
+                        Toast.makeText(context, if (isHindi) "लॉग साफ़ किए गए" else "Logs cleared", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "साफ़ करें" else "Clear", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearLogsConfirm = false }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── Dialog: Confirm Delete Selected Log Files ──
+    if (showDeleteFilesConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteFilesConfirm = false },
+            title = { Text(if (isHindi) "🗑️ चयनित फ़ाइलें हटाएं?" else "🗑️ Delete Selected Log Files?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text(if (isHindi) "क्या आप वाकई ${selectedFiles.size} चयनित लॉग फ़ाइल(ओं) को स्थायी रूप से हटाना चाहते हैं?" else "Are you sure you want to permanently delete ${selectedFiles.size} selected log file(s)?", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        var deletedCount = 0
+                        selectedFiles.forEach { f ->
+                            if (f.delete()) deletedCount++
+                        }
+                        selectedFiles = emptySet()
+                        showDeleteFilesConfirm = false
+                        Toast.makeText(context, if (isHindi) "$deletedCount लॉग फ़ाइल(ें) हटाई गईं" else "Deleted $deletedCount log file(s)", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "हटाएं" else "Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteFilesConfirm = false }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
 
     val filteredLogs = remember(logs, selectedFilter) {
         when (selectedFilter) {
@@ -283,14 +362,244 @@ fun LogsTab(
             }
 
             OutlinedButton(
-                onClick = {
-                    AppLogger.clearLogs(context)
-                    Toast.makeText(context, if (isHindi) "लॉग साफ़ किए गए" else "Logs cleared", Toast.LENGTH_SHORT).show()
-                },
+                onClick = { showClearLogsConfirm = true },
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = ActiveRed, modifier = Modifier.size(14.dp))
+                Icon(imageVector = Icons.Default.Delete, contentDescription = "Clear Logs", tint = ActiveRed, modifier = Modifier.size(14.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ── ⚙️ Log Extension Selector (.log, .txt, .md) ──
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, CardBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Description, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isHindi) "लॉग फ़ाइल एक्सटेंशन:" else "Log Extension:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+
+                val currentExt = userPreferences?.logFileExtension ?: "log"
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("log", "txt", "md").forEach { ext ->
+                        val isSelected = currentExt.equals(ext, ignoreCase = true)
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) PrimaryBlue else Color.Transparent,
+                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                            modifier = Modifier.clickable {
+                                viewModel?.updateLogFileExtension(ext)
+                                AppLogger.setLogFileExtension(ext)
+                                Toast.makeText(context, if (isHindi) "एक्सटेंशन .$ext सेट हुआ" else "Extension set to .$ext", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(
+                                text = ".$ext",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) DarkBackground else TextPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ── 📁 Manage Past Session Files (Multi-Select & Bulk Export) ──
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, CardBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isManageFilesExpanded = !isManageFilesExpanded },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Folder, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isHindi) "पुराने सत्र लॉग (${sessionFiles.size} फ़ाइलें)" else "Past Session Logs (${sessionFiles.size} files)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        if (selectedFiles.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(4.dp), color = AccentPurple.copy(alpha = 0.2f)) {
+                                Text("${selectedFiles.size} sel", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentPurple, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                            }
+                        }
+                    }
+                    Icon(
+                        imageVector = if (isManageFilesExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Toggle",
+                        tint = TextMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                if (isManageFilesExpanded) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Select All / Deselect All Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                selectedFiles = if (selectedFiles.size == sessionFiles.size) emptySet() else sessionFiles.toSet()
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = if (selectedFiles.size == sessionFiles.size) (if (isHindi) "चयन हटाएं" else "Deselect All") else (if (isHindi) "सभी चुनें" else "Select All"),
+                                fontSize = 11.sp,
+                                color = PrimaryBlue
+                            )
+                        }
+
+                        if (selectedFiles.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                // Copy Text
+                                OutlinedButton(
+                                    onClick = {
+                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        clipboardManager.setText(AnnotatedString(combined))
+                                        Toast.makeText(context, if (isHindi) "${selectedFiles.size} फ़ाइलें कॉपी की गईं!" else "Copied ${selectedFiles.size} log file(s)!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Text(if (isHindi) "कॉपी" else "Copy", fontSize = 10.sp, color = PrimaryBlue)
+                                }
+
+                                // Export MD
+                                OutlinedButton(
+                                    onClick = {
+                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, combined)
+                                            type = "text/markdown"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.md)"))
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Text(".md", fontSize = 10.sp, color = Color(0xFF10B981))
+                                }
+
+                                // Export TXT
+                                OutlinedButton(
+                                    onClick = {
+                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, combined)
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.txt)"))
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Text(".txt", fontSize = 10.sp, color = PrimaryBlue)
+                                }
+
+                                // Delete Selected
+                                OutlinedButton(
+                                    onClick = { showDeleteFilesConfirm = true },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ActiveRed, modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (sessionFiles.isEmpty()) {
+                        Text(
+                            text = if (isHindi) "कोई पुरानी सत्र फ़ाइलें नहीं मिलीं" else "No past session log files found",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.height(if (sessionFiles.size > 4) 140.dp else androidx.compose.ui.unit.Dp.Unspecified)
+                        ) {
+                            sessionFiles.forEach { file ->
+                                val isChecked = file in selectedFiles
+                                val kbSize = String.format(java.util.Locale.US, "%.1f KB", file.length() / 1024f)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedFiles = if (isChecked) selectedFiles - file else selectedFiles + file
+                                        }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { chk ->
+                                            selectedFiles = if (chk) selectedFiles + file else selectedFiles - file
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = file.name,
+                                        fontSize = 11.sp,
+                                        color = if (isChecked) PrimaryBlue else TextPrimary,
+                                        fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = kbSize,
+                                        fontSize = 10.sp,
+                                        color = TextMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -330,13 +639,14 @@ fun LogsTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Logs Feed Container
-        Card(
-            modifier = Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
-        ) {
+        // Logs Feed Container (Text is Selectable via SelectionContainer)
+        SelectionContainer {
+            Card(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(CardBorder))
+            ) {
             if (filteredLogs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -399,6 +709,7 @@ fun LogsTab(
             }
         }
     }
+}
 }
 
 private data class LogSection(

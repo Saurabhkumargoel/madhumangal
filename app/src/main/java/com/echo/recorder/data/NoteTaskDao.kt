@@ -18,7 +18,7 @@ interface NoteTaskDao {
     @Query("DELETE FROM note_tasks WHERE id = :id")
     suspend fun deleteTask(id: Long)
 
-    @Query("SELECT * FROM note_tasks ORDER BY isCompleted ASC, priority DESC, timestampMillis DESC")
+    @Query("SELECT * FROM note_tasks ORDER BY orderIndex ASC, timestampMillis DESC")
     fun getAllTasksSortedByPriority(): Flow<List<NoteTask>>
 
     @Query("SELECT * FROM note_tasks WHERE isLowHangingFruit = 1 AND isCompleted = 0 ORDER BY priority DESC, timestampMillis DESC")

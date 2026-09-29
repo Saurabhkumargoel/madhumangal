@@ -584,11 +584,11 @@ fun AiTab(
     }
 
     Column(
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
-            .align(Alignment.BottomStart)
-            .padding(bottom = 76.dp, start = 16.dp)
+            .align(Alignment.BottomEnd)
+            .padding(bottom = 76.dp, end = 16.dp)
             .zIndex(25f)
     ) {
         AnimatedVisibility(
@@ -597,7 +597,7 @@ fun AiTab(
             exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
         ) {
             Column(
-                horizontalAlignment = Alignment.Start,
+                horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Speed Presets Popup
@@ -662,15 +662,18 @@ fun AiTab(
                     }
                 }
 
-                // 2. Play Button
+                // 2. Unified Play / Pause Toggle Button (Standard Media Player Behavior)
+                val isCurrentlyPlaying = isSpeaking && !isPaused
                 Surface(
                     shape = CircleShape,
-                    color = PrimaryBlue,
+                    color = if (isCurrentlyPlaying) Color(0xFFF59E0B) else PrimaryBlue,
                     shadowElevation = 6.dp,
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .clickable {
-                            if (isPaused) {
+                            if (isCurrentlyPlaying) {
+                                pauseSpeech()
+                            } else if (isPaused) {
                                 resumeSpeech()
                             } else {
                                 val latestAiMsg = chatMessages.findLast { !it.isUser }
@@ -683,48 +686,39 @@ fun AiTab(
                         }
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = DarkBackground, modifier = Modifier.size(22.dp))
+                        Icon(
+                            imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isCurrentlyPlaying) "Pause" else "Play",
+                            tint = DarkBackground,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
 
-                // 3. Pause Button
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFFF59E0B),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clickable { pauseSpeech() }
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(Icons.Default.Pause, contentDescription = "Pause", tint = DarkBackground, modifier = Modifier.size(20.dp))
-                    }
-                }
-
-                // 4. Stop Button
+                // 3. Stop Button
                 Surface(
                     shape = CircleShape,
                     color = ActiveRed,
                     shadowElevation = 6.dp,
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .clickable { stopSpeaking() }
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
                 }
             }
         }
 
-        // Bottom-Left Floating Hamburger Trigger Button
+        // Bottom-Right Floating Hamburger Trigger Button
         Surface(
             shape = CircleShape,
             color = if (showSettingsSheet) AccentPurple else SurfaceDark,
             border = androidx.compose.foundation.BorderStroke(1.dp, if (showSettingsSheet) AccentPurple else CardBorder),
             shadowElevation = 8.dp,
             modifier = Modifier
-                .size(46.dp)
+                .size(48.dp)
                 .clickable {
                     showSettingsSheet = !showSettingsSheet
                     if (!showSettingsSheet) showSpeedPresets = false

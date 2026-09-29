@@ -230,6 +230,15 @@ fun MainScreen(
                 onReorderGroups = { fromIndex, toIndex, updatedCategories ->
                     viewModel.reorderCategoryGroups(fromIndex, toIndex, updatedCategories)
                 },
+                onReorderTasksBulk = { selectedIds, moveUp, siblingList ->
+                    viewModel.reorderTasksBulk(selectedIds, moveUp, siblingList)
+                },
+                onDeleteTasksBulk = { ids ->
+                    viewModel.deleteTasksBulk(ids)
+                },
+                onImportTasksJson = { jsonStr, callback ->
+                    viewModel.importTasksFromJson(jsonStr, callback)
+                },
                 isRecording = isServiceRunning,
                 elapsedSeconds = elapsedSeconds,
                 onToggleRecording = {
@@ -319,6 +328,8 @@ fun MainScreen(
                 modifier = Modifier.padding(paddingValues)
             )
             4 -> LogsTab(
+                viewModel = viewModel,
+                userPreferences = userPreferences,
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )

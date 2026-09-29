@@ -103,9 +103,6 @@ fun RecorderTab(
 ) {
     val context = LocalContext.current
     var validationError by remember { mutableStateOf<com.echo.recorder.data.ModelValidationResult?>(null) }
-    var showHomeFloatingMenu by remember { mutableStateOf(false) }
-    var showSpeedPresets by remember { mutableStateOf(false) }
-    var playbackSpeed by remember { mutableStateOf(1.0f) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -171,18 +168,14 @@ fun RecorderTab(
         else -> "Google Speech"
     }
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .background(DarkBackground)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
         // App Header & Live Status Badge
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -621,185 +614,6 @@ fun RecorderTab(
                 },
                 containerColor = SurfaceDark
             )
-        }
-    }
-
-        // ── Floating Action Menu (Bottom Left) with Outside Touch Collapse ──
-        if (showHomeFloatingMenu) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(24f)
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        showHomeFloatingMenu = false
-                        showSpeedPresets = false
-                    }
-            )
-        }
-
-        Column(
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(bottom = 76.dp, start = 16.dp)
-                .zIndex(25f)
-        ) {
-            AnimatedVisibility(
-                visible = showHomeFloatingMenu,
-                enter = fadeIn(tween(150)) + expandVertically(tween(150)),
-                exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Speed Presets Popup
-                    AnimatedVisibility(
-                        visible = showSpeedPresets,
-                        enter = fadeIn(tween(120)) + expandVertically(tween(120)),
-                        exit = fadeOut(tween(120)) + shrinkVertically(tween(120))
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = SurfaceDark,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
-                            shadowElevation = 8.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { spd ->
-                                    val isSelected = Math.abs(playbackSpeed - spd) < 0.05f
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant,
-                                        modifier = Modifier.clickable {
-                                            playbackSpeed = spd
-                                            showSpeedPresets = false
-                                            Toast.makeText(context, "Speed: ${spd}x", Toast.LENGTH_SHORT).show()
-                                        }
-                                    ) {
-                                        Text(
-                                            text = "${spd}x",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) DarkBackground else TextPrimary,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 1. Current Speed Button
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = SurfaceDark,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
-                        shadowElevation = 6.dp,
-                        modifier = Modifier.clickable { showSpeedPresets = !showSpeedPresets }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Speed, contentDescription = "Speed", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${String.format(java.util.Locale.US, "%.2fx", playbackSpeed)}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
-                            )
-                        }
-                    }
-
-                    // 2. Play Button (Start Recording or Play)
-                    Surface(
-                        shape = CircleShape,
-                        color = PrimaryBlue,
-                        shadowElevation = 6.dp,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clickable {
-                                if (!isServiceRunning) {
-                                    onStartRecordingAttempt()
-                                }
-                            }
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = DarkBackground, modifier = Modifier.size(22.dp))
-                        }
-                    }
-
-                    // 3. Pause Button
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFFF59E0B),
-                        shadowElevation = 6.dp,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clickable {
-                                if (isServiceRunning) {
-                                    viewModel.stopRecordingService(context)
-                                    Toast.makeText(context, "Recording paused", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(Icons.Default.Pause, contentDescription = "Pause", tint = DarkBackground, modifier = Modifier.size(20.dp))
-                        }
-                    }
-
-                    // 4. Stop Button
-                    Surface(
-                        shape = CircleShape,
-                        color = ActiveRed,
-                        shadowElevation = 6.dp,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clickable {
-                                if (isServiceRunning) {
-                                    viewModel.stopRecordingService(context)
-                                    Toast.makeText(context, "Recording stopped", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-
-            // Bottom-Left Floating Hamburger Trigger Button
-            Surface(
-                shape = CircleShape,
-                color = if (showHomeFloatingMenu) AccentPurple else SurfaceDark,
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (showHomeFloatingMenu) AccentPurple else CardBorder),
-                shadowElevation = 8.dp,
-                modifier = Modifier
-                    .size(46.dp)
-                    .clickable {
-                        showHomeFloatingMenu = !showHomeFloatingMenu
-                        if (!showHomeFloatingMenu) showSpeedPresets = false
-                    }
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Icon(
-                        imageVector = if (showHomeFloatingMenu) Icons.Default.Close else Icons.Default.Menu,
-                        contentDescription = "Menu",
-                        tint = if (showHomeFloatingMenu) Color.White else PrimaryBlue,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
         }
     }
 }

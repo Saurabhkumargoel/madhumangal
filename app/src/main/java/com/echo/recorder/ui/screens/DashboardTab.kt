@@ -50,10 +50,18 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material.icons.filled.Stop
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
@@ -171,6 +179,9 @@ fun DashboardTab(
     onEditTask: (Long, String, String, Int, Boolean, String) -> Unit = { _, _, _, _, _, _ -> },
     onReorderTasks: (Int, Int, List<NoteTask>) -> Unit = { _, _, _ -> },
     onReorderGroups: (Int, Int, List<String>) -> Unit = { _, _, _ -> },
+    onReorderTasksBulk: ((Set<Long>, Boolean, List<NoteTask>) -> Unit)? = null,
+    onDeleteTasksBulk: ((Set<Long>) -> Unit)? = null,
+    onImportTasksJson: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
     isRecording: Boolean = false,
     elapsedSeconds: Long = 0L,
     onToggleRecording: () -> Unit = {},
@@ -182,7 +193,7 @@ fun DashboardTab(
     val isScrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40 } }
 
     var selectedMainTab by remember { mutableIntStateOf(0) }
-    var selectedSort by remember { mutableStateOf(TaskSortOption.PRIORITY_DESC) }
+    var selectedSort by remember { mutableStateOf(TaskSortOption.CUSTOM) }
     var selectedStatus by remember { mutableStateOf(TaskStatusFilter.ALL) }
     var selectedHorizon by remember { mutableStateOf(DueHorizonFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
@@ -198,13 +209,194 @@ fun DashboardTab(
     var subtaskParentTask by remember { mutableStateOf<NoteTask?>(null) }
     var moveTargetTask by remember { mutableStateOf<NoteTask?>(null) }
 
+    // Selection Mode & Confirmations
+    var isSelectionModeActive by remember { mutableStateOf(false) }
+    var selectedTaskIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
+    var taskToDeleteConfirm by remember { mutableStateOf<NoteTask?>(null) }
+    var categoryToDeleteConfirm by remember { mutableStateOf<String?>(null) }
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var importJsonText by remember { mutableStateOf("") }
+
     // Reorder mode & Floating Action Button states
     var isReorderModeActive by remember { mutableStateOf(false) }
     var isFabExpanded by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
-    BackHandler(enabled = isReorderModeActive) {
-        isReorderModeActive = false
+    BackHandler(enabled = isSelectionModeActive || isReorderModeActive) {
+        if (isSelectionModeActive) {
+            isSelectionModeActive = false
+            selectedTaskIds = emptySet()
+        } else {
+            isReorderModeActive = false
+        }
+    }
+
+    // ── Selection Mode Helper: Cascading Parent-Child Selection & Individual Child Deselection ──
+    fun toggleTaskSelection(taskId: Long) {
+        val isCurrentlySelected = taskId in selectedTaskIds
+        if (isCurrentlySelected) {
+            val descendants = mutableSetOf<Long>()
+            fun collectDescendants(pid: Long) {
+                tasks.filter { it.parentId == pid }.forEach { child ->
+                    descendants.add(child.id)
+                    collectDescendants(child.id)
+                }
+            }
+            collectDescendants(taskId)
+            selectedTaskIds = selectedTaskIds - taskId - descendants
+            if (selectedTaskIds.isEmpty()) {
+                isSelectionModeActive = false
+            }
+        } else {
+            val toAdd = mutableSetOf(taskId)
+            fun collectDescendants(pid: Long) {
+                tasks.filter { it.parentId == pid }.forEach { child ->
+                    toAdd.add(child.id)
+                    collectDescendants(child.id)
+                }
+            }
+            collectDescendants(taskId)
+            selectedTaskIds = selectedTaskIds + toAdd
+            isSelectionModeActive = true
+        }
+    }
+
+    // ── Bulk Move Helpers: Check if items are already packed at boundaries ──
+    fun canBulkMoveUp(selectedIds: Set<Long>, siblings: List<NoteTask>): Boolean {
+        if (selectedIds.isEmpty()) return false
+        val indices = siblings.mapIndexedNotNull { idx, task -> if (task.id in selectedIds) idx else null }
+        if (indices.size != selectedIds.size) return false
+        val isPackedAtTop = indices.mapIndexed { i, idx -> idx == i }.all { it }
+        return !isPackedAtTop
+    }
+
+    fun canBulkMoveDown(selectedIds: Set<Long>, siblings: List<NoteTask>): Boolean {
+        if (selectedIds.isEmpty()) return false
+        val indices = siblings.mapIndexedNotNull { idx, task -> if (task.id in selectedIds) idx else null }
+        if (indices.size != selectedIds.size) return false
+        val n = siblings.size
+        val k = indices.size
+        val isPackedAtBottom = indices.mapIndexed { i, idx -> idx == n - k + i }.all { it }
+        return !isPackedAtBottom
+    }
+
+    // ── Export Selected Tasks (.md, .txt, .json, .html, copy) ──
+    fun exportSelectedTasks(format: String) {
+        val selectedList = tasks.filter { it.id in selectedTaskIds }
+        if (selectedList.isEmpty()) return
+        val topSelected = selectedList.filter { it.parentId == null || it.parentId !in selectedTaskIds }
+
+        when (format) {
+            "copy" -> {
+                val sb = StringBuilder()
+                topSelected.forEach { parent ->
+                    sb.append(if (parent.isCompleted) "[x] " else "[ ] ").append(parent.title).append("\n")
+                    if (parent.description.isNotBlank()) sb.append("    ").append(parent.description).append("\n")
+                    selectedList.filter { it.parentId == parent.id }.forEach { sub ->
+                        sb.append("    - ").append(if (sub.isCompleted) "[x] " else "[ ] ").append(sub.title).append("\n")
+                    }
+                }
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Selected Tasks", sb.toString()))
+                Toast.makeText(context, if (isHindi) "${selectedList.size} कार्य कॉपी किए गए!" else "Copied ${selectedList.size} task(s)!", Toast.LENGTH_SHORT).show()
+            }
+            "md" -> {
+                val sb = StringBuilder("# Echo Tasks Export\n\n")
+                topSelected.forEach { parent ->
+                    sb.append("- [").append(if (parent.isCompleted) "x" else " ").append("] **").append(parent.title).append("**")
+                    if (parent.categoryGroup.isNotBlank()) sb.append(" `").append(parent.categoryGroup).append("`")
+                    sb.append("\n")
+                    if (parent.description.isNotBlank()) sb.append("  > ").append(parent.description).append("\n")
+                    selectedList.filter { it.parentId == parent.id }.forEach { sub ->
+                        sb.append("  - [").append(if (sub.isCompleted) "x" else " ").append("] ").append(sub.title).append("\n")
+                    }
+                }
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, sb.toString())
+                    type = "text/markdown"
+                }
+                context.startActivity(Intent.createChooser(sendIntent, "Export Tasks (.md)"))
+            }
+            "txt" -> {
+                val sb = StringBuilder("Echo Tasks Export\n=================\n\n")
+                topSelected.forEach { parent ->
+                    sb.append(if (parent.isCompleted) "[x] " else "[ ] ").append(parent.title)
+                    sb.append(" (Priority: ").append(when (parent.priority) { 3 -> "High"; 1 -> "Low"; else -> "Medium" })
+                    sb.append(", Category: ").append(parent.categoryGroup).append(")\n")
+                    if (parent.description.isNotBlank()) sb.append("    Note: ").append(parent.description).append("\n")
+                    selectedList.filter { it.parentId == parent.id }.forEach { sub ->
+                        sb.append("    - ").append(if (sub.isCompleted) "[x] " else "[ ] ").append(sub.title).append("\n")
+                    }
+                }
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, sb.toString())
+                    type = "text/plain"
+                }
+                context.startActivity(Intent.createChooser(sendIntent, "Export Tasks (.txt)"))
+            }
+            "json" -> {
+                val arr = JSONArray()
+                topSelected.forEach { parent ->
+                    val obj = JSONObject().apply {
+                        put("id", parent.id)
+                        put("title", parent.title)
+                        put("description", parent.description)
+                        put("category", parent.categoryGroup)
+                        put("priority", parent.priority)
+                        put("isCompleted", parent.isCompleted)
+                        put("isLowHangingFruit", parent.isLowHangingFruit)
+                        val subArr = JSONArray()
+                        selectedList.filter { it.parentId == parent.id }.forEach { sub ->
+                            subArr.put(JSONObject().apply {
+                                put("id", sub.id)
+                                put("title", sub.title)
+                                put("isCompleted", sub.isCompleted)
+                            })
+                        }
+                        if (subArr.length() > 0) put("subtasks", subArr)
+                    }
+                    arr.put(obj)
+                }
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, arr.toString(2))
+                    type = "application/json"
+                }
+                context.startActivity(Intent.createChooser(sendIntent, "Export Tasks (.json)"))
+            }
+            "html" -> {
+                val sb = StringBuilder()
+                sb.append("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Echo Tasks Export</title>")
+                sb.append("<style>body{font-family:sans-serif;background:#0F172A;color:#F8FAFC;padding:24px;}")
+                sb.append(".task{background:#1E293B;padding:12px;margin-bottom:8px;border-radius:8px;}")
+                sb.append(".done{text-decoration:line-through;color:#94A3B8;}")
+                sb.append("</style></head><body><h1>Echo Tasks Export</h1><ul>")
+                topSelected.forEach { parent ->
+                    sb.append("<li class='task ").append(if (parent.isCompleted) "done" else "").append("'>")
+                    sb.append("<strong>").append(parent.title).append("</strong>")
+                    if (parent.description.isNotBlank()) sb.append("<p>").append(parent.description).append("</p>")
+                    val subs = selectedList.filter { it.parentId == parent.id }
+                    if (subs.isNotEmpty()) {
+                        sb.append("<ul>")
+                        subs.forEach { sub ->
+                            sb.append("<li class='").append(if (sub.isCompleted) "done" else "").append("'>").append(sub.title).append("</li>")
+                        }
+                        sb.append("</ul>")
+                    }
+                    sb.append("</li>")
+                }
+                sb.append("</ul></body></html>")
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, sb.toString())
+                    type = "text/html"
+                }
+                context.startActivity(Intent.createChooser(sendIntent, "Export Tasks (.html)"))
+            }
+        }
     }
 
     // Expand/Collapse state map for group cards
@@ -278,7 +470,10 @@ fun DashboardTab(
 
         // Sorting
         return when (selectedSort) {
-            TaskSortOption.CUSTOM -> filtered.sortedBy { it.orderIndex }
+            TaskSortOption.CUSTOM -> filtered.sortedWith(
+                compareBy<NoteTask> { it.orderIndex }
+                    .thenByDescending { it.timestampMillis }
+            )
             TaskSortOption.PRIORITY_DESC -> filtered.sortedWith(
                 compareBy<NoteTask> { it.isCompleted }
                     .thenByDescending { it.priority }
@@ -698,11 +893,12 @@ fun DashboardTab(
 
                 // Right: Search Toggle & Sort Menu
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
+                    HintIconButton(
                         onClick = {
                             isSearchExpanded = !isSearchExpanded
                             if (!isSearchExpanded) searchQuery = ""
                         },
+                        hint = if (isHindi) "खोजें" else "Search Tasks",
                         modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
@@ -713,12 +909,22 @@ fun DashboardTab(
                         )
                     }
 
+                    // Import Tasks JSON button
+                    HintIconButton(
+                        onClick = { showImportJsonDialog = true },
+                        hint = if (isHindi) "कार्य आयात करें (JSON)" else "Import Tasks (JSON)",
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Import Tasks (JSON)", tint = AccentPurple, modifier = Modifier.size(16.dp))
+                    }
+
                     Box {
-                        IconButton(
+                        HintIconButton(
                             onClick = { isSortMenuOpen = true },
+                            hint = if (isHindi) "कार्यों को छांटें" else "Sort Tasks",
                             modifier = Modifier.size(30.dp)
                         ) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.FilterList, contentDescription = "Sort", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
                         }
 
                         DropdownMenu(
@@ -820,6 +1026,168 @@ fun DashboardTab(
                 ),
                 singleLine = true
             )
+        }
+
+        // ── Selection Mode Action Bar (Export .md/.txt/.json/.html/copy, Bulk Move, Delete) ──
+        AnimatedVisibility(
+            visible = isSelectionModeActive,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = SurfaceDark,
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            HintIconButton(
+                                onClick = {
+                                    isSelectionModeActive = false
+                                    selectedTaskIds = emptySet()
+                                },
+                                hint = if (isHindi) "चयन मोड बंद करें" else "Exit Selection Mode",
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Exit Selection", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isHindi) "${selectedTaskIds.size} चयनित" else "${selectedTaskIds.size} Selected",
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        // Bulk Move Arrows (only if same level & same parent!)
+                        val selectedList = tasks.filter { it.id in selectedTaskIds }
+                        val firstPid = selectedList.firstOrNull()?.parentId
+                        val areSameParent = selectedList.isNotEmpty() && selectedList.all { it.parentId == firstPid }
+                        val siblingList = if (areSameParent) {
+                            if (firstPid == null) {
+                                tasks.filter { it.parentId == null }
+                            } else {
+                                tasks.filter { it.parentId == firstPid }
+                            }
+                        } else emptyList()
+
+                        val canMoveUp = areSameParent && canBulkMoveUp(selectedTaskIds, siblingList)
+                        val canMoveDown = areSameParent && canBulkMoveDown(selectedTaskIds, siblingList)
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (areSameParent && siblingList.size > 1) {
+                                // Bulk Move Up Arrow
+                                HintIconButton(
+                                    onClick = {
+                                        if (canMoveUp) {
+                                            selectedSort = TaskSortOption.CUSTOM
+                                            onReorderTasksBulk?.invoke(selectedTaskIds, true, siblingList)
+                                        }
+                                    },
+                                    enabled = canMoveUp,
+                                    hint = if (isHindi) "चयनित कार्यों को ऊपर ले जाएं" else "Bulk Move Up",
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowUpward,
+                                        contentDescription = "Bulk Move Up",
+                                        tint = if (canMoveUp) PrimaryBlue else TextMuted.copy(alpha = 0.25f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                // Bulk Move Down Arrow
+                                HintIconButton(
+                                    onClick = {
+                                        if (canMoveDown) {
+                                            selectedSort = TaskSortOption.CUSTOM
+                                            onReorderTasksBulk?.invoke(selectedTaskIds, false, siblingList)
+                                        }
+                                    },
+                                    enabled = canMoveDown,
+                                    hint = if (isHindi) "चयनित कार्यों को नीचे ले जाएं" else "Bulk Move Down",
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDownward,
+                                        contentDescription = "Bulk Move Down",
+                                        tint = if (canMoveDown) PrimaryBlue else TextMuted.copy(alpha = 0.25f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Delete Selected button
+                            HintIconButton(
+                                onClick = { showBulkDeleteConfirm = true },
+                                hint = if (isHindi) "चयनित कार्य हटाएं" else "Delete Selected Tasks",
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete Selected", tint = ActiveRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Export Actions: Copy, .md, .txt, .json, .html
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { exportSelectedTasks("copy") },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(if (isHindi) "कॉपी" else "Copy", fontSize = 11.sp, color = PrimaryBlue)
+                        }
+                        OutlinedButton(
+                            onClick = { exportSelectedTasks("md") },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(".md", fontSize = 11.sp, color = Color(0xFF10B981))
+                        }
+                        OutlinedButton(
+                            onClick = { exportSelectedTasks("txt") },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(".txt", fontSize = 11.sp, color = PrimaryBlue)
+                        }
+                        OutlinedButton(
+                            onClick = { exportSelectedTasks("json") },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(".json", fontSize = 11.sp, color = AccentPurple)
+                        }
+                        OutlinedButton(
+                            onClick = { exportSelectedTasks("html") },
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(".html", fontSize = 11.sp, color = Color(0xFFF59E0B))
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -947,15 +1315,19 @@ fun DashboardTab(
                                     }
 
                                     if (isExpanded) {
-                                        items(processedGroupTasks, key = { "task_${it.id}" }) { task ->
+                                        items(processedGroupTasks, key = { "${group.id}_task_${it.id}" }) { task ->
                                             Box(modifier = Modifier.animateItemPlacement()) {
                                                 NestedTaskCard(
                                                     task = task,
                                                     allTasks = tasks,
+                                                    isSelectionMode = isSelectionModeActive,
+                                                    isSelected = task.id in selectedTaskIds,
+                                                    selectedTaskIds = selectedTaskIds,
+                                                    onToggleSelection = { toggleTaskSelection(it) },
                                                     isReorderMode = isReorderModeActive,
                                                     onEnterReorderMode = { isReorderModeActive = true },
                                                     onToggleCompletion = onToggleCompletion,
-                                                    onDeleteTask = onDeleteTask,
+                                                    onDeleteTask = { taskToDeleteConfirm = it },
                                                     onAddSubtask = { node -> subtaskParentTask = node },
                                                     onMoveTask = { moveTargetTask = task },
                                                     onEditTask = { taskToEdit = it },
@@ -976,7 +1348,8 @@ fun DashboardTab(
                                                     onReorderSubtasks = { from, to, list ->
                                                         selectedSort = TaskSortOption.CUSTOM
                                                         onReorderTasks(from, to, list)
-                                                    }
+                                                    },
+                                                    isHindi = isHindi
                                                 )
                                             }
                                         }
@@ -996,15 +1369,15 @@ fun DashboardTab(
                                     val group = taskGroups.firstOrNull { g ->
                                         key.startsWith("header_${g.id}") ||
                                         key.startsWith("empty_${g.id}") ||
-                                        topLevelTasks.filter(g.taskFilter).any { t -> key == "task_${t.id}" || key == "${t.id}" }
+                                        topLevelTasks.filter(g.taskFilter).any { t -> key == "${g.id}_task_${t.id}" || key == "task_${t.id}" || key == "${t.id}" }
                                     } ?: taskGroups.firstOrNull { g ->
                                         val groupTasks = topLevelTasks.filter(g.taskFilter)
-                                        groupTasks.any { gt -> tasks.any { sub -> sub.parentId == gt.id && (key == "subtask_${sub.id}" || key == "${sub.id}") } }
+                                        groupTasks.any { gt -> tasks.any { sub -> sub.parentId == gt.id && (key.contains("subtask_${sub.id}") || key == "${sub.id}") } }
                                     }
 
                                     val task = topLevelTasks.firstOrNull { t ->
-                                        key == "task_${t.id}" || key == "${t.id}" ||
-                                        tasks.filter { it.parentId == t.id }.any { sub -> key == "subtask_${sub.id}" || key == "${sub.id}" }
+                                        key.contains("_task_${t.id}") || key == "task_${t.id}" || key == "${t.id}" ||
+                                        tasks.filter { it.parentId == t.id }.any { sub -> key.contains("subtask_${sub.id}") || key == "${sub.id}" }
                                     }
                                     Pair(group, task)
                                 }
@@ -1105,11 +1478,15 @@ fun DashboardTab(
                                 NestedTaskCard(
                                     task = task,
                                     allTasks = tasks,
+                                    isSelectionMode = isSelectionModeActive,
+                                    isSelected = task.id in selectedTaskIds,
+                                    selectedTaskIds = selectedTaskIds,
+                                    onToggleSelection = { toggleTaskSelection(it) },
                                     isHindi = isHindi,
                                     isReorderMode = isReorderModeActive,
                                     onEnterReorderMode = { isReorderModeActive = true },
                                     onToggleCompletion = onToggleCompletion,
-                                    onDeleteTask = onDeleteTask,
+                                    onDeleteTask = { taskToDeleteConfirm = it },
                                     onAddSubtask = { node -> subtaskParentTask = node },
                                     onMoveTask = { moveTargetTask = task },
                                     onEditTask = { taskToEdit = it },
@@ -1158,11 +1535,15 @@ fun DashboardTab(
                                 NestedTaskCard(
                                     task = task,
                                     allTasks = tasks,
+                                    isSelectionMode = isSelectionModeActive,
+                                    isSelected = task.id in selectedTaskIds,
+                                    selectedTaskIds = selectedTaskIds,
+                                    onToggleSelection = { toggleTaskSelection(it) },
                                     isHindi = isHindi,
                                     isReorderMode = isReorderModeActive,
                                     onEnterReorderMode = { isReorderModeActive = true },
                                     onToggleCompletion = onToggleCompletion,
-                                    onDeleteTask = onDeleteTask,
+                                    onDeleteTask = { taskToDeleteConfirm = it },
                                     onAddSubtask = { node -> subtaskParentTask = node },
                                     onMoveTask = { moveTargetTask = task },
                                     onEditTask = { taskToEdit = it },
@@ -1275,12 +1656,11 @@ fun DashboardTab(
                                 Text(if (isCurrentPinned) (if (isHindi) "अनपिन करें" else "Unpin") else (if (isHindi) "पिन करें" else "Pin to Top"), fontSize = 10.sp, color = if (isCurrentPinned) AccentPurple else TextMuted)
                             }
 
-                            // Delete Custom Category
+                            // Delete Custom Category (prompts confirmation)
                             if (isCustom) {
                                 OutlinedButton(
                                     onClick = {
-                                        onDeleteCustomCategory(selectedCategoryTag)
-                                        selectedCategoryTag = "Shopping"
+                                        categoryToDeleteConfirm = selectedCategoryTag
                                     },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -1311,11 +1691,15 @@ fun DashboardTab(
                                     NestedTaskCard(
                                         task = task,
                                         allTasks = tasks,
+                                        isSelectionMode = isSelectionModeActive,
+                                        isSelected = task.id in selectedTaskIds,
+                                        selectedTaskIds = selectedTaskIds,
+                                        onToggleSelection = { toggleTaskSelection(it) },
                                         isHindi = isHindi,
                                         isReorderMode = isReorderModeActive,
                                         onEnterReorderMode = { isReorderModeActive = true },
                                         onToggleCompletion = onToggleCompletion,
-                                        onDeleteTask = onDeleteTask,
+                                        onDeleteTask = { taskToDeleteConfirm = it },
                                         onAddSubtask = { node -> subtaskParentTask = node },
                                         onMoveTask = { moveTargetTask = task },
                                         onEditTask = { taskToEdit = it },
@@ -1424,7 +1808,13 @@ fun DashboardTab(
                 shadowElevation = 10.dp,
                 modifier = Modifier
                     .size(56.dp)
-                    .clickable { isFabExpanded = !isFabExpanded }
+                    .combinedClickable(
+                        onClick = { isFabExpanded = !isFabExpanded },
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            Toast.makeText(context, if (isHindi) "त्वरित कार्य (नया कार्य या समूह जोड़ें)" else "Quick Actions (Add Task or Group)", Toast.LENGTH_SHORT).show()
+                        }
+                    )
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     Icon(
@@ -1464,14 +1854,19 @@ fun DashboardTab(
             title = { Text(if (isHindi) "➕ नया कार्य जोड़ें" else "➕ Add New Task", fontWeight = FontWeight.Bold, color = TextPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = if (isHindi) "कार्य शीर्षक" else "Task Title",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
                     OutlinedTextField(
                         value = taskTitle,
                         onValueChange = { taskTitle = it },
-                        label = { Text(if (isHindi) "कार्य शीर्षक" else "Task Title") },
                         placeholder = {
                             Text(
                                 text = if (isHindi) "उदा. सब्जियां लाएं..." else "e.g. Buy vegetables...",
-                                color = TextMuted.copy(alpha = 0.35f),
+                                color = TextMuted.copy(alpha = 0.45f),
                                 fontStyle = FontStyle.Italic
                             )
                         },
@@ -1586,14 +1981,20 @@ fun DashboardTab(
                 Column {
                     Text(if (isHindi) "आइटम जोड़ें (उदा. आलू, टमाटर, बैंगन) अपनी चेकबॉक्स के साथ:" else "Add an item (e.g. आलू, टमाटर, बैंगन) with its own independent checkbox:", fontSize = 12.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isHindi) "उप-कार्य का शीर्षक" else "Subtask Title",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
                     OutlinedTextField(
                         value = subtaskTitle,
                         onValueChange = { subtaskTitle = it },
-                        label = { Text(if (isHindi) "उप-कार्य का शीर्षक" else "Subtask Title") },
                         placeholder = {
                             Text(
                                 text = if (isHindi) "उदा. 1 किलो आलू..." else "e.g. 1kg potatoes...",
-                                color = TextMuted.copy(alpha = 0.35f),
+                                color = TextMuted.copy(alpha = 0.45f),
                                 fontStyle = FontStyle.Italic
                             )
                         },
@@ -1648,10 +2049,23 @@ fun DashboardTab(
                 Column {
                     Text(if (isHindi) "नया श्रेणी नाम दर्ज करें (उदा. फिटनेस, किराना, वित्त):" else "Enter a new category name (e.g. Fitness, Groceries, Finance):", fontSize = 12.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isHindi) "श्रेणी का नाम" else "Category Name",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
                     OutlinedTextField(
                         value = newCatName,
                         onValueChange = { newCatName = it },
-                        placeholder = { Text(if (isHindi) "श्रेणी का नाम..." else "Category name...") },
+                        placeholder = {
+                            Text(
+                                text = if (isHindi) "उदा. फिटनेस, किराना, वित्त..." else "e.g. Fitness, Groceries, Finance...",
+                                color = TextMuted.copy(alpha = 0.45f),
+                                fontStyle = FontStyle.Italic
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = corporateTextFieldColors
@@ -1733,13 +2147,28 @@ fun DashboardTab(
             onDismissRequest = { showAddGroupDialog = false },
             title = { Text(AppStrings.get("add_group", isHindi), fontWeight = FontWeight.Bold, color = TextPrimary) },
             text = {
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = { groupName = it },
-                    label = { Text(if (isHindi) "समूह / श्रेणी का नाम" else "Group / Category Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    Text(
+                        text = if (isHindi) "समूह / श्रेणी का नाम" else "Group / Category Name",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { groupName = it },
+                        placeholder = {
+                            Text(
+                                text = if (isHindi) "उदा. नई श्रेणी..." else "e.g. New Category...",
+                                color = TextMuted.copy(alpha = 0.45f),
+                                fontStyle = FontStyle.Italic
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(
@@ -1762,7 +2191,7 @@ fun DashboardTab(
         )
     }
 
-    // ── Dialog: Edit Task (Touch & Hold) ──────────────────────────────────────
+    // ── Dialog: Edit Task ─────────────────────────────────────────────────────
     if (taskToEdit != null) {
         val editing = taskToEdit!!
         var editTitle by remember { mutableStateOf(editing.title) }
@@ -1776,16 +2205,29 @@ fun DashboardTab(
             title = { Text(AppStrings.get("edit_task", isHindi), fontWeight = FontWeight.Bold, color = TextPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = AppStrings.get("title", isHindi),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
+                    )
                     OutlinedTextField(
                         value = editTitle,
                         onValueChange = { editTitle = it },
-                        label = { Text(AppStrings.get("title", isHindi)) },
+                        placeholder = { Text(if (isHindi) "कार्य का शीर्षक..." else "Task title...") },
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (isHindi) "समय सीमा (उदा. आज)" else "Timing Horizon (e.g. Today)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue
                     )
                     OutlinedTextField(
                         value = editDue,
                         onValueChange = { editDue = it },
-                        label = { Text(if (isHindi) "समय सीमा (उदा. आज)" else "Timing Horizon (e.g. Today)") },
+                        placeholder = { Text(if (isHindi) "उदा. आज, कल..." else "e.g. Today, Tomorrow...") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(
@@ -1812,6 +2254,165 @@ fun DashboardTab(
             },
             dismissButton = {
                 TextButton(onClick = { taskToEdit = null }) {
+                    Text(AppStrings.get("cancel", isHindi), color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── Confirmation Dialog: Delete Task ───────────────────────────────────────
+    if (taskToDeleteConfirm != null) {
+        val task = taskToDeleteConfirm!!
+        AlertDialog(
+            onDismissRequest = { taskToDeleteConfirm = null },
+            title = { Text(if (isHindi) "कार्य हटाएं?" else "Delete Task?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Text(
+                    text = if (isHindi) "क्या आप वाकई \"${task.title}\" को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।"
+                           else "Are you sure you want to delete \"${task.title}\"? This action cannot be undone.",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteTask(task.id)
+                        taskToDeleteConfirm = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "हटाएं" else "Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { taskToDeleteConfirm = null }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── Confirmation Dialog: Delete Category ──────────────────────────────────
+    if (categoryToDeleteConfirm != null) {
+        val catName = categoryToDeleteConfirm!!
+        AlertDialog(
+            onDismissRequest = { categoryToDeleteConfirm = null },
+            title = { Text(if (isHindi) "श्रेणी हटाएं?" else "Delete Category?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Text(
+                    text = if (isHindi) "क्या आप वाकई \"$catName\" श्रेणी को हटाना चाहते हैं?"
+                           else "Are you sure you want to delete category \"$catName\"?",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteCustomCategory(catName)
+                        if (selectedCategoryTag == catName) selectedCategoryTag = "Shopping"
+                        categoryToDeleteConfirm = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "हटाएं" else "Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { categoryToDeleteConfirm = null }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── Confirmation Dialog: Bulk Delete Tasks ────────────────────────────────
+    if (showBulkDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteConfirm = false },
+            title = { Text(if (isHindi) "चयनित कार्य हटाएं?" else "Delete Selected Tasks?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Text(
+                    text = if (isHindi) "क्या आप वाकई ${selectedTaskIds.size} चयनित कार्यों को हटाना चाहते हैं?"
+                           else "Are you sure you want to delete ${selectedTaskIds.size} selected task(s)?",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteTasksBulk?.invoke(selectedTaskIds)
+                        selectedTaskIds = emptySet()
+                        isSelectionModeActive = false
+                        showBulkDeleteConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "हटाएं" else "Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkDeleteConfirm = false }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── Dialog: Import Tasks JSON ─────────────────────────────────────────────
+    if (showImportJsonDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportJsonDialog = false },
+            title = { Text(if (isHindi) "📥 कार्य आयात करें (JSON)" else "📥 Import Tasks (JSON)", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Column {
+                    Text(
+                        text = if (isHindi) "कार्य या उप-कार्य युक्त JSON पेस्ट करें:" else "Paste JSON containing tasks and subtasks:",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = importJsonText,
+                        onValueChange = { importJsonText = it },
+                        placeholder = { Text("[{\"title\": \"Task 1\", \"subtasks\": [\"Sub 1\"]}]", fontSize = 11.sp, color = TextMuted) },
+                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF1E293B),
+                            unfocusedContainerColor = Color(0xFF0F172A),
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color(0xFFF8FAFC),
+                            unfocusedTextColor = Color(0xFFF8FAFC)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (importJsonText.isNotBlank()) {
+                            onImportTasksJson?.invoke(importJsonText) { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                if (success) {
+                                    importJsonText = ""
+                                    showImportJsonDialog = false
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (isHindi) "आयात करें" else "Import")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportJsonDialog = false }) {
                     Text(AppStrings.get("cancel", isHindi), color = TextMuted)
                 }
             },
@@ -2079,7 +2680,7 @@ fun VsCodeStickyTaskBar(
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onToggleComplete, modifier = Modifier.size(20.dp)) {
                     Icon(
-                        imageVector = if (task.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        imageVector = if (task.isCompleted) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         contentDescription = "Toggle Complete",
                         tint = if (task.isCompleted) PrimaryBlue else TextMuted,
                         modifier = Modifier.size(15.dp)
@@ -2215,7 +2816,7 @@ fun TaskGroupCard(
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onToggleCompletion: (Long, Boolean) -> Unit,
-    onDeleteTask: (Long) -> Unit,
+    onDeleteTask: (NoteTask) -> Unit,
     onAddSubtask: (NoteTask) -> Unit,
     onMoveTask: (NoteTask) -> Unit,
     isHindi: Boolean = false
@@ -2310,8 +2911,8 @@ fun TaskGroupCard(
 }
 
 /**
- * Recursive arbitrary-depth subtask tree renderer with hamburger reorder handle (≡), Up/Down arrows,
- * and delete button positioned on the RIGHT side.
+ * Recursive arbitrary-depth subtask tree renderer with CheckBox, selection support,
+ * Up/Down arrows, and delete button positioned on the RIGHT side.
  * Reordering is strictly bounded to the same parent task!
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -2320,11 +2921,14 @@ fun NestedSubtaskTree(
     parentId: Long,
     allTasks: List<NoteTask>,
     depth: Int = 1,
+    isSelectionMode: Boolean = false,
+    selectedTaskIds: Set<Long> = emptySet(),
+    onToggleSelection: (Long) -> Unit = {},
     isReorderMode: Boolean = false,
     onEnterReorderMode: () -> Unit = {},
     onEditTask: (NoteTask) -> Unit = {},
     onToggleCompletion: (Long, Boolean) -> Unit,
-    onDeleteTask: (Long) -> Unit,
+    onDeleteTask: (NoteTask) -> Unit,
     onAddSubtask: (NoteTask) -> Unit,
     onReorderSubtasks: (Int, Int, List<NoteTask>) -> Unit = { _, _, _ -> }
 ) {
@@ -2348,14 +2952,35 @@ fun NestedSubtaskTree(
                     .fillMaxWidth()
                     .padding(vertical = 2.dp)
                     .combinedClickable(
-                        onClick = { onEditTask(sub) },
+                        onClick = {
+                            if (isSelectionMode) {
+                                onToggleSelection(sub.id)
+                            } else {
+                                onEditTask(sub)
+                            }
+                        },
                         onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEnterReorderMode()
+                            onToggleSelection(sub.id)
                         }
                     ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Selection Checkbox
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = sub.id in selectedTaskIds,
+                        onCheckedChange = { onToggleSelection(sub.id) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = PrimaryBlue,
+                            uncheckedColor = TextMuted,
+                            checkmarkColor = DarkBackground
+                        ),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+
                 // LEFT SIDE: Subdirectory arrow, Checkbox, Title
                 Icon(
                     imageVector = Icons.Default.SubdirectoryArrowRight,
@@ -2370,7 +2995,7 @@ fun NestedSubtaskTree(
                     modifier = Modifier.size(26.dp)
                 ) {
                     Icon(
-                        imageVector = if (sub.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        imageVector = if (sub.isCompleted) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         contentDescription = "Toggle Subtask",
                         tint = if (sub.isCompleted) PrimaryBlue else TextMuted,
                         modifier = Modifier.size(16.dp)
@@ -2497,7 +3122,7 @@ fun NestedSubtaskTree(
                     Box(
                         modifier = Modifier
                             .size(36.dp)
-                            .clickable { onDeleteTask(sub.id) },
+                            .clickable { onDeleteTask(sub) },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -2514,6 +3139,9 @@ fun NestedSubtaskTree(
                 parentId = sub.id,
                 allTasks = allTasks,
                 depth = depth + 1,
+                isSelectionMode = isSelectionMode,
+                selectedTaskIds = selectedTaskIds,
+                onToggleSelection = onToggleSelection,
                 isReorderMode = isReorderMode,
                 onEnterReorderMode = onEnterReorderMode,
                 onEditTask = onEditTask,
@@ -2528,20 +3156,25 @@ fun NestedSubtaskTree(
 
 /**
  * Nested Task Card:
- * - Regular click opens Edit Task immediately
- * - Long press (Touch & hold) vibrates and activates Reorder Mode
- * - Hamburger prefix (≡) and Move Up/Down arrows are hidden until Reorder Mode is active
- * - Generous 36dp touch hit targets for arrows and handles
+ * - When in Selection Mode, tapping only toggles selection (never edits).
+ * - Touch & hold (long press) activates Selection Mode and toggles selection.
+ * - Checkboxes used for task completion instead of radio buttons.
+ * - Hamburger prefix (≡) and Move Up/Down arrows are hidden until Reorder Mode is active.
+ * - Generous 36dp touch hit targets for arrows and handles.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NestedTaskCard(
     task: NoteTask,
     allTasks: List<NoteTask>,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    selectedTaskIds: Set<Long> = emptySet(),
+    onToggleSelection: (Long) -> Unit = {},
     isReorderMode: Boolean = false,
     onEnterReorderMode: () -> Unit = {},
     onToggleCompletion: (Long, Boolean) -> Unit,
-    onDeleteTask: (Long) -> Unit,
+    onDeleteTask: (NoteTask) -> Unit,
     onAddSubtask: (NoteTask) -> Unit,
     onMoveTask: () -> Unit,
     onEditTask: (NoteTask) -> Unit = {},
@@ -2559,18 +3192,24 @@ fun NestedTaskCard(
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        color = if (isSelected) PrimaryBlue.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
         border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = if (task.priority == NoteTask.PRIORITY_HIGH && !task.isCompleted) ActiveRed.copy(alpha = 0.5f) else CardBorder
+            width = if (isSelected) 1.5.dp else 1.dp,
+            color = if (isSelected) PrimaryBlue else if (task.priority == NoteTask.PRIORITY_HIGH && !task.isCompleted) ActiveRed.copy(alpha = 0.5f) else CardBorder
         ),
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = { onEditTask(task) },
+                onClick = {
+                    if (isSelectionMode) {
+                        onToggleSelection(task.id)
+                    } else {
+                        onEditTask(task)
+                    }
+                },
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onEnterReorderMode()
+                    onToggleSelection(task.id)
                 }
             )
     ) {
@@ -2579,6 +3218,21 @@ fun NestedTaskCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Selection Checkbox
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelection(task.id) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = PrimaryBlue,
+                            uncheckedColor = TextMuted,
+                            checkmarkColor = DarkBackground
+                        ),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
                 // If in Reorder mode, show Drag handle (≡) at start with pop-out, vibration & vertical drag reordering!
                 if (isReorderMode) {
                     var verticalDragAccumulator by remember { mutableFloatStateOf(0f) }
@@ -2635,7 +3289,7 @@ fun NestedTaskCard(
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        imageVector = if (task.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        imageVector = if (task.isCompleted) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         contentDescription = "Toggle Complete",
                         tint = if (task.isCompleted) PrimaryBlue else TextMuted,
                         modifier = Modifier.size(20.dp)
@@ -2782,7 +3436,7 @@ fun NestedTaskCard(
                             text = { Text(AppStrings.get("delete_task", isHindi), fontSize = 12.sp, color = ActiveRed) },
                             onClick = {
                                 isMenuOpen = false
-                                onDeleteTask(task.id)
+                                onDeleteTask(task)
                             }
                         )
                     }
@@ -2796,6 +3450,9 @@ fun NestedTaskCard(
                     parentId = task.id,
                     allTasks = allTasks,
                     depth = 1,
+                    isSelectionMode = isSelectionMode,
+                    selectedTaskIds = selectedTaskIds,
+                    onToggleSelection = onToggleSelection,
                     isReorderMode = isReorderMode,
                     onEnterReorderMode = onEnterReorderMode,
                     onEditTask = onEditTask,
@@ -2835,3 +3492,35 @@ fun EmptyTasksPlaceholder(
         }
     }
 }
+
+/**
+ * Reusable IconButton that provides Haptic feedback and a helpful Toast hint
+ * when touched and held (long pressed).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun HintIconButton(
+    onClick: () -> Unit,
+    hint: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    Box(
+        modifier = modifier
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
+

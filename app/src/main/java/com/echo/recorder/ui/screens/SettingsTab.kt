@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
@@ -255,6 +256,34 @@ fun SettingsTab(
 
     var isGeneralExpanded by remember { mutableStateOf(true) }
     var showApiKey by remember { mutableStateOf(false) }
+    var modelToDelete by remember { mutableStateOf<String?>(null) }
+
+    if (modelToDelete != null) {
+        val mid = modelToDelete!!
+        AlertDialog(
+            onDismissRequest = { modelToDelete = null },
+            title = { Text(if (isHindi) "🗑️ मॉडल हटाएं?" else "🗑️ Delete Model?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text(if (isHindi) "क्या आप वाकई '$mid' मॉडल फ़ाइल हटाना चाहते हैं? ऑफ़लाइन उपयोग के लिए इसे दोबारा डाउनलोड करना होगा।" else "Are you sure you want to delete model '$mid' from storage? You will need to download it again for offline usage.", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteModel(mid)
+                        modelToDelete = null
+                        Toast.makeText(context, if (isHindi) "मॉडल हटाया गया" else "Model deleted", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "हटाएं" else "Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { modelToDelete = null }) {
+                    Text(AppStrings.get("cancel", isHindi), color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
 
     LazyColumn(
         state = listState,
@@ -264,6 +293,45 @@ fun SettingsTab(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // ── Top Screen Header with Version Badge (Screen Title, NOT in Section 0) ──
+        item(key = "screen_title_header") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = AppStrings.get("settings_title", isHindi),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Echo Intelligence • Voice & Offline Task Manager",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = PrimaryBlue.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = "v${AppConstants.APP_VERSION}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlue,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+
         // =========================================================================
         // CATEGORY 0: ⚙️ GENERAL & SYSTEM SETTINGS
         // =========================================================================
@@ -283,43 +351,6 @@ fun SettingsTab(
             item(key = "content_section_0") {
                 SettingsSectionCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // ── Top Header with Version Badge ─────────────────────────
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = AppStrings.get("settings_title", isHindi),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "Echo Intelligence • Voice & Offline Task Manager",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
-                                )
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = PrimaryBlue.copy(alpha = 0.15f),
-                                border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f))
-                            ) {
-                                Text(
-                                    text = "v${AppConstants.APP_VERSION}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryBlue,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
                         // ── ⚡ Operation Mode: Compact Segmented Select Button ────────
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -459,6 +490,65 @@ fun SettingsTab(
                                             fontSize = 11.sp,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 🧠 AI Output Language Selector ────────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = AccentPurple,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "एआई भाषा" else "AI Language",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(
+                                        Triple("auto", "Auto", "ऑटो"),
+                                        Triple("hi", "हिन्दी", "हिन्दी"),
+                                        Triple("en", "English", "English")
+                                    ).forEach { (langCode, engLabel, hiLabel) ->
+                                        val isSelected = userPreferences.aiLanguage == langCode
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) AccentPurple else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isSelected) AccentPurple else CardBorder),
+                                            modifier = Modifier.clickable {
+                                                viewModel.updateAiLanguage(langCode)
+                                                Toast.makeText(context, if (isHindi) "एआई भाषा: $hiLabel" else "AI Language: $engLabel", Toast.LENGTH_SHORT).show()
+                                            }
+                                        ) {
+                                            Text(
+                                                text = if (isHindi) hiLabel else engLabel,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else TextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1348,7 +1438,7 @@ fun SettingsTab(
                                                     Text("✅ Downloaded & Ready (${model.sizeText})", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                                 }
                                                 OutlinedButton(
-                                                    onClick = { viewModel.deleteModel(model.id) },
+                                                    onClick = { modelToDelete = model.id },
                                                     shape = RoundedCornerShape(8.dp),
                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                     modifier = Modifier.height(28.dp)
@@ -1526,7 +1616,7 @@ fun SettingsTab(
                                             }
                                             if (model.id != UserPreferences.AI_MODEL_LOCAL_TINY && !model.id.startsWith("cloud_")) {
                                                 OutlinedButton(
-                                                    onClick = { viewModel.deleteModel(model.id) },
+                                                    onClick = { modelToDelete = model.id },
                                                     shape = RoundedCornerShape(8.dp),
                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                     modifier = Modifier.height(28.dp)

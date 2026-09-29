@@ -35,24 +35,32 @@ object AppLogger {
     private val fileDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val sessionDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
-    fun init(context: Context, customLogsDir: String? = null) {
+    private var logFileExtension: String = "log"
+
+    fun setLogFileExtension(ext: String) {
+        logFileExtension = ext.removePrefix(".")
+    }
+
+    fun init(context: Context, customLogsDir: String? = null, extension: String = "log") {
         appContext = context.applicationContext
         customLogsDirPath = customLogsDir
+        logFileExtension = extension.removePrefix(".")
         sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDir)
         appLogFile = File(context.filesDir, "app_logs.txt")
 
         val sessionTimestamp = sessionDateFormat.format(Date())
-        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.log")
+        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.${logFileExtension}")
 
         i("SYSTEM", "GoodEcho Logger initialized. Active session file: ${sessionLogFile?.absolutePath}")
     }
 
-    fun startNewSession(context: Context, customLogsDir: String? = null) {
+    fun startNewSession(context: Context, customLogsDir: String? = null, extension: String? = null) {
         appContext = context.applicationContext
         if (customLogsDir != null) customLogsDirPath = customLogsDir
+        if (extension != null) logFileExtension = extension.removePrefix(".")
         sessionLogsDir = AppStorageManager.getLogsDirectory(context, customLogsDirPath)
         val sessionTimestamp = sessionDateFormat.format(Date())
-        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.log")
+        sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.${logFileExtension}")
         i("SYSTEM", "=== New Session Started: ${sessionLogFile?.name} ===")
     }
 
@@ -163,9 +171,36 @@ object AppLogger {
 
     fun getSessionFiles(context: Context, customLogsDir: String? = null): List<File> {
         val dir = sessionLogsDir ?: AppStorageManager.getLogsDirectory(context, customLogsDir)
-        return dir.listFiles { f -> f.extension == "log" || f.extension == "txt" }
+        return dir.listFiles { f -> f.isFile && (f.extension.equals("log", true) || f.extension.equals("txt", true) || f.extension.equals("md", true)) }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
+    }
+
+    fun exportSelectedSessionLogs(files: List<File>): String {
+        if (files.isEmpty()) return ""
+        val sb = StringBuilder()
+        sb.append("=========================================\n")
+        sb.append("   GOODECHO MULTI-SESSION LOG EXPORT\n")
+        sb.append("   Total Selected Sessions: ${files.size}\n")
+        sb.append("   Export Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
+        sb.append("=========================================\n\n")
+
+        for (file in files) {
+            sb.append("--------------------------------------------------\n")
+            sb.append("SESSION FILE: ${file.name} (${file.length() / 1024} KB)\n")
+            sb.append("--------------------------------------------------\n")
+            try {
+                sb.append(file.readText())
+            } catch (e: Exception) {
+                sb.append("[Error reading file ${file.name}: ${e.message}]\n")
+            }
+            sb.append("\n\n")
+        }
+        return sb.toString()
+    }
+
+    fun logSafeExit() {
+        i("SYSTEM", "=== Application Session Safely Exited & Flushed ===")
     }
 
     fun getFilteredLogsText(filter: String, entries: List<LogEntry>): String {

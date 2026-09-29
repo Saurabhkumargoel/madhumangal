@@ -85,4 +85,9 @@ class MainActivity : ComponentActivity() {
             permissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        com.echo.recorder.util.AppLogger.logSafeExit()
+    }
 }
