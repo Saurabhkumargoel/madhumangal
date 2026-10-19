@@ -2522,4 +2522,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun resetAllPreferences(onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            prefsRepo.resetAllPreferences()
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
 }

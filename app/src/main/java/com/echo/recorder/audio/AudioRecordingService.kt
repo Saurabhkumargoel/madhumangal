@@ -242,8 +242,9 @@ class AudioRecordingService : Service() {
     @SuppressLint("MissingPermission")
     private fun createAudioRecord(preferredRate: Int): Pair<AudioRecord, Int>? {
         val sources = listOf(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            MediaRecorder.AudioSource.MIC
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.DEFAULT,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION
         )
         val rates = listOf(preferredRate, 16000, 44100, 48000, 8000).distinct()
 

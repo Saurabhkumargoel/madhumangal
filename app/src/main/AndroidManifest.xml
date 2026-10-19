@@ -58,8 +58,11 @@
 
     </application>
 
-    <!-- Query permissions for file explorers, document providers, and intent handlers -->
+    <!-- Query permissions for speech recognition service (Android 11+ package visibility) and file explorers -->
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="*/*" />

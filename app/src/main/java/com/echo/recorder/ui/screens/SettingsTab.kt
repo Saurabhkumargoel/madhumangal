@@ -285,9 +285,11 @@ fun SettingsTab(
         }
     }
 
+    val isAdvanced = userPreferences.settingsMode == SettingsMode.ADVANCED
     var isGeneralExpanded by remember { mutableStateOf(true) }
     var showApiKey by remember { mutableStateOf(false) }
     var showHfToken by remember { mutableStateOf(false) }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
     var modelToDelete by remember { mutableStateOf<String?>(null) }
 
     if (modelToDelete != null) {
@@ -370,7 +372,7 @@ fun SettingsTab(
         @OptIn(ExperimentalFoundationApi::class)
         stickyHeader(key = "header_section_0") {
             SettingsStickyHeader(
-                title = "0. General & System Settings",
+                title = if (isAdvanced) "0. General & System Settings" else (if (isHindi) "0. सामान्य एवं आवाज़ सेटिंग्स" else "0. General & Voice Settings"),
                 summaryBadge = if (userPreferences.settingsMode == SettingsMode.SMART) "Smart Mode" else "Advanced",
                 badgeColor = PrimaryBlue,
                 icon = Icons.Default.Tune,
@@ -683,8 +685,66 @@ fun SettingsTab(
                             }
                         }
 
-                        // ── 📑 App Sections & Tab Visibility Checkboxes (Advanced Mode Only) ─
-                        if (userPreferences.settingsMode == SettingsMode.ADVANCED) {
+                        // ── 🔊 Voice Speech Speed Slider (Smart & Advanced) ───────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Speed,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "बोलने की गति (TTS Speed)" else "Voice Speech Speed",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = "${String.format(java.util.Locale.US, "%.2f", userPreferences.ttsSpeed)}x",
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlue,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Slider(
+                                    value = userPreferences.ttsSpeed,
+                                    onValueChange = { viewModel.updateTtsSpeed(it) },
+                                    valueRange = 0.5f..2.0f,
+                                    steps = 14,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = PrimaryBlue,
+                                        activeTrackColor = PrimaryBlue
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("0.5x (Slow)", fontSize = 9.sp, color = TextMuted)
+                                    Text("1.0x (Normal)", fontSize = 9.sp, color = TextMuted)
+                                    Text("2.0x (Fast)", fontSize = 9.sp, color = TextMuted)
+                                }
+                            }
+                        }
+
+                        // ── ⚙️ Advanced System Controls (Visible only in Advanced Mode) ──
+                        if (isAdvanced) {
+                            // ── 📑 App Sections & Tab Visibility Checkboxes ──
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -865,298 +925,183 @@ fun SettingsTab(
                                     }
                                 }
                             }
-                        }
 
-                        // ── 📜 Log File Extension Selector ───────────────────────────
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, CardBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Description,
-                                        contentDescription = null,
-                                        tint = PrimaryBlue,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isHindi) "लॉग एक्सटेंशन" else "Log Extension",
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf("log", "txt", "md").forEach { ext ->
-                                        val isSelected = userPreferences.logFileExtension.equals(ext, ignoreCase = true)
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isSelected) PrimaryBlue else Color.Transparent,
-                                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
-                                            modifier = Modifier.clickable {
-                                                viewModel.updateLogFileExtension(ext)
-                                                Toast.makeText(context, if (isHindi) "लॉग एक्सटेंशन: .$ext" else "Log extension set to .$ext", Toast.LENGTH_SHORT).show()
-                                            }
-                                        ) {
-                                            Text(
-                                                text = ".$ext",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) DarkBackground else TextPrimary,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // ── 🎙️ Recorder Layout Mode Selector ──────────────────────────
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, CardBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.GraphicEq,
-                                            contentDescription = null,
-                                            tint = PrimaryBlue,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = if (isHindi) "रिकॉर्डर लेआउट" else "Recorder Layout",
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextPrimary,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    listOf(
-                                        Triple("BOTH_TABS", "Dual (Both)", "दोनों"),
-                                        Triple("BOTTOM_MEDIA_ONLY", "Media Bottom", "मीडिया नीचे"),
-                                        Triple("DEDICATED_TAB_ONLY", "Tab Only", "केवल टैब")
-                                    ).forEach { (mode, engLabel, hiLabel) ->
-                                        val isSelected = userPreferences.recorderLayoutMode == mode
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isSelected) PrimaryBlue else Color.Transparent,
-                                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clickable {
-                                                    viewModel.updateRecorderLayoutMode(mode)
-                                                    Toast.makeText(context, if (isHindi) "रिकॉर्डर लेआउट: $hiLabel" else "Recorder layout: $engLabel", Toast.LENGTH_SHORT).show()
-                                                }
-                                        ) {
-                                            Text(
-                                                text = if (isHindi) hiLabel else engLabel,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) DarkBackground else TextPrimary,
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                modifier = Modifier.padding(vertical = 5.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // ── ⏹️ Default Abort Selection Mode ───────────────────────────
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, CardBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.DeleteSweep,
-                                        contentDescription = null,
-                                        tint = ActiveRed,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isHindi) "एबॉर्शन डिफ़ॉल्ट" else "Default Abort",
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    listOf(
-                                        Triple("ALL_FILES", "All Chunks", "सभी फ़ाइलें"),
-                                        Triple("LAST_FILE_ONLY", "Last Only", "केवल अंतिम")
-                                    ).forEach { (opt, engLabel, hiLabel) ->
-                                        val isSelected = userPreferences.defaultAbortSelection == opt
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isSelected) ActiveRed.copy(alpha = 0.2f) else Color.Transparent,
-                                            border = BorderStroke(1.dp, if (isSelected) ActiveRed else CardBorder),
-                                            modifier = Modifier.clickable {
-                                                viewModel.updateDefaultAbortSelection(opt)
-                                                Toast.makeText(context, if (isHindi) "डिफ़ॉल्ट एबॉर्शन: $hiLabel" else "Default abort: $engLabel", Toast.LENGTH_SHORT).show()
-                                            }
-                                        ) {
-                                            Text(
-                                                text = if (isHindi) hiLabel else engLabel,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) ActiveRed else TextPrimary,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // ── 📑 Navigation Tabs Visibility Toggles (Advanced Mode) ──────
-                        if (userPreferences.settingsMode == SettingsMode.ADVANCED) {
+                            // ── 📜 Log File Extension Selector ───────────────────────────
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                                 border = BorderStroke(1.dp, CardBorder),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    // Show Logs Tab Toggle
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = if (isHindi) "📜 लॉग्स टैब दिखाएं" else "📜 Show Logs Tab",
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextPrimary,
-                                                fontSize = 12.sp
-                                            )
-                                            Text(
-                                                text = if (isHindi) "सिस्टम और डेवलपर लॉग देखने के लिए नेविगेशन बार में" else "Include System & AI Logs in bottom navigation bar",
-                                                fontSize = 10.sp,
-                                                color = TextMuted
-                                            )
-                                        }
-                                        Switch(
-                                            checked = userPreferences.showLogsTab,
-                                            onCheckedChange = { viewModel.updateShowLogsTab(it) },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = PrimaryBlue)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "लॉग एक्सटेंशन" else "Log Extension",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
                                         )
                                     }
 
-                                    // Show Ask AI Tab Toggle
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = if (isHindi) "✨ आस्क एआई टैब दिखाएं" else "✨ Show Ask AI Tab",
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextPrimary,
-                                                fontSize = 12.sp
-                                            )
-                                            Text(
-                                                text = if (isHindi) "ऑफ़लाइन एलएलएम चैट इंटरफ़ेस नेविगेशन बार में" else "Include Ask AI chatbot in bottom navigation bar",
-                                                fontSize = 10.sp,
-                                                color = TextMuted
-                                            )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        listOf("log", "txt", "md").forEach { ext ->
+                                            val isSelected = userPreferences.logFileExtension.equals(ext, ignoreCase = true)
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                                border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                                modifier = Modifier.clickable {
+                                                    viewModel.updateLogFileExtension(ext)
+                                                    Toast.makeText(context, if (isHindi) "लॉग एक्सटेंशन: .$ext" else "Log extension set to .$ext", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = ".$ext",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) DarkBackground else TextPrimary,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
                                         }
-                                        Switch(
-                                            checked = userPreferences.showAiTab,
-                                            onCheckedChange = { viewModel.updateShowAiTab(it) },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = AccentPurple)
-                                        )
                                     }
                                 }
                             }
-                        }
 
-                        // ── 🔑 Hugging Face Access Token Input ────────────────────────
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, CardBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Key,
-                                        contentDescription = null,
-                                        tint = Color(0xFFF59E0B),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isHindi) "हगिंग फेस एक्सेस टोकन" else "Hugging Face Access Token",
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                                Text(
-                                    text = if (isHindi) "Google Gemma जैसे लाइसेंस-स्वीकृत मॉडलों को डाउनलोड करने के लिए टोकन आवश्यक है।" else "Required to authorize downloads for gated models like Google Gemma 2 / 3.",
-                                    fontSize = 10.sp,
-                                    color = TextMuted,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
-                                OutlinedTextField(
-                                    value = userPreferences.huggingFaceToken,
-                                    onValueChange = { viewModel.updateHuggingFaceToken(it) },
-                                    label = { Text("HF Token (hf_...)", fontSize = 11.sp) },
-                                    placeholder = { Text("hf_xxxxxxxxxxxxxxxxxxxxxx", fontSize = 11.sp) },
-                                    visualTransformation = if (showHfToken) VisualTransformation.None else PasswordVisualTransformation(),
-                                    trailingIcon = {
-                                        IconButton(onClick = { showHfToken = !showHfToken }) {
+                            // ── 🎙️ Recorder Layout Mode Selector ──────────────────────────
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
-                                                imageVector = if (showHfToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                                contentDescription = if (showHfToken) "Hide" else "Show",
-                                                tint = TextMuted,
-                                                modifier = Modifier.size(18.dp)
+                                                imageVector = Icons.Default.GraphicEq,
+                                                contentDescription = null,
+                                                tint = PrimaryBlue,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = if (isHindi) "रिकॉर्डर लेआउट" else "Recorder Layout",
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
                                             )
                                         }
-                                    },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        listOf(
+                                            Triple("BOTH_TABS", "Dual (Both)", "दोनों"),
+                                            Triple("BOTTOM_MEDIA_ONLY", "Media Bottom", "मीडिया नीचे"),
+                                            Triple("DEDICATED_TAB_ONLY", "Tab Only", "केवल टैब")
+                                        ).forEach { (mode, engLabel, hiLabel) ->
+                                            val isSelected = userPreferences.recorderLayoutMode == mode
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                                border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable {
+                                                        viewModel.updateRecorderLayoutMode(mode)
+                                                        Toast.makeText(context, if (isHindi) "रिकॉर्डर लेआउट: $hiLabel" else "Recorder layout: $engLabel", Toast.LENGTH_SHORT).show()
+                                                    }
+                                            ) {
+                                                Text(
+                                                    text = if (isHindi) hiLabel else engLabel,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) DarkBackground else TextPrimary,
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                    modifier = Modifier.padding(vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── ⏹️ Default Abort Selection Mode ───────────────────────────
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteSweep,
+                                            contentDescription = null,
+                                            tint = ActiveRed,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "एबॉर्शन डिफ़ॉल्ट" else "Default Abort",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        listOf(
+                                            Triple("ALL_FILES", "All Chunks", "सभी फ़ाइलें"),
+                                            Triple("LAST_FILE_ONLY", "Last Only", "केवल अंतिम")
+                                        ).forEach { (opt, engLabel, hiLabel) ->
+                                            val isSelected = userPreferences.defaultAbortSelection == opt
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSelected) ActiveRed.copy(alpha = 0.2f) else Color.Transparent,
+                                                border = BorderStroke(1.dp, if (isSelected) ActiveRed else CardBorder),
+                                                modifier = Modifier.clickable {
+                                                    viewModel.updateDefaultAbortSelection(opt)
+                                                    Toast.makeText(context, if (isHindi) "डिफ़ॉल्ट एबॉर्शन: $hiLabel" else "Default abort: $engLabel", Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = if (isHindi) hiLabel else engLabel,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) ActiveRed else TextPrimary,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1165,14 +1110,15 @@ fun SettingsTab(
         }
 
         // =========================================================================
-        // CATEGORY 1: 📁 STORAGE DIRECTORIES & MEDIA MANAGEMENT
+        // CATEGORY 1: 📁 STORAGE DIRECTORIES & MEDIA MANAGEMENT (Advanced Only)
         // =========================================================================
-        val targetBasePath = userPreferences.baseFolderPath
-        val sourceBasePath = userPreferences.lastExportSourcePath
-        val activeBaseDir = AppStorageManager.getBaseDirectory(context, targetBasePath.ifBlank { null })
+        if (isAdvanced) {
+            val targetBasePath = userPreferences.baseFolderPath
+            val sourceBasePath = userPreferences.lastExportSourcePath
+            val activeBaseDir = AppStorageManager.getBaseDirectory(context, targetBasePath.ifBlank { null })
 
-        @OptIn(ExperimentalFoundationApi::class)
-        stickyHeader(key = "header_storage") {
+            @OptIn(ExperimentalFoundationApi::class)
+            stickyHeader(key = "header_storage") {
             SettingsStickyHeader(
                 title = AppStrings.get("section_storage", isHindi),
                 summaryBadge = if (targetBasePath.isNotBlank()) "Custom Path" else "Default (Downloads)",
@@ -1549,14 +1495,15 @@ fun SettingsTab(
                 }
             }
         }
+        } // End if (isAdvanced) for Category 1
 
         // =========================================================================
-        // CATEGORY 2: 🎨 APPEARANCE & COLOR THEMES (5 Common Open Themes)
+        // CATEGORY 2: 🎨 APPEARANCE & COLOR THEMES (Visible in Both Modes)
         // =========================================================================
         @OptIn(ExperimentalFoundationApi::class)
         stickyHeader(key = "header_themes") {
             SettingsStickyHeader(
-                title = AppStrings.get("section_themes", isHindi),
+                title = if (isAdvanced) "2. Themes & Typography" else (if (isHindi) "1. थीम और रूप-रंग" else "1. Themes & Appearance"),
                 summaryBadge = userPreferences.activeTheme.replace("_", " "),
                 badgeColor = AccentPurple,
                 icon = Icons.Default.Palette,
@@ -1741,10 +1688,92 @@ fun SettingsTab(
         }
 
         // =========================================================================
-        // CATEGORY 3: 🎙️ AUDIO RECORDING & CHUNKING
+        // ⚡ SMART MODE CONTROL & STATUS CARD (Smart Mode Only)
         // =========================================================================
-        @OptIn(ExperimentalFoundationApi::class)
-        stickyHeader(key = "header_audio") {
+        if (!isAdvanced) {
+            item(key = "smart_mode_control_card") {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, CardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = AccentPurple,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isHindi) "⚡ स्मार्ट मोड सक्रिय है" else "⚡ Smart Mode Active",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (isHindi)
+                                "सभी तकनीकी सेटिंग्स (ऑडियो सैंपल दर, बफ़र साइज़, डिकोडर्स, मॉडल पथ) प्रदर्शन और बैटरी दक्षता के लिए स्वचालित रूप से अनुकूलित हैं। उन्नत नियंत्रणों के लिए एडवांस्ड मोड चालू करें।"
+                            else
+                                "All technical dials (audio sample rates, buffers, decoders, and model paths) are automatically tuned for maximum performance and battery life. Switch to Advanced Mode for full granular control.",
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.updateSettingsMode(SettingsMode.ADVANCED) },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isHindi) "एडवांस्ड मोड" else "Advanced Mode",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { showResetConfirmDialog = true },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ActiveRed),
+                                border = BorderStroke(1.dp, ActiveRed.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isHindi) "रीसेट करें" else "Reset All",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // CATEGORIES 3-7: ADVANCED TECHNICAL DIALS & ENGINES (Advanced Mode Only)
+        // =========================================================================
+        if (isAdvanced) {
+            // =========================================================================
+            // CATEGORY 3: 🎙️ AUDIO RECORDING & CHUNKING
+            // =========================================================================
+            @OptIn(ExperimentalFoundationApi::class)
+            stickyHeader(key = "header_audio") {
             SettingsStickyHeader(
                 title = AppStrings.get("section_audio", isHindi),
                 summaryBadge = "${userPreferences.sampleRate / 1000} kHz • ${userPreferences.bufferLengthSeconds}s",
@@ -2126,6 +2155,57 @@ fun SettingsTab(
             item(key = "content_ai") {
                 SettingsSectionCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // ── 🔑 Hugging Face Access Token Input ────────────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Key,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "हगिंग फेस एक्सेस टोकन" else "Hugging Face Access Token",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Text(
+                                    text = if (isHindi) "Google Gemma जैसे लाइसेंस-स्वीकृत मॉडलों को डाउनलोड करने के लिए टोकन आवश्यक है।" else "Required to authorize downloads for gated models like Google Gemma 2 / 3.",
+                                    fontSize = 10.sp,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                OutlinedTextField(
+                                    value = userPreferences.huggingFaceToken,
+                                    onValueChange = { viewModel.updateHuggingFaceToken(it) },
+                                    label = { Text("HF Token (hf_...)", fontSize = 11.sp) },
+                                    placeholder = { Text("hf_xxxxxxxxxxxxxxxxxxxxxx", fontSize = 11.sp) },
+                                    visualTransformation = if (showHfToken) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { showHfToken = !showHfToken }) {
+                                            Icon(
+                                                imageVector = if (showHfToken) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                                contentDescription = if (showHfToken) "Hide" else "Show",
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
                         UserPreferences.AVAILABLE_AI_MODELS.forEach { model ->
                             val isSelected = userPreferences.selectedAiModel == model.id
                             val isFulfilled = UserPreferences.isAiModelRequirementFulfilled(
@@ -2648,10 +2728,30 @@ fun SettingsTab(
                                 Text("Import JSON", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFF59E0B))
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Restore Factory Defaults Button (Advanced Mode)
+                        OutlinedButton(
+                            onClick = { showResetConfirmDialog = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ActiveRed),
+                            border = BorderStroke(1.dp, ActiveRed.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isHindi) "फ़ैक्टरी सेटिंग्स पर रीसेट करें" else "Restore Factory Defaults",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }
         }
+        } // End if (isAdvanced) for Categories 3-7
 
         item(key = "bottom_spacer") {
             Spacer(modifier = Modifier.height(80.dp))
@@ -3341,6 +3441,53 @@ fun SettingsTab(
             dismissButton = {
                 TextButton(onClick = { showExploreModelsDialog = false }) {
                     Text("Close", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // ── ⚠️ Reset All Preferences Confirmation Dialog ───────────────────────────
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = {
+                Text(
+                    text = if (isHindi) "⚠️ सभी सेटिंग्स रीसेट करें?" else "⚠️ Reset All Settings?",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = if (isHindi)
+                        "क्या आप सभी सेटिंग्स को फ़ैक्टरी डिफ़ॉल्ट पर रीसेट करना चाहते हैं? आपकी सभी कस्टम प्राथमिकताएँ, लेआउट और निर्देश मूल स्थिति में लौट जाएँगे।"
+                    else
+                        "Are you sure you want to restore all settings to factory defaults? Your custom directories, layouts, and thresholds will be reset.",
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.resetAllPreferences {
+                            Toast.makeText(
+                                context,
+                                if (isHindi) "सभी सेटिंग्स डिफ़ॉल्ट पर रीसेट कर दी गईं" else "All settings reset to factory defaults",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        showResetConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ActiveRed)
+                ) {
+                    Text(if (isHindi) "रीसेट करें" else "Reset", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text(AppStrings.get("cancel", isHindi), color = TextMuted)
                 }
             },
             containerColor = SurfaceDark

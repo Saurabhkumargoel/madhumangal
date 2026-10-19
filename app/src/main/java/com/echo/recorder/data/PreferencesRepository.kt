@@ -352,4 +352,10 @@ class PreferencesRepository(private val context: Context) {
             preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] = show
         }
     }
+
+    suspend fun resetAllPreferences() {
+        context.dataStore.edit { preferences ->
+            preferences.clear()
+        }
+    }
 }
