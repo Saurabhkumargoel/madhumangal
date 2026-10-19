@@ -35,13 +35,13 @@ object AppLogger {
     private val fileDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val sessionDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
-    private var logFileExtension: String = "log"
+    private var logFileExtension: String = "txt"
 
     fun setLogFileExtension(ext: String) {
         logFileExtension = ext.removePrefix(".")
     }
 
-    fun init(context: Context, customLogsDir: String? = null, extension: String = "log") {
+    fun init(context: Context, customLogsDir: String? = null, extension: String = "txt") {
         appContext = context.applicationContext
         customLogsDirPath = customLogsDir
         logFileExtension = extension.removePrefix(".")
@@ -227,7 +227,7 @@ object AppLogger {
         val ctx = context ?: appContext
         if (ctx != null) {
             val sessionTimestamp = sessionDateFormat.format(Date())
-            sessionLogFile = File(sessionLogsDir ?: AppStorageManager.getLogsDirectory(ctx, customLogsDirPath), "session_${sessionTimestamp}.log")
+            sessionLogFile = File(sessionLogsDir ?: AppStorageManager.getLogsDirectory(ctx, customLogsDirPath), "session_${sessionTimestamp}.${logFileExtension}")
         }
         i("SYSTEM", "Display cleared by user. New session started: ${sessionLogFile?.name ?: "active"}")
     }

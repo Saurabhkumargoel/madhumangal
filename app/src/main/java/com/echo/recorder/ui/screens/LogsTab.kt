@@ -52,6 +52,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import com.echo.recorder.ui.viewmodel.MainViewModel
 import com.echo.recorder.data.UserPreferences
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,6 +88,113 @@ import com.echo.recorder.util.AppStorageManager
 import com.echo.recorder.util.LogEntry
 import androidx.core.content.FileProvider
 
+data class LogSessionSeries(
+    val id: String,
+    val files: List<File>,
+    val startTimeMillis: Long,
+    val endTimeMillis: Long,
+    val title: String,
+    val totalSizeBytes: Long
+)
+
+fun parseLogFileTimestamp(file: File): Long {
+    val name = file.name
+    val matchFull = Regex("20\\d{6}_\\d{6}").find(name)
+    if (matchFull != null) {
+        try {
+            val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+            val d = sdf.parse(matchFull.value)
+            if (d != null) return d.time
+        } catch (_: Exception) {}
+    }
+    val matchShort = Regex("20\\d{10}").find(name)
+    if (matchShort != null) {
+        try {
+            val sdf = SimpleDateFormat("yyyyMMddHHmm", Locale.US)
+            val d = sdf.parse(matchShort.value)
+            if (d != null) return d.time
+        } catch (_: Exception) {}
+    }
+    return file.lastModified()
+}
+
+fun groupLogFilesByTimeGap(
+    files: List<File>,
+    gapMinutes: Int,
+    isHindi: Boolean
+): List<LogSessionSeries> {
+    if (files.isEmpty()) return emptyList()
+
+    val sorted = files.sortedBy { parseLogFileTimestamp(it) }
+
+    if (gapMinutes <= 0) {
+        val timeFmt = SimpleDateFormat("MMM d, hh:mm:ss a", if (isHindi) Locale("hi", "IN") else Locale.US)
+        return sorted.reversed().map { file ->
+            val t = parseLogFileTimestamp(file)
+            LogSessionSeries(
+                id = file.name,
+                files = listOf(file),
+                startTimeMillis = t,
+                endTimeMillis = t,
+                title = timeFmt.format(Date(t)),
+                totalSizeBytes = file.length()
+            )
+        }
+    }
+
+    val gapMillis = gapMinutes * 60 * 1000L
+    val clusters = mutableListOf<MutableList<Pair<File, Long>>>()
+    var currentCluster = mutableListOf<Pair<File, Long>>()
+
+    for (file in sorted) {
+        val t = parseLogFileTimestamp(file)
+        if (currentCluster.isEmpty()) {
+            currentCluster.add(file to t)
+        } else {
+            val lastTime = currentCluster.last().second
+            if (t - lastTime <= gapMillis) {
+                currentCluster.add(file to t)
+            } else {
+                clusters.add(currentCluster)
+                currentCluster = mutableListOf(file to t)
+            }
+        }
+    }
+    if (currentCluster.isNotEmpty()) {
+        clusters.add(currentCluster)
+    }
+
+    val timeFmt = SimpleDateFormat("hh:mm a", if (isHindi) Locale("hi", "IN") else Locale.US)
+    val dateFmt = SimpleDateFormat("MMM d", if (isHindi) Locale("hi", "IN") else Locale.US)
+
+    return clusters.reversed().mapIndexed { index, cluster ->
+        val clusterFiles = cluster.map { it.first }.reversed()
+        val startT = cluster.first().second
+        val endT = cluster.last().second
+        val totalBytes = clusterFiles.sumOf { it.length() }
+        val id = "series_${startT}_${cluster.size}_$index"
+
+        val title = if (cluster.size == 1) {
+            "${dateFmt.format(Date(startT))}, ${timeFmt.format(Date(startT))}"
+        } else {
+            val dateStr = dateFmt.format(Date(startT))
+            val startStr = timeFmt.format(Date(startT))
+            val endStr = timeFmt.format(Date(endT))
+            val spanMinutes = ((endT - startT) / (60 * 1000L)).coerceAtLeast(1)
+            "$dateStr, $startStr - $endStr ($spanMinutes min)"
+        }
+
+        LogSessionSeries(
+            id = id,
+            files = clusterFiles,
+            startTimeMillis = startT,
+            endTimeMillis = endT,
+            title = title,
+            totalSizeBytes = totalBytes
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LogsTab(
@@ -105,7 +215,27 @@ fun LogsTab(
     var showDeleteFilesConfirm by remember { mutableStateOf(false) }
     var refreshFilesTrigger by remember { mutableStateOf(0) }
 
+    var currentLogPage by remember { mutableStateOf(0) }
+    var collapsedSeriesIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val logGapMinutes = userPreferences?.logGroupingGapMinutes ?: 5
+    val filesPerPageSetting = userPreferences?.logFilesPerPage ?: 10
+
     val sessionFiles = remember(logs.size, isManageFilesExpanded, refreshFilesTrigger) { AppLogger.getSessionFiles(context) }
+    val sortedSessionFiles = remember(sessionFiles) {
+        sessionFiles.sortedByDescending { parseLogFileTimestamp(it) }
+    }
+    val totalFiles = sortedSessionFiles.size
+    val pageSize = if (filesPerPageSetting <= 0) totalFiles.coerceAtLeast(1) else filesPerPageSetting
+    val totalPages = if (totalFiles == 0) 1 else ((totalFiles + pageSize - 1) / pageSize)
+    val safePage = currentLogPage.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    val startIndex = safePage * pageSize
+    val endIndex = (startIndex + pageSize).coerceAtMost(totalFiles)
+    val pagedFiles = if (totalFiles == 0) emptyList() else sortedSessionFiles.subList(startIndex, endIndex)
+
+    val groupedSeries = remember(pagedFiles, logGapMinutes, isHindi) {
+        groupLogFilesByTimeGap(pagedFiles, logGapMinutes, isHindi)
+    }
 
     // ── Dialog: Confirm Clear Logs ──
     if (showClearLogsConfirm) {
@@ -584,6 +714,98 @@ fun LogsTab(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    // 1. Threshold Selector Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isHindi) "श्रृंखला गैप:" else "Series Gap:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val gapOptions = listOf(
+                                0 to (if (isHindi) "फ्लैट" else "Flat"),
+                                2 to "2m",
+                                5 to "5m",
+                                15 to "15m",
+                                30 to "30m",
+                                60 to "1h"
+                            )
+                            gapOptions.forEach { (mins, label) ->
+                                val isSelected = logGapMinutes == mins
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) AccentPurple else Color.Transparent,
+                                    border = BorderStroke(1.dp, if (isSelected) AccentPurple else CardBorder),
+                                    modifier = Modifier.clickable {
+                                        viewModel?.updateLogGroupingGapMinutes(mins)
+                                    }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else TextPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Files Per Page Selector Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isHindi) "प्रति पेज फ़ाइलें:" else "Files / Page:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val pageOptions = listOf(
+                                5 to "5",
+                                10 to "10",
+                                20 to "20",
+                                50 to "50",
+                                0 to (if (isHindi) "सभी" else "All")
+                            )
+                            pageOptions.forEach { (count, label) ->
+                                val isSelected = filesPerPageSetting == count
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                    border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                    modifier = Modifier.clickable {
+                                        viewModel?.updateLogFilesPerPage(count)
+                                        currentLogPage = 0
+                                    }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) DarkBackground else TextPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     if (sessionFiles.isEmpty()) {
                         Text(
                             text = if (isHindi) "कोई पुरानी सत्र फ़ाइलें नहीं मिलीं" else "No past session log files found",
@@ -593,47 +815,153 @@ fun LogsTab(
                         )
                     } else {
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 200.dp)
+                                .heightIn(max = 240.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            sessionFiles.forEach { file ->
-                                val isChecked = file in selectedFiles
-                                val kbSize = String.format(java.util.Locale.US, "%.1f KB", file.length() / 1024f)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedFiles = if (isChecked) selectedFiles - file else selectedFiles + file
-                                        }
-                                        .padding(vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            groupedSeries.forEach { series ->
+                                val isCollapsed = series.id in collapsedSeriesIds
+                                val allInSeriesSelected = series.files.isNotEmpty() && series.files.all { it in selectedFiles }
+                                val someInSeriesSelected = series.files.any { it in selectedFiles }
+                                val seriesKb = String.format(Locale.US, "%.1f KB", series.totalSizeBytes / 1024f)
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                    border = BorderStroke(1.dp, if (allInSeriesSelected) PrimaryBlue.copy(alpha = 0.7f) else CardBorder),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Checkbox(
-                                        checked = isChecked,
-                                        onCheckedChange = { chk ->
-                                            selectedFiles = if (chk) selectedFiles + file else selectedFiles - file
-                                        },
-                                        colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = file.name,
-                                        fontSize = 11.sp,
-                                        color = if (isChecked) PrimaryBlue else TextPrimary,
-                                        fontWeight = if (isChecked) FontWeight.Bold else FontWeight.Normal,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = kbSize,
-                                        fontSize = 10.sp,
-                                        color = TextMuted
-                                    )
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        // Series Header
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    collapsedSeriesIds = if (isCollapsed) collapsedSeriesIds - series.id else collapsedSeriesIds + series.id
+                                                },
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = allInSeriesSelected,
+                                                onCheckedChange = { chk ->
+                                                    selectedFiles = if (chk) {
+                                                        selectedFiles + series.files
+                                                    } else {
+                                                        selectedFiles - series.files.toSet()
+                                                    }
+                                                },
+                                                colors = CheckboxDefaults.colors(
+                                                    checkedColor = PrimaryBlue,
+                                                    uncheckedColor = if (someInSeriesSelected) AccentPurple else CardBorder
+                                                ),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = series.title,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (allInSeriesSelected) PrimaryBlue else TextPrimary,
+                                                    maxLines = 1
+                                                )
+                                                Text(
+                                                    text = "${series.files.size} ${if (series.files.size == 1) "file" else "files"} • $seriesKb",
+                                                    fontSize = 9.sp,
+                                                    color = TextMuted
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = if (isCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "Expand Series",
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // Files in Series (if not collapsed)
+                                        if (!isCollapsed) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                modifier = Modifier.padding(start = 22.dp)
+                                            ) {
+                                                series.files.forEach { file ->
+                                                    val isFileChecked = file in selectedFiles
+                                                    val fileKb = String.format(Locale.US, "%.1f KB", file.length() / 1024f)
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                selectedFiles = if (isFileChecked) selectedFiles - file else selectedFiles + file
+                                                            }
+                                                            .padding(vertical = 1.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Checkbox(
+                                                            checked = isFileChecked,
+                                                            onCheckedChange = { chk ->
+                                                                selectedFiles = if (chk) selectedFiles + file else selectedFiles - file
+                                                            },
+                                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue),
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = file.name,
+                                                            fontSize = 10.sp,
+                                                            color = if (isFileChecked) PrimaryBlue else TextSecondary,
+                                                            modifier = Modifier.weight(1f),
+                                                            maxLines = 1
+                                                        )
+                                                        Text(
+                                                            text = fileKb,
+                                                            fontSize = 9.sp,
+                                                            color = TextMuted
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    }
+
+                    // 3. Pagination Bar
+                    if (totalPages > 1) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { if (safePage > 0) currentLogPage = safePage - 1 },
+                                enabled = safePage > 0,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text(if (isHindi) "◀ पिछला" else "◀ Prev", fontSize = 10.sp)
+                            }
+
+                            Text(
+                                text = if (isHindi) "पेज ${safePage + 1} / $totalPages ($totalFiles फ़ाइलें)" else "Page ${safePage + 1} of $totalPages ($totalFiles files)",
+                                fontSize = 10.sp,
+                                color = TextSecondary,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            OutlinedButton(
+                                onClick = { if (safePage < totalPages - 1) currentLogPage = safePage + 1 },
+                                enabled = safePage < totalPages - 1,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text(if (isHindi) "अगला ▶" else "Next ▶", fontSize = 10.sp)
                             }
                         }
                     }

@@ -196,4 +196,88 @@ object GeminiApiService {
             Result.failure(e)
         }
     }
+
+    /**
+     * Interactive conversational AI response using Gemini 1.5 Flash / Pro.
+     * Yields concise, dynamic assistant responses perfect for voice TTS and chat.
+     */
+    suspend fun chatWithGemini(
+        query: String,
+        apiKey: String,
+        model: String = "gemini-1.5-flash",
+        systemInstruction: String = "You are GoodBot, a warm, intelligent, concise voice assistant. Give natural, helpful answers in the user's language (Hindi, Hinglish, or English). Keep voice responses direct and easy to listen to.",
+        contextInfo: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (query.isBlank() || apiKey.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Empty query or API key"))
+        }
+
+        try {
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+            val url = URL(endpoint)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                connectTimeout = 15000
+                readTimeout = 20000
+                doOutput = true
+            }
+
+            val fullPrompt = if (!contextInfo.isNullOrBlank()) {
+                "Context information:\n$contextInfo\n\nUser Question:\n$query"
+            } else {
+                query
+            }
+
+            val requestBody = JSONObject().apply {
+                val contents = JSONArray()
+                val contentObj = JSONObject()
+                val parts = JSONArray().apply {
+                    put(JSONObject().apply { put("text", fullPrompt) })
+                }
+                contentObj.put("parts", parts)
+                contents.put(contentObj)
+                put("contents", contents)
+
+                if (systemInstruction.isNotBlank()) {
+                    val systemInstructionObj = JSONObject().apply {
+                        val sysParts = JSONArray().apply {
+                            put(JSONObject().apply { put("text", systemInstruction) })
+                        }
+                        put("parts", sysParts)
+                    }
+                    put("systemInstruction", systemInstructionObj)
+                }
+            }
+
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(requestBody.toString())
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                val responseStr = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
+                val jsonResponse = JSONObject(responseStr)
+                val candidates = jsonResponse.optJSONArray("candidates")
+                val text = candidates?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                if (text.isNotBlank()) {
+                    Result.success(text)
+                } else {
+                    Result.failure(Exception("Empty response from Gemini"))
+                }
+            } else {
+                val errorStream = connection.errorStream
+                val errorMsg = if (errorStream != null) {
+                    BufferedReader(InputStreamReader(errorStream)).use { it.readText() }
+                } else {
+                    "HTTP $responseCode"
+                }
+                Result.failure(Exception("Gemini Chat Error ($responseCode): $errorMsg"))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
 }

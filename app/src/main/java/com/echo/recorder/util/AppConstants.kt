@@ -1,5 +1,8 @@
 package com.echo.recorder.util
 
+import com.echo.recorder.BuildConfig
+
 object AppConstants {
-    const val APP_VERSION = "0.0.2026.09.29.0021"
+    val APP_VERSION: String get() = BuildConfig.VERSION_NAME
+    val VERSION_CODE: Int get() = BuildConfig.VERSION_CODE
 }

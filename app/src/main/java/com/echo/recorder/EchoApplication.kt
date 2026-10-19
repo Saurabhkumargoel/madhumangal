@@ -37,6 +37,7 @@ class EchoApplication : Application() {
         }
 
         createNotificationChannel()
+        com.echo.recorder.audio.AudioRecordingService.cancelRemnantNotification(this)
     }
 
     private fun createNotificationChannel() {

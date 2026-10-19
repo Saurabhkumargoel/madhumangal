@@ -81,7 +81,21 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     var showAiAskSheet by remember { mutableStateOf(false) }
 
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
+    var releasesToShow by remember { mutableStateOf<List<com.echo.recorder.ui.releasenotes.ReleaseEntry>>(emptyList()) }
+
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
+
+    LaunchedEffect(userPreferences.lastSeenVersionCode) {
+        val currentCode = com.echo.recorder.util.AppConstants.VERSION_CODE
+        if (currentCode > userPreferences.lastSeenVersionCode) {
+            val unread = com.echo.recorder.ui.releasenotes.ReleaseNotesRegistry.getReleasesSince(userPreferences.lastSeenVersionCode)
+            if (unread.isNotEmpty()) {
+                releasesToShow = unread
+                showWhatsNewDialog = true
+            }
+        }
+    }
     val transcriptions by viewModel.transcriptions.collectAsState(initial = emptyList())
     val transcribingIds by viewModel.transcribingIds.collectAsState(initial = emptySet())
     val processingAiIds by viewModel.processingAiIds.collectAsState(initial = emptySet())
@@ -729,6 +743,17 @@ fun MainScreen(
                 viewModel = viewModel,
                 onDismissRequest = { showAiAskSheet = false },
                 isHindi = isHindi
+            )
+        }
+
+        if (showWhatsNewDialog) {
+            com.echo.recorder.ui.releasenotes.WhatsNewDialog(
+                entriesToShow = releasesToShow,
+                showAllHistoryOption = true,
+                onDismiss = {
+                    showWhatsNewDialog = false
+                    viewModel.updateLastSeenVersionCode(com.echo.recorder.util.AppConstants.VERSION_CODE)
+                }
             )
         }
     }

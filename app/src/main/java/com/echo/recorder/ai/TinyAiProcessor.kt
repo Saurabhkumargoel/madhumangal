@@ -635,6 +635,139 @@ class TinyAiProcessor {
     }
 
     /**
+     * Dynamic assistant reasoning for GoodBot and AI chat.
+     * Accurately answers identity, capabilities, relative dates (yesterday, today, tomorrow),
+     * greetings, web search intelligence, and task queries instead of dumping static task lists.
+     */
+    fun answerGeneralAssistantQuery(
+        query: String,
+        allTasks: List<NoteTask>,
+        allTranscripts: List<com.echo.recorder.data.TranscriptionWithAudio> = emptyList(),
+        systemPrompt: String = "",
+        webSearchResult: String? = null,
+        aiLanguage: String = "auto"
+    ): Pair<String, List<String>> {
+        val lower = query.lowercase(Locale.ROOT).trim()
+        val isHindi = aiLanguage == "hi" || (aiLanguage == "auto" && (lower.contains("क्या") || lower.contains("है") || lower.contains("था") || lower.contains("हो") || lower.contains("नाम") || lower.contains("दिन") || lower.contains("कल") || lower.contains("तुम")))
+
+        // 1. Identity ("तुम्हारा नाम क्या है", "who are you", "what is your name", "what are you called", "व्हाट इज योर में")
+        if (lower.contains("नाम") || lower.contains("name") || lower.contains("who are you") || lower.contains("कॉल यू") || lower.contains("व्हाट इज योर") || lower.contains("तुम्हारा नाम")) {
+            val response = if (isHindi) {
+                "मेरा नाम गुड बॉट (GoodBot) है। मैं आपका व्यक्तिगत वॉयस असिस्टेंट और टास्क ऑर्गनाइज़र हूँ।"
+            } else {
+                "I am GoodBot, your personal voice assistant and smart task organizer."
+            }
+            return Pair(response, emptyList())
+        }
+
+        // 2. Instant Time Query ("क्या टाइम हुआ है", "कितने बजे हैं", "what time is it")
+        val isTimeQuery = lower.contains("time") || lower.contains("टाइम") || lower.contains("कितने बजे") || (lower.contains("समय") && !lower.contains("मौसम")) || lower.contains("वक्त")
+        if (isTimeQuery) {
+            val sdf = java.text.SimpleDateFormat("hh:mm a", Locale.US)
+            val timeStr = sdf.format(java.util.Date())
+            val response = if (isHindi) "अभी समय $timeStr हुआ है।" else "The current time is $timeStr."
+            return Pair(response, emptyList())
+        }
+
+        // 3. Capabilities / What can you do ("तुम क्या क्या कर सकते हो", "what can you do", "features", "capabilities", "help")
+        if (lower.contains("क्या क्या कर सकते") || lower.contains("क्या कर सकते") || lower.contains("what can you do") ||
+            lower.contains("capabilities") || lower.contains("features") || (lower.contains("help") && !lower.contains("task"))) {
+            val response = if (isHindi) {
+                "मैं कई कार्य कर सकता हूँ:\n• निरंतर बैकग्राउंड वॉयस रिकॉर्डिंग\n• रीयल-टाइम ट्रांसक्रिप्शन\n• नोट्स और कार्यों (Tasks) का स्वचालित निष्कर्षण\n• समय, तारीख और बैटरी स्थिति बताना\n• इंटरनेट सर्च और आपके सवालों के जवाब देना।"
+            } else {
+                "Here is what I can do for you:\n• Continuous background audio recording\n• Real-time verbatim speech transcription\n• Automated task extraction and note structuring\n• Instant time, date, and device battery status\n• Web search and AI-assisted conversational answers."
+            }
+            return Pair(response, emptyList())
+        }
+
+        // 4. Calendar & Relative Days ("कल क्या दिन था", "कल क्या दिन है", "कल कौन सा दिन है", "आज क्या दिन है", "आज क्या है", "क्या दिन हैं", "today", "yesterday", "tomorrow")
+        val isYesterdayQuery = lower.contains("कल क्या दिन था") || lower.contains("कल कौन सा दिन था") || lower.contains("yesterday") || (lower.contains("कल") && (lower.contains("था") || lower.contains("थी")))
+        val isTomorrowQuery = lower.contains("कल क्या दिन है") || lower.contains("कल कौन सा दिन है") || lower.contains("कल क्या दिन होगा") || lower.contains("tomorrow")
+        val isTodayDayQuery = lower.contains("आज क्या दिन है") || lower.contains("आज कौन सा दिन है") || lower.contains("what day is today") ||
+                (lower.contains("आज") && lower.contains("दिन") && !lower.contains("task")) ||
+                lower.contains("क्या दिन") || lower.contains("आज क्या है") || lower.contains("कौन सा दिन")
+
+        if (isYesterdayQuery) {
+            val cal = java.util.Calendar.getInstance()
+            cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+            val dayFormat = java.text.SimpleDateFormat("EEEE", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val fullFormat = java.text.SimpleDateFormat("d MMMM yyyy", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val dayName = dayFormat.format(cal.time)
+            val dateStr = fullFormat.format(cal.time)
+            val response = if (isHindi) "कल $dayName ($dateStr) था।" else "Yesterday was $dayName ($dateStr)."
+            return Pair(response, emptyList())
+        }
+
+        if (isTomorrowQuery) {
+            val cal = java.util.Calendar.getInstance()
+            cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+            val dayFormat = java.text.SimpleDateFormat("EEEE", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val fullFormat = java.text.SimpleDateFormat("d MMMM yyyy", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val dayName = dayFormat.format(cal.time)
+            val dateStr = fullFormat.format(cal.time)
+            val response = if (isHindi) "कल $dayName ($dateStr) होगा।" else "Tomorrow will be $dayName ($dateStr)."
+            return Pair(response, emptyList())
+        }
+
+        if (isTodayDayQuery) {
+            val cal = java.util.Calendar.getInstance()
+            val dayFormat = java.text.SimpleDateFormat("EEEE", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val fullFormat = java.text.SimpleDateFormat("d MMMM yyyy", if (isHindi) Locale("hi", "IN") else Locale.US)
+            val dayName = dayFormat.format(cal.time)
+            val dateStr = fullFormat.format(cal.time)
+            val response = if (isHindi) "आज $dayName, $dateStr है।" else "Today is $dayName, $dateStr."
+            return Pair(response, emptyList())
+        }
+
+        // 4. Greetings ("नमस्ते", "hello", "hi", "hey", "how are you", "कैसे हो", "हाल चाल")
+        if (lower.contains("नमस्ते") || lower.contains("नमस्कार") || lower.contains("hello") || lower.startsWith("hi") || lower.startsWith("hey") ||
+            lower.contains("how are you") || lower.contains("कैसे हो") || lower.contains("कैसा है") || lower.contains("हाल चाल")) {
+            val response = if (isHindi) {
+                "नमस्ते! मैं बहुत बढ़िया हूँ। आज मैं आपकी क्या मदद करूँ?"
+            } else {
+                "Hello! I'm doing great. How can I assist you today?"
+            }
+            return Pair(response, emptyList())
+        }
+
+        // 5. Thanks / Acknowledgement ("शुक्रिया", "धन्यवाद", "thank you", "thanks")
+        if (lower.contains("शुक्रिया") || lower.contains("धन्यवाद") || lower.contains("thank")) {
+            val response = if (isHindi) {
+                "आपका स्वागत है! यदि कुछ और पूछना हो तो बताइए।"
+            } else {
+                "You're very welcome! Let me know if you need anything else."
+            }
+            return Pair(response, emptyList())
+        }
+
+        // 6. Web Search direct answer (if query is a general knowledge question and we got a web result)
+        if (!webSearchResult.isNullOrBlank()) {
+            val response = if (isHindi) {
+                "इंटरनेट खोज परिणाम:\n$webSearchResult"
+            } else {
+                "Web Search Result:\n$webSearchResult"
+            }
+            return Pair(response, emptyList())
+        }
+
+        // 7. If the query references tasks, shopping, lists, or notes, delegate to answerTaskQuery
+        val isTaskOriented = lower.contains("task") || lower.contains("काम") || lower.contains("कार्य") ||
+                lower.contains("list") || lower.contains("सूची") || lower.contains("market") || lower.contains("shopping") ||
+                lower.contains("bazar") || lower.contains("sabzi") || lower.contains("buy") || lower.contains("खरीद")
+        if (isTaskOriented) {
+            return answerTaskQuery(query, allTasks, allTranscripts, systemPrompt, webSearchResult, if (isHindi) "hi" else "en")
+        }
+
+        // 8. General conversational fallback with guidance
+        val response = if (isHindi) {
+            "मैं सुन रहा हूँ। आप मुझसे समय, तारीख, कार्य सूची, खरीदारी के सामान पूछ सकते हैं, या सेटिंग्स में Google Gemini API Key जोड़कर दुनिया के किसी भी सवाल का विस्तृत उत्तर पा सकते हैं!"
+        } else {
+            "I'm listening! You can ask me about the time, date, your tasks and shopping lists, or enable a Gemini API Key in Settings to answer any open-ended knowledge questions."
+        }
+        return Pair(response, emptyList())
+    }
+
+    /**
      * Answers queries across the user's task and shopping lists using RAG (Audio Transcripts + Active Tasks + Web Search).
      * Output is clean, concise, free of redundant emojis or duplicated bilingual terms.
      */

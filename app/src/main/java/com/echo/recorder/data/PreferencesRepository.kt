@@ -59,6 +59,11 @@ class PreferencesRepository(private val context: Context) {
         val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
         val CUSTOM_AI_MODELS = stringPreferencesKey("custom_ai_models")
         val TTS_SPEED = floatPreferencesKey("tts_speed")
+        val BOT_CUSTOM_ACTIONS = stringPreferencesKey("bot_custom_actions")
+        val LAST_SEEN_VERSION_CODE = intPreferencesKey("last_seen_version_code")
+        val BOT_INTERRUPTION_NOISE_GATE_DB = intPreferencesKey("bot_interruption_noise_gate_db")
+        val LOG_GROUPING_GAP_MINUTES = intPreferencesKey("log_grouping_gap_minutes")
+        val LOG_FILES_PER_PAGE = intPreferencesKey("log_files_per_page")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -93,7 +98,7 @@ class PreferencesRepository(private val context: Context) {
             pinnedCategories = preferences[PreferencesKeys.PINNED_CATEGORIES] ?: setOf("Urgent", "Shopping"),
             customCategories = preferences[PreferencesKeys.CUSTOM_CATEGORIES] ?: emptySet(),
             downloadedModels = preferences[PreferencesKeys.DOWNLOADED_MODELS] ?: emptySet(),
-            logFileExtension = preferences[PreferencesKeys.LOG_FILE_EXTENSION] ?: "log",
+            logFileExtension = preferences[PreferencesKeys.LOG_FILE_EXTENSION] ?: "txt",
             huggingFaceToken = preferences[PreferencesKeys.HUGGING_FACE_TOKEN] ?: "",
             recorderLayoutMode = preferences[PreferencesKeys.RECORDER_LAYOUT_MODE] ?: "BOTH_TABS",
             defaultAbortSelection = preferences[PreferencesKeys.DEFAULT_ABORT_SELECTION] ?: "ALL_FILES",
@@ -104,7 +109,12 @@ class PreferencesRepository(private val context: Context) {
             showRecorderTab = preferences[PreferencesKeys.SHOW_RECORDER_TAB] ?: true,
             showMediaTab = preferences[PreferencesKeys.SHOW_MEDIA_TAB] ?: true,
             showAssistantTab = preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] ?: true,
-            tabOrder = preferences[PreferencesKeys.TAB_ORDER] ?: "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS"
+            tabOrder = preferences[PreferencesKeys.TAB_ORDER] ?: "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS",
+            botCustomActions = preferences[PreferencesKeys.BOT_CUSTOM_ACTIONS] ?: "[]",
+            lastSeenVersionCode = preferences[PreferencesKeys.LAST_SEEN_VERSION_CODE] ?: 0,
+            botInterruptionNoiseGateDb = preferences[PreferencesKeys.BOT_INTERRUPTION_NOISE_GATE_DB] ?: -20,
+            logGroupingGapMinutes = preferences[PreferencesKeys.LOG_GROUPING_GAP_MINUTES] ?: 5,
+            logFilesPerPage = preferences[PreferencesKeys.LOG_FILES_PER_PAGE] ?: 10
         )
     }
 
@@ -358,6 +368,85 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateTabOrder(tabOrder: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.TAB_ORDER] = tabOrder
+        }
+    }
+
+    suspend fun updateBotCustomActions(actionsJson: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.BOT_CUSTOM_ACTIONS] = actionsJson
+        }
+    }
+
+    suspend fun updateLastSeenVersionCode(versionCode: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_SEEN_VERSION_CODE] = versionCode
+        }
+    }
+
+    suspend fun applyImportedPreferences(p: UserPreferences) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SETTINGS_MODE] = p.settingsMode.name
+            preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] = p.bufferLengthSeconds
+            preferences[PreferencesKeys.OVERLAP_SECONDS] = p.overlapSeconds
+            preferences[PreferencesKeys.SAMPLE_RATE] = p.sampleRate
+            preferences[PreferencesKeys.LIVE_TRANSCRIBE] = p.liveTranscribe
+            preferences[PreferencesKeys.SKIP_SILENCE] = p.skipSilence
+            preferences[PreferencesKeys.AUTO_DELETE_AUDIO] = p.autoDeleteAudio
+            preferences[PreferencesKeys.SELECTED_LANGUAGE] = p.selectedLanguage
+            preferences[PreferencesKeys.SELECTED_STT_MODEL] = p.selectedSttModel
+            preferences[PreferencesKeys.SELECTED_AI_MODEL] = p.selectedAiModel
+            preferences[PreferencesKeys.CLOUD_API_KEY] = p.cloudApiKey
+            preferences[PreferencesKeys.AUDIO_FOLDER_PATH] = p.audioFolderPath
+            preferences[PreferencesKeys.TRANSCRIPTION_FOLDER_PATH] = p.transcriptionFolderPath
+            preferences[PreferencesKeys.NOTES_FOLDER_PATH] = p.notesFolderPath
+            preferences[PreferencesKeys.LOGS_FOLDER_PATH] = p.logsFolderPath
+            preferences[PreferencesKeys.BASE_FOLDER_PATH] = p.baseFolderPath
+            preferences[PreferencesKeys.ACTIVE_THEME] = p.activeTheme
+            preferences[PreferencesKeys.APP_LANGUAGE] = p.appLanguage
+            preferences[PreferencesKeys.IS_WEB_SEARCH_ENABLED] = p.isWebSearchEnabled
+            preferences[PreferencesKeys.CUSTOM_SYSTEM_PROMPT] = p.customSystemPrompt
+            preferences[PreferencesKeys.AI_LANGUAGE] = p.aiLanguage
+            preferences[PreferencesKeys.FONT_SCALE] = p.fontScale
+            preferences[PreferencesKeys.FONT_MODE] = p.fontMode
+            preferences[PreferencesKeys.CUSTOM_THEME_JSON] = p.customThemeJson
+            preferences[PreferencesKeys.CUSTOM_AI_MODELS] = p.customAiModels
+            preferences[PreferencesKeys.TTS_SPEED] = p.ttsSpeed
+            preferences[PreferencesKeys.PINNED_CATEGORIES] = p.pinnedCategories
+            preferences[PreferencesKeys.CUSTOM_CATEGORIES] = p.customCategories
+            preferences[PreferencesKeys.LOG_FILE_EXTENSION] = p.logFileExtension
+            preferences[PreferencesKeys.HUGGING_FACE_TOKEN] = p.huggingFaceToken
+            preferences[PreferencesKeys.RECORDER_LAYOUT_MODE] = p.recorderLayoutMode
+            preferences[PreferencesKeys.DEFAULT_ABORT_SELECTION] = p.defaultAbortSelection
+            preferences[PreferencesKeys.SHOW_LOGS_TAB] = p.showLogsTab
+            preferences[PreferencesKeys.SHOW_AI_TAB] = p.showAiTab
+            preferences[PreferencesKeys.HOME_TAB] = p.homeTab
+            preferences[PreferencesKeys.SHOW_DASHBOARD_TAB] = p.showDashboardTab
+            preferences[PreferencesKeys.SHOW_RECORDER_TAB] = p.showRecorderTab
+            preferences[PreferencesKeys.SHOW_MEDIA_TAB] = p.showMediaTab
+            preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] = p.showAssistantTab
+            preferences[PreferencesKeys.TAB_ORDER] = p.tabOrder
+            preferences[PreferencesKeys.BOT_CUSTOM_ACTIONS] = p.botCustomActions
+            preferences[PreferencesKeys.BOT_INTERRUPTION_NOISE_GATE_DB] = p.botInterruptionNoiseGateDb
+            preferences[PreferencesKeys.LOG_GROUPING_GAP_MINUTES] = p.logGroupingGapMinutes
+            preferences[PreferencesKeys.LOG_FILES_PER_PAGE] = p.logFilesPerPage
+        }
+    }
+
+    suspend fun updateBotInterruptionNoiseGateDb(db: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.BOT_INTERRUPTION_NOISE_GATE_DB] = db
+        }
+    }
+
+    suspend fun updateLogGroupingGapMinutes(minutes: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOG_GROUPING_GAP_MINUTES] = minutes
+        }
+    }
+
+    suspend fun updateLogFilesPerPage(perPage: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOG_FILES_PER_PAGE] = perPage
         }
     }
 

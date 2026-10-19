@@ -750,6 +750,69 @@ Users requested a simplified, friction-free experience for daily voice capture (
 
 ---
 
+### 2.14 Android STT Hardware Concurrency, Audio Thread Race Conditions, and Conversational State Machines
+
+#### Description & Impact
+1. **Google SpeechRecognizer vs AudioRecord Hardware Microphone Contention:**
+   - Android OEM audio policies (Samsung, Xiaomi, Oppo, Vivo) strictly disallow two concurrent listeners on the physical microphone. When `android.speech.SpeechRecognizer` runs concurrently with an active `AudioRecord`, Android OS either mutes the `AudioRecord` PCM stream or forces `SpeechRecognizer` into `ERROR_NO_MATCH` (code 7) or `ERROR_RECOGNIZER_BUSY`.
+   - **Fix:** Switched to streaming offline `VoskLiveTranscriber` directly on raw PCM byte chunks already buffered by `AudioRecord`. Because `AudioRecord` captures the physical microphone once, Vosk processes the stream in memory with **zero hardware contention**.
+2. **Stop Recording During Active Speech Crash (`RejectedExecutionException` / `IllegalStateException`):**
+   - When the user tapped Stop while speaking, `stopRecording()` invoked `voskLiveTranscriber.close()` (which immediately shut down its single-threaded `ExecutorService`) and released `AudioRecord`.
+   - Simultaneously, `recordingThread` was actively running its loop, attempting `audioRecord.read()` and `executor.execute()`. This threw an uncaught `RejectedExecutionException` / `IllegalStateException` on an unhandled thread, immediately terminating the entire Android process.
+   - **Fix:** In `stopRecording()`, `recordingThread` must be interrupted AND joined (`recordingThread.join(500)`) **before** native recognizers or audio handles are freed. The thread loop must be wrapped in `try-catch (Throwable)`.
+3. **Zombie Foreground Service Notification & Remnant Panel Item:**
+   - Returning `START_STICKY` in `onStartCommand` caused Android to restart `AudioRecordingService` with `intent == null` following any app crash.
+   - If `stopRecording()` checked `if (!isRecording) return` without unconditionally calling `stopForeground(STOP_FOREGROUND_REMOVE)` and `NotificationManager.cancel()`, the notification stayed indefinitely in the status drawer.
+   - **Fix:** Return `START_NOT_STICKY`. In `onStartCommand`, if `intent == null` and `!isRecording`, cancel notification and `stopSelf()`. In `stopRecording()`, always dismiss notification and cancel `NOTIFICATION_ID`.
+4. **Conversational GoodBot State Machine & Hindi Phonetic Variations:**
+   - Vosk Hindi small model frequently decodes "Good Bot" into acoustic approximations: `"गॉड बॉट"`, `"गुड बहुत"`, `"गॉड बहुत"`, `"गुड बात"`, `"गोद बहुत"`, `"गत बहुत"`.
+   - Furthermore, users naturally say "Good Bot", wait for acknowledgment, and then speak their query ("क्या टाइम हुआ है?") in a subsequent utterance. Single-regex checks on each audio slice failed to process follow-up queries.
+   - **Fix:** Expanded regex matching to all acoustic variants and introduced an active 15-second conversational follow-up window. Subsequent speech is captured directly as the query and processed for instant voice answers (Time, Date, Battery) or AI reasoning.
+5. **Notification Action Stop Crash & BackgroundServiceStartNotAllowedException:**
+   - Using `PendingIntent.getService(...)` for the notification's 'Stop Recording' action caused `BackgroundServiceStartNotAllowedException` on Android 12+ when tapped while backgrounded or when the service process was dead. When tapped on an orphaned notification, it did nothing or crashed. When tapped during active recording, it triggered concurrent stop races.
+   - **Fix:** Switched notification action to `PendingIntent.getBroadcast(...)` targeting `NotificationActionReceiver`. Broadcast receivers bypass background service start restrictions. `NotificationActionReceiver.onReceive` immediately calls `AudioRecordingService.cancelRemnantNotification(context)` on line 1 (instantly clearing the zombie notification) and coordinates thread-safe stopping via `AudioRecordingService.stop(context)`. Additionally, `EchoApplication.onCreate()` and `MainActivity.onResume()` automatically purge remnant notifications if the recording service is inactive.
+
+---
+
+### 2.15 Log Series Time-Gap Clustering, Conversational AI Assistant Reasoning, Anti-Echo Noise Gate, and Settings De-duplication
+
+#### Description & Rationale
+Real-world field testing with 75+ session logs and Hindi voice commands revealed five key usability and architectural challenges:
+1. **Log Session Clutter:** Denser testing sessions generated dozens of separate log files in rapid succession. Users had to manually inspect timestamps to group related sessions.
+2. **Flat List Performance & Awkward Navigation:** Displaying dozens of log files in a continuous scroll without pagination degraded UI responsiveness and multi-selection ergonomics.
+3. **Static Canned AI Responses:** Asking GoodBot general questions (e.g., "तुम्हारा नाम क्या है", "तुम क्या क्या कर सकते हो", "कल क्या दिन था") repeatedly dumped static date/time or irrelevant task lists instead of providing intelligent conversational responses.
+4. **Speaker Feedback Self-Interruption:** When GoodBot answered via Text-to-Speech at standard volume, the device microphone picked up its own speaker output at -25 dB to -28 dB, falsely cutting off its own speech.
+5. **Redundant Settings Layouts:** Duplicate cards (such as two separate instances of `AppTabReorderingCard` and an oversized bottom status banner in Smart Mode) created clutter and reduced screen estate.
+
+#### Architecture & Implementation Details
+1. **Time-Gap Log Series Grouping (`LogsTab.kt`):**
+   - Implemented `parseLogFileTimestamp(file)` to extract exact `yyyyMMdd_HHmmss` or `yyyyMMddHHmm` timestamps directly from filenames, with fallback to `file.lastModified()`.
+   - Built `groupLogFilesByTimeGap(files, gapMinutes, isHindi)`: Clusters consecutive files into a `LogSessionSeries` whenever the gap between sequential files is $\le \text{gapThreshold}$ (configurable to `0m / Flat`, `2m`, `5m`, `15m`, `30m`, `1h`).
+   - Each series card provides aggregate metrics (file count, time span e.g. `12 min`, total KB), select-all series checkbox, and expand/collapse accordion.
+2. **Log Pagination & Page Sizes (`LogsTab.kt`, `UserPreferences.kt`, `PreferencesRepository.kt`):**
+   - Added `logFilesPerPage` preference supporting `5`, `10`, `20`, `50`, and `All` (0).
+   - Added pagination controls (`◀ Prev`, `Page X of Y`, `Next ▶`) with safe page clamping. Selections in `selectedFiles` persist across page changes.
+3. **Dynamic Conversational Reasoning & Web Search (`GeminiApiService.kt`, `TinyAiProcessor.kt`, `MainViewModel.kt`):**
+   - Added `GeminiApiService.chatWithGemini` with dynamic RAG context (active tasks and DuckDuckGo web results).
+   - Implemented `TinyAiProcessor.answerGeneralAssistantQuery`:
+     - **Identity:** Accurately identifies as GoodBot in Hindi and English.
+     - **Capabilities:** Lists continuous recording, verbatim transcription, task extraction, time/battery telemetry, and web search.
+     - **Calendar Math:** Dynamically calculates yesterday (`cal.add(DAY_OF_YEAR, -1)`), tomorrow (`cal.add(DAY_OF_YEAR, 1)`), and today in Hindi and English.
+     - **Web Search:** Directly summarizes live DuckDuckGo query results when internet search is toggled on.
+4. **Anti-Echo Noise Gate & Speaker Grace Period (`DumbHomeTab.kt`, `UserPreferences.kt`):**
+   - Added a 1200ms grace period after speech begins to ignore speaker acoustic reverberation.
+   - Added `botInterruptionNoiseGateDb` slider (`-35 dB` to `-15 dB`, default `-20 dB`) in Settings so users can calibrate interruption sensitivity against phone speaker volume and room acoustics.
+   - Filtered single noise words (`"बाद"`, `"और"`, `"बात"`) during conversational follow-up listening.
+5. **Acoustic Phonetic Variations from Real Logs:**
+   - Analyzed 13 post-release logs from `.shared/logs` (`session_20261019_231929.txt` through `session_20261019_234437.txt`). Added all 20+ Vosk Hindi phonetic variants (`"गत बॉट"`, `"गत आठ"`, `"दुखद मौत"`, `"गॉड गॉड"`, `"गर दौर"`, `"बहुत बाद"`, `"गोल्ड बाद"`, `"गोल्ड बॉन्ड"`, etc.) into `botKeywordRegex`.
+6. **Settings Tab De-duplication (`SettingsTab.kt`):**
+   - Removed duplicate `AppTabReorderingCard` at line 1060.
+   - Removed redundant bottom `smart_mode_control_card` in Smart Mode.
+   - Moved Live Web Search switch to Category 0 for instant access in all modes.
+   - Unlocked GoodBot Action Studio pencil FAB for all modes (Normal, Advanced, Developer).
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

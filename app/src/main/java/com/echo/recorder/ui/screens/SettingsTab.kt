@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PermMedia
@@ -73,6 +74,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
@@ -287,7 +289,8 @@ fun SettingsTab(
         }
     }
 
-    val isAdvanced = userPreferences.settingsMode == SettingsMode.ADVANCED
+    val isAdvanced = userPreferences.isAdvancedOrDev
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
     var isGeneralExpanded by remember { mutableStateOf(true) }
     var showApiKey by remember { mutableStateOf(false) }
     var showHfToken by remember { mutableStateOf(false) }
@@ -355,15 +358,27 @@ fun SettingsTab(
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = PrimaryBlue.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f))
+                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable { showWhatsNewDialog = true }
                 ) {
-                    Text(
-                        text = "v${AppConstants.APP_VERSION}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryBlue,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    ) {
+                        Text(
+                            text = "v${AppConstants.APP_VERSION}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.NewReleases,
+                            contentDescription = "Release Notes",
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
                 }
             }
         }
@@ -547,42 +562,29 @@ fun SettingsTab(
                                     )
                                 }
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    val isSmart = userPreferences.settingsMode == SettingsMode.SMART
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSmart) PrimaryBlue else Color.Transparent,
-                                        border = BorderStroke(1.dp, if (isSmart) PrimaryBlue else CardBorder),
-                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.SMART) }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    val currentMode = userPreferences.settingsMode
+                                    listOf(
+                                        Triple(SettingsMode.SMART, "⚡ Smart", PrimaryBlue),
+                                        Triple(SettingsMode.ADVANCED, "⚙️ Advanced", AccentPurple),
+                                        Triple(SettingsMode.DEVELOPER, "🛠️ Dev", Color(0xFF10B981))
+                                    ).forEach { (mode, label, activeColor) ->
+                                        val isSel = currentMode == mode
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSel) activeColor else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isSel) activeColor else CardBorder),
+                                            modifier = Modifier.clickable {
+                                                viewModel.updateSettingsMode(mode)
+                                                Toast.makeText(context, "Mode switched to: ${mode.label}", Toast.LENGTH_SHORT).show()
+                                            }
                                         ) {
                                             Text(
-                                                text = "⚡ " + AppStrings.get("smart_mode", isHindi),
+                                                text = label,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (isSmart) DarkBackground else TextPrimary
-                                            )
-                                        }
-                                    }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (!isSmart) AccentPurple else Color.Transparent,
-                                        border = BorderStroke(1.dp, if (!isSmart) AccentPurple else CardBorder),
-                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.ADVANCED) }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "⚙️ " + AppStrings.get("advanced_mode", isHindi),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (!isSmart) Color.White else TextPrimary
+                                                color = if (isSel) DarkBackground else TextPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                             )
                                         }
                                     }
@@ -748,6 +750,125 @@ fun SettingsTab(
                                     Text("1.0x (Normal)", fontSize = 9.sp, color = TextMuted)
                                     Text("2.0x (Fast)", fontSize = 9.sp, color = TextMuted)
                                 }
+                            }
+                        }
+
+                        // ── 🎙️ GoodBot Voice Interruption Sensitivity (Noise Gate) ────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.GraphicEq,
+                                            contentDescription = null,
+                                            tint = AccentPurple,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "वॉयस रुकावट संवेदनशीलता" else "Bot Voice Interruption Gate",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = "${userPreferences.botInterruptionNoiseGateDb.toInt()} dB",
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentPurple,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Text(
+                                    text = if (isHindi)
+                                        "बोलते समय रोके जाने के लिए न्यूनतम आवाज़। बैकग्राउंड शोर या स्पीकर गूंज से बचने के लिए इसे -18 dB या -16 dB सेट करें।"
+                                    else
+                                        "Minimum volume to interrupt GoodBot while speaking. Set higher (-18 dB to -16 dB) to prevent speaker echo or room noise from cutting off the bot.",
+                                    fontSize = 10.sp,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                Slider(
+                                    value = userPreferences.botInterruptionNoiseGateDb.toFloat(),
+                                    onValueChange = { viewModel.updateBotInterruptionNoiseGateDb(it.toInt()) },
+                                    valueRange = -35f..-15f,
+                                    steps = 19,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = AccentPurple,
+                                        activeTrackColor = AccentPurple
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(if (isHindi) "-35 dB (अधिक संवेदनशील)" else "-35 dB (Sensitive)", fontSize = 9.sp, color = TextMuted)
+                                    Text("-20 dB (Default)", fontSize = 9.sp, color = AccentPurple)
+                                    Text(if (isHindi) "-15 dB (सख्त / तेज़ आवाज़)" else "-15 dB (Strict/Loud)", fontSize = 9.sp, color = TextMuted)
+                                }
+                            }
+                        }
+
+                        // ── 🌐 Live Internet Search Toggle (DuckDuckGo) ─────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.TravelExplore,
+                                        contentDescription = null,
+                                        tint = Color(0xFF06B6D4),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = if (isHindi) "🌐 लाइव इंटरनेट सर्च (Web Search)" else "🌐 Live Web Search",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = if (isHindi)
+                                                "सवालों के ताज़ा जवाबों के लिए रीयल-टाइम इंटरनेट खोज सक्षम करें।"
+                                            else
+                                                "Allows GoodBot and Ask AI to search the internet for live info.",
+                                            fontSize = 10.sp,
+                                            color = TextMuted
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = userPreferences.isWebSearchEnabled,
+                                    onCheckedChange = { viewModel.updateWebSearchEnabled(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = DarkBackground,
+                                        checkedTrackColor = Color(0xFF06B6D4)
+                                    )
+                                )
                             }
                         }
 
@@ -934,13 +1055,6 @@ fun SettingsTab(
                                     }
                                 }
                             }
-
-                            // ── 📑 App Tabs Reordering with Hamburger (Advanced Mode) ─────
-                            AppTabReorderingCard(
-                                userPreferences = userPreferences,
-                                viewModel = viewModel,
-                                isHindi = isHindi
-                            )
 
                             // ── 📜 Log File Extension Selector ───────────────────────────
                             Surface(
@@ -1696,84 +1810,6 @@ fun SettingsTab(
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // =========================================================================
-        // ⚡ SMART MODE CONTROL & STATUS CARD (Smart Mode Only)
-        // =========================================================================
-        if (!isAdvanced) {
-            item(key = "smart_mode_control_card") {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, CardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = AccentPurple,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isHindi) "⚡ स्मार्ट मोड सक्रिय है" else "⚡ Smart Mode Active",
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                fontSize = 14.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = if (isHindi)
-                                "सभी तकनीकी सेटिंग्स (ऑडियो सैंपल दर, बफ़र साइज़, डिकोडर्स, मॉडल पथ) प्रदर्शन और बैटरी दक्षता के लिए स्वचालित रूप से अनुकूलित हैं। उन्नत नियंत्रणों के लिए एडवांस्ड मोड चालू करें।"
-                            else
-                                "All technical dials (audio sample rates, buffers, decoders, and model paths) are automatically tuned for maximum performance and battery life. Switch to Advanced Mode for full granular control.",
-                            fontSize = 11.sp,
-                            color = TextSecondary,
-                            lineHeight = 16.sp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { viewModel.updateSettingsMode(SettingsMode.ADVANCED) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isHindi) "एडवांस्ड मोड" else "Advanced Mode",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            OutlinedButton(
-                                onClick = { showResetConfirmDialog = true },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ActiveRed),
-                                border = BorderStroke(1.dp, ActiveRed.copy(alpha = 0.5f)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isHindi) "रीसेट करें" else "Reset All",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }
@@ -2712,6 +2748,20 @@ fun SettingsTab(
                             color = TextSecondary
                         )
 
+                        Button(
+                            onClick = {
+                                val fullJson = com.echo.recorder.util.SettingsExportHelper.exportToJson(userPreferences)
+                                com.echo.recorder.util.SettingsExportHelper.shareSettingsJson(context, fullJson)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("🚀 Beta Tester 1-Tap Export (Share Settings JSON)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2934,6 +2984,16 @@ fun SettingsTab(
                     ) {
                         Text("📋 Copy", fontSize = 11.sp, color = TextPrimary)
                     }
+
+                    OutlinedButton(
+                        onClick = {
+                            val fullJson = com.echo.recorder.util.SettingsExportHelper.exportToJson(userPreferences)
+                            com.echo.recorder.util.SettingsExportHelper.shareSettingsJson(context, fullJson)
+                            showExportDialog = false
+                        }
+                    ) {
+                        Text("↗️ Share", fontSize = 11.sp, color = Color(0xFF10B981))
+                    }
                 }
             },
             dismissButton = {
@@ -3095,16 +3155,23 @@ fun SettingsTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.importSelectedSettingsFromJson(
-                            importJsonInput,
-                            importAudio,
-                            importStt,
-                            importAi,
-                            importAppearance,
-                            importStorage
-                        ) { success, msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                            if (success) showImportDialog = false
+                        val imported = com.echo.recorder.util.SettingsExportHelper.importFromJson(importJsonInput)
+                        if (imported != null) {
+                            viewModel.applyImportedPreferences(imported)
+                            Toast.makeText(context, "✅ All settings imported successfully!", Toast.LENGTH_LONG).show()
+                            showImportDialog = false
+                        } else {
+                            viewModel.importSelectedSettingsFromJson(
+                                importJsonInput,
+                                importAudio,
+                                importStt,
+                                importAi,
+                                importAppearance,
+                                importStorage
+                            ) { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                if (success) showImportDialog = false
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
@@ -3507,6 +3574,14 @@ fun SettingsTab(
                 }
             },
             containerColor = SurfaceDark
+        )
+    }
+
+    if (showWhatsNewDialog) {
+        com.echo.recorder.ui.releasenotes.WhatsNewDialog(
+            entriesToShow = com.echo.recorder.ui.releasenotes.ReleaseNotesRegistry.getAllReleases(),
+            showAllHistoryOption = false,
+            onDismiss = { showWhatsNewDialog = false }
         )
     }
 }
@@ -4102,3 +4177,4 @@ fun AppTabReorderingCard(
         }
     }
 }
+

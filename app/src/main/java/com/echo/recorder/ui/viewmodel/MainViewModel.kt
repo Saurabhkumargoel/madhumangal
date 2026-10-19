@@ -15,6 +15,8 @@ import com.echo.recorder.EchoApplication
 import com.echo.recorder.audio.AudioRecordingService
 import com.echo.recorder.data.ChatMessage
 import com.echo.recorder.data.NoteTask
+import com.echo.recorder.data.PreferencesRepository
+import com.echo.recorder.data.SettingsMode
 import com.echo.recorder.data.TranscriptionWithAudio
 import com.echo.recorder.data.UserPreferences
 import kotlinx.coroutines.Dispatchers
@@ -114,6 +116,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isSyncingFiles = MutableStateFlow(false)
     val isSyncingFiles: StateFlow<Boolean> = _isSyncingFiles.asStateFlow()
+
+    val preferencesRepository: PreferencesRepository get() = prefsRepo
+
+    fun updateBotCustomActions(actionsJson: String) {
+        viewModelScope.launch {
+            prefsRepo.updateBotCustomActions(actionsJson)
+        }
+    }
+
+    fun updateLastSeenVersionCode(versionCode: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLastSeenVersionCode(versionCode)
+        }
+    }
+
+    fun applyImportedPreferences(prefs: UserPreferences) {
+        viewModelScope.launch {
+            prefsRepo.applyImportedPreferences(prefs)
+        }
+    }
+
+    fun updateBotInterruptionNoiseGateDb(db: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateBotInterruptionNoiseGateDb(db)
+        }
+    }
+
+    fun updateLogGroupingGapMinutes(minutes: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLogGroupingGapMinutes(minutes)
+        }
+    }
+
+    fun updateLogFilesPerPage(perPage: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLogFilesPerPage(perPage)
+        }
+    }
 
     // Persistent Settings Accordion States (survives tab switching)
     var isSettingsStorageExpanded by mutableStateOf(true)
@@ -1845,14 +1885,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     tinyAi.searchInternet(query)
                 } else null
 
-                val (answerText, suggestedItems) = tinyAi.answerTaskQuery(
-                    query = query,
-                    allTasks = allTasks,
-                    allTranscripts = allTranscripts,
-                    systemPrompt = prefs.customSystemPrompt,
-                    webSearchResult = webResult,
-                    aiLanguage = prefs.aiLanguage
-                )
+                val (answerText, suggestedItems) = if (prefs.cloudApiKey.isNotBlank()) {
+                    val contextInfo = buildString {
+                        if (allTasks.isNotEmpty()) {
+                            appendLine("User's Active Tasks (${allTasks.size} tasks):")
+                            allTasks.take(8).forEach { appendLine("- ${it.title} [${it.categoryGroup}]") }
+                        }
+                        if (!webResult.isNullOrBlank()) {
+                            appendLine("\nWeb Search Result:\n$webResult")
+                        }
+                    }
+                    val geminiResult = com.echo.recorder.ai.GeminiApiService.chatWithGemini(
+                        query = query,
+                        apiKey = prefs.cloudApiKey,
+                        model = prefs.cloudModelName.ifBlank { "gemini-1.5-flash" },
+                        systemInstruction = prefs.customSystemPrompt.ifBlank {
+                            "You are GoodBot, a warm, intelligent, concise personal assistant. Answer the user helpfully in Hindi, Hinglish, or English depending on their input. Keep responses natural, direct, and conversational."
+                        },
+                        contextInfo = contextInfo
+                    )
+                    if (geminiResult.isSuccess && geminiResult.getOrNull()?.isNotBlank() == true) {
+                        Pair(geminiResult.getOrNull()!!, emptyList<String>())
+                    } else {
+                        tinyAi.answerGeneralAssistantQuery(
+                            query = query,
+                            allTasks = allTasks,
+                            allTranscripts = allTranscripts,
+                            systemPrompt = prefs.customSystemPrompt,
+                            webSearchResult = webResult,
+                            aiLanguage = prefs.aiLanguage
+                        )
+                    }
+                } else {
+                    tinyAi.answerGeneralAssistantQuery(
+                        query = query,
+                        allTasks = allTasks,
+                        allTranscripts = allTranscripts,
+                        systemPrompt = prefs.customSystemPrompt,
+                        webSearchResult = webResult,
+                        aiLanguage = prefs.aiLanguage
+                    )
+                }
 
                 val suggestedGroup = if (suggestedItems.isNotEmpty()) {
                     if (query.lowercase(java.util.Locale.ROOT).contains("market") || query.lowercase(java.util.Locale.ROOT).contains("vegetable")) "Market Shopping" else "AI Task List"
@@ -2349,10 +2422,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopRecordingService(context: Context) {
-        val intent = Intent(context, AudioRecordingService::class.java).apply {
-            action = AudioRecordingService.ACTION_STOP
-        }
-        context.startService(intent)
+        AudioRecordingService.stop(context)
     }
 
     suspend fun getCurrentSessionSegments(): List<com.echo.recorder.data.AudioSegment> {

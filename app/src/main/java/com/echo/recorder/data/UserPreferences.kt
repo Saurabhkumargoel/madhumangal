@@ -2,7 +2,8 @@ package com.echo.recorder.data
 
 enum class SettingsMode(val label: String) {
     SMART("Smart Mode"),
-    ADVANCED("Advanced Mode")
+    ADVANCED("Advanced Mode"),
+    DEVELOPER("Developer Mode")
 }
 
 enum class SttCapability(val label: String) {
@@ -73,7 +74,7 @@ data class UserPreferences(
     val pinnedCategories: Set<String> = setOf("Urgent", "Shopping"),
     val customCategories: Set<String> = emptySet(),
     val downloadedModels: Set<String> = emptySet(),
-    val logFileExtension: String = "log", // "log", "txt", "md"
+    val logFileExtension: String = "txt", // "txt", "log", "md"
     val huggingFaceToken: String = "",
     val recorderLayoutMode: String = "BOTH_TABS", // "BOTH_TABS", "DEDICATED_TAB_ONLY", "BOTTOM_MEDIA_ONLY"
     val defaultAbortSelection: String = "ALL_FILES", // "ALL_FILES", "LAST_FILE_ONLY"
@@ -84,8 +85,15 @@ data class UserPreferences(
     val showRecorderTab: Boolean = true,
     val showMediaTab: Boolean = true,
     val showAssistantTab: Boolean = true,
-    val tabOrder: String = "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS"
+    val tabOrder: String = "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS",
+    val botCustomActions: String = "[]",
+    val lastSeenVersionCode: Int = 0,
+    val botInterruptionNoiseGateDb: Int = -20,
+    val logGroupingGapMinutes: Int = 5,
+    val logFilesPerPage: Int = 10
 ) {
+    val isDeveloperMode: Boolean get() = settingsMode == SettingsMode.DEVELOPER
+    val isAdvancedOrDev: Boolean get() = settingsMode == SettingsMode.ADVANCED || settingsMode == SettingsMode.DEVELOPER
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.
 Objectives:

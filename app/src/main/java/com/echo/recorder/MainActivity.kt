@@ -90,6 +90,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!com.echo.recorder.audio.AudioRecordingState.isRunning.value) {
+            com.echo.recorder.audio.AudioRecordingService.cancelRemnantNotification(this)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {

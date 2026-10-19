@@ -2,8 +2,10 @@ package com.echo.recorder.audio
 
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -57,6 +59,7 @@ class AudioRecordingService : Service() {
     private var subtitleSequence: Int = 0
     private var customTranscriptionDir: String? = null
     private var currentLanguage: String = "hi-IN"
+    private var currentLogExtension: String = "txt"
 
     inner class LocalBinder : Binder() {
         fun getService(): AudioRecordingService = this@AudioRecordingService
@@ -65,6 +68,7 @@ class AudioRecordingService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {
+        instance = this
         val app = applicationContext as EchoApplication
         val prefsRepo = app.preferencesRepository
         val audioDir = com.echo.recorder.util.AppStorageManager.getAudioDirectory(applicationContext)
@@ -110,6 +114,7 @@ class AudioRecordingService : Service() {
                 }
                 bufferManager.skipSilence = prefs.skipSilence
                 currentLanguage = prefs.selectedLanguage
+                currentLogExtension = prefs.logFileExtension
                 liveSpeechRecognizer?.setLanguage(prefs.selectedLanguage)
             }
         }
@@ -119,8 +124,18 @@ class AudioRecordingService : Service() {
         when (intent?.action) {
             ACTION_START -> startRecording()
             ACTION_STOP -> stopRecording()
+            else -> {
+                if (!isRecording) {
+                    try {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        nm.cancel(NOTIFICATION_ID)
+                    } catch (_: Exception) {}
+                    stopSelf()
+                }
+            }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     @SuppressLint("MissingPermission")
@@ -154,7 +169,7 @@ class AudioRecordingService : Service() {
         sessionStartMillis = System.currentTimeMillis()
         subtitleSequence = 0
 
-        com.echo.recorder.util.AppLogger.startNewSession(applicationContext)
+        com.echo.recorder.util.AppLogger.startNewSession(applicationContext, extension = currentLogExtension)
         com.echo.recorder.util.AppLogger.i("AUDIO", "Recording session started ($sessionTimestamp): TargetRate=${targetSampleRate}Hz, HardwareRate=${hardwareSampleRate}Hz, Resampling=${hardwareSampleRate != targetSampleRate}")
 
         // Update centralized state immediately
@@ -228,32 +243,42 @@ class AudioRecordingService : Service() {
 
         recordingThread = Thread {
             val audioBuffer = ByteArray(2048)
+            try {
+                while (isRecording && !Thread.currentThread().isInterrupted) {
+                    val record = audioRecord ?: break
+                    val read = try {
+                        record.read(audioBuffer, 0, audioBuffer.size)
+                    } catch (_: Throwable) { -1 }
 
-            while (isRecording && !Thread.currentThread().isInterrupted) {
-                val read = audioRecord?.read(audioBuffer, 0, audioBuffer.size) ?: 0
-                if (read > 0) {
-                    val pcmToSend = pcmResampler.resample(audioBuffer, read)
-                    bufferManager.appendPcmData(pcmToSend, pcmToSend.size)
+                    if (read > 0 && isRecording) {
+                        val pcmToSend = pcmResampler.resample(audioBuffer, read)
+                        bufferManager.appendPcmData(pcmToSend, pcmToSend.size)
 
-                    // Feed 16kHz PCM data directly to Vosk live streaming transcriber
-                    voskLiveTranscriber?.feedAudio(pcmToSend, pcmToSend.size)
+                        // Feed 16kHz PCM data directly to Vosk live streaming transcriber
+                        voskLiveTranscriber?.feedAudio(pcmToSend, pcmToSend.size)
 
-                    // Calculate amplitude & decibels from raw microphone input
-                    var maxAmp = 0
-                    for (i in 0 until read - 1 step 2) {
-                        val sample = (audioBuffer[i].toInt() and 0xFF) or (audioBuffer[i + 1].toInt() shl 8)
-                        val absSample = abs(sample.toShort().toInt())
-                        if (absSample > maxAmp) maxAmp = absSample
+                        // Calculate amplitude & decibels from raw microphone input
+                        var maxAmp = 0
+                        for (i in 0 until read - 1 step 2) {
+                            val sample = (audioBuffer[i].toInt() and 0xFF) or (audioBuffer[i + 1].toInt() shl 8)
+                            val absSample = abs(sample.toShort().toInt())
+                            if (absSample > maxAmp) maxAmp = absSample
+                        }
+                        val normalizedAmp = (maxAmp / 32768f).coerceIn(0f, 1f)
+                        AudioRecordingState.currentAmplitude.value = normalizedAmp
+
+                        val db = if (maxAmp > 0) (20 * log10(maxAmp.toDouble() / 32768.0)).toInt().coerceIn(-60, 0) else -60
+                        AudioRecordingState.currentDb.value = db
+                        AudioRecordingState.isSpeechDetected.value = db > -40
                     }
-                    val normalizedAmp = (maxAmp / 32768f).coerceIn(0f, 1f)
-                    AudioRecordingState.currentAmplitude.value = normalizedAmp
-
-                    val db = if (maxAmp > 0) (20 * log10(maxAmp.toDouble() / 32768.0)).toInt().coerceIn(-60, 0) else -60
-                    AudioRecordingState.currentDb.value = db
-                    AudioRecordingState.isSpeechDetected.value = db > -40
                 }
+            } catch (e: Throwable) {
+                com.echo.recorder.util.AppLogger.w("AUDIO", "Recording thread terminated cleanly: ${e.message}")
             }
-        }.apply { start() }
+        }.apply {
+            name = "GoodEcho-AudioRecord"
+            start()
+        }
     }
 
     /**
@@ -296,39 +321,61 @@ class AudioRecordingService : Service() {
     }
 
     fun stopRecording() {
-        if (!isRecording) return
-
+        val wasRecording = isRecording
         isRecording = false
         AudioRecordingState.reset()
 
         timerJob?.cancel()
         timerJob = null
 
+        // 1. Interrupt & join recordingThread first so it finishes any read/feedAudio
+        try {
+            recordingThread?.interrupt()
+            recordingThread?.join(500)
+        } catch (_: Exception) {}
+        recordingThread = null
+
+        // 2. Stop live speech recognizer
         mainHandler.post {
-            liveSpeechRecognizer?.stopListening()
-            liveSpeechRecognizer = null
+            try {
+                liveSpeechRecognizer?.stopListening()
+                liveSpeechRecognizer = null
+            } catch (_: Exception) {}
         }
 
-        voskLiveTranscriber?.flushRemaining()
-        voskLiveTranscriber?.close()
-        voskLiveTranscriber = null
+        // 3. Flush & close Vosk transcriber
+        try {
+            voskLiveTranscriber?.flushRemaining()
+            voskLiveTranscriber?.close()
+        } catch (e: Exception) {
+            com.echo.recorder.util.AppLogger.w("AUDIO", "Error closing Vosk transcriber: ${e.message}")
+        } finally {
+            voskLiveTranscriber = null
+        }
 
+        // 4. Safely stop and release AudioRecord
         try {
             audioRecord?.stop()
             audioRecord?.release()
         } catch (e: Exception) {
-            e.printStackTrace()
+            com.echo.recorder.util.AppLogger.w("AUDIO", "Error releasing AudioRecord: ${e.message}")
         } finally {
             audioRecord = null
         }
 
-        recordingThread?.interrupt()
-        recordingThread = null
+        if (wasRecording) {
+            try {
+                bufferManager.flushSegment()
+            } catch (_: Exception) {}
+            com.echo.recorder.util.AppLogger.i("AUDIO", "Recording stopped and buffer flushed")
+        }
 
-        bufferManager.flushSegment()
-        com.echo.recorder.util.AppLogger.i("AUDIO", "Recording stopped and buffer flushed")
-
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        // 5. Unconditionally remove notification and stop service
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {}
         stopSelf()
     }
 
@@ -378,10 +425,10 @@ class AudioRecordingService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val stopIntent = Intent(this, AudioRecordingService::class.java).apply {
-            action = ACTION_STOP
+        val stopIntent = Intent(this, NotificationActionReceiver::class.java).apply {
+            action = ACTION_NOTIFICATION_STOP
         }
-        val stopPendingIntent = PendingIntent.getService(
+        val stopPendingIntent = PendingIntent.getBroadcast(
             this, 1, stopIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
@@ -398,6 +445,9 @@ class AudioRecordingService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance === this) {
+            instance = null
+        }
         stopRecording()
         super.onDestroy()
     }
@@ -406,5 +456,41 @@ class AudioRecordingService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_START = "com.echo.recorder.ACTION_START"
         const val ACTION_STOP = "com.echo.recorder.ACTION_STOP"
+        const val ACTION_NOTIFICATION_STOP = "com.echo.recorder.ACTION_NOTIFICATION_STOP"
+
+        @Volatile
+        var instance: AudioRecordingService? = null
+            private set
+
+        /**
+         * Thread-safe stop helper that coordinates across running service instance
+         * and cancels any orphaned/remnant notifications unconditionally.
+         */
+        fun stop(context: Context) {
+            try {
+                val activeService = instance
+                if (activeService != null) {
+                    activeService.stopRecording()
+                } else {
+                    cancelRemnantNotification(context)
+                    AudioRecordingState.reset()
+                    val stopIntent = Intent(context, AudioRecordingService::class.java).apply {
+                        action = ACTION_STOP
+                    }
+                    context.stopService(stopIntent)
+                }
+            } catch (e: Exception) {
+                com.echo.recorder.util.AppLogger.w("AUDIO", "Error stopping service via companion stop(): ${e.message}")
+            } finally {
+                cancelRemnantNotification(context)
+            }
+        }
+
+        fun cancelRemnantNotification(context: Context) {
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.cancel(NOTIFICATION_ID)
+            } catch (_: Exception) {}
+        }
     }
 }

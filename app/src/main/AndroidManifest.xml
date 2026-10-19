@@ -45,6 +45,16 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Notification Action BroadcastReceiver for instant, crash-safe Stop Action -->
+        <receiver
+            android:name=".audio.NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.echo.recorder.ACTION_NOTIFICATION_STOP" />
+                <action android:name="com.echo.recorder.ACTION_STOP" />
+            </intent-filter>
+        </receiver>
+
         <!-- FileProvider for opening and sharing transcriptions, notes, and session logs -->
         <provider
             android:name="androidx.core.content.FileProvider"

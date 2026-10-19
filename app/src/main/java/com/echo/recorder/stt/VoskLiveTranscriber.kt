@@ -6,6 +6,7 @@ import org.vosk.Recognizer
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * VoskLiveTranscriber
@@ -13,6 +14,8 @@ import java.util.concurrent.Executors
  * Real-time, 100% offline streaming speech recognition powered by Vosk.
  * Accepts continuous raw PCM chunks from AudioRecord directly, avoiding
  * Android's hardware microphone contention and AudioPolicy muting.
+ *
+ * Thread-safe with robust rejection handling on stop/close.
  */
 class VoskLiveTranscriber(
     private val modelDir: File,
@@ -25,53 +28,69 @@ class VoskLiveTranscriber(
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     @Volatile private var isClosed = false
     @Volatile private var isReady = false
+    private val nativeLock = Any()
 
     init {
-        executor.execute {
-            try {
-                AppLogger.i("VOSK_LIVE", "Initializing Vosk Live Transcriber from ${modelDir.absolutePath} at ${sampleRate}Hz...")
-                val m = Model(modelDir.absolutePath)
-                val rec = Recognizer(m, sampleRate).apply {
-                    setMaxAlternatives(0)
-                    setWords(false)
+        try {
+            executor.execute {
+                try {
+                    AppLogger.i("VOSK_LIVE", "Initializing Vosk Live Transcriber from ${modelDir.absolutePath} at ${sampleRate}Hz...")
+                    val m = Model(modelDir.absolutePath)
+                    val rec = Recognizer(m, sampleRate).apply {
+                        setMaxAlternatives(0)
+                        setWords(false)
+                    }
+                    synchronized(nativeLock) {
+                        model = m
+                        recognizer = rec
+                        isReady = true
+                    }
+                    AppLogger.i("VOSK_LIVE", "Vosk Live Transcriber initialized successfully. Ready to stream.")
+                } catch (e: Throwable) {
+                    AppLogger.e("VOSK_LIVE", "Failed to initialize Vosk Live Transcriber: ${e.message}", e)
                 }
-                model = m
-                recognizer = rec
-                isReady = true
-                AppLogger.i("VOSK_LIVE", "Vosk Live Transcriber initialized successfully. Ready to stream.")
-            } catch (e: Exception) {
-                AppLogger.e("VOSK_LIVE", "Failed to initialize Vosk Live Transcriber: ${e.message}", e)
             }
-        }
+        } catch (_: RejectedExecutionException) {}
     }
 
     /**
      * Feeds raw PCM bytes (mono, 16-bit) to the Vosk streaming recognizer.
+     * Safe to call from any audio thread; silently ignores chunks if closing.
      */
     fun feedAudio(pcmBytes: ByteArray, length: Int) {
-        if (isClosed || !isReady || length <= 0) return
+        if (isClosed || !isReady || length <= 0 || executor.isShutdown) return
         val chunk = if (pcmBytes.size == length) pcmBytes.clone() else pcmBytes.copyOf(length)
-        executor.execute {
-            if (isClosed) return@execute
-            val rec = recognizer ?: return@execute
-            try {
-                if (rec.acceptWaveForm(chunk, chunk.size)) {
-                    val resultJson = rec.result
-                    val text = parseText(resultJson)
-                    if (text.isNotBlank()) {
-                        AppLogger.d("VOSK_LIVE", "Live utterance finalized: \"$text\"")
-                        onFinal(text)
+        try {
+            executor.execute {
+                if (isClosed) return@execute
+                try {
+                    var finalUtterance = ""
+                    var partialUtterance = ""
+
+                    synchronized(nativeLock) {
+                        if (isClosed) return@execute
+                        val rec = recognizer ?: return@execute
+                        if (rec.acceptWaveForm(chunk, chunk.size)) {
+                            finalUtterance = parseText(rec.result)
+                        } else {
+                            partialUtterance = parsePartial(rec.partialResult)
+                        }
                     }
-                } else {
-                    val partialJson = rec.partialResult
-                    val partial = parsePartial(partialJson)
-                    if (partial.isNotBlank()) {
-                        onPartial(partial)
+
+                    if (finalUtterance.isNotBlank()) {
+                        AppLogger.d("VOSK_LIVE", "Live utterance finalized: \"$finalUtterance\"")
+                        onFinal(finalUtterance)
+                    } else if (partialUtterance.isNotBlank()) {
+                        onPartial(partialUtterance)
                     }
+                } catch (e: Throwable) {
+                    AppLogger.w("VOSK_LIVE", "Error processing audio chunk in Vosk: ${e.message}")
                 }
-            } catch (e: Exception) {
-                AppLogger.w("VOSK_LIVE", "Error processing audio chunk in Vosk: ${e.message}")
             }
+        } catch (_: RejectedExecutionException) {
+            // Service stopping; drop chunk gracefully without crashing
+        } catch (e: Throwable) {
+            AppLogger.w("VOSK_LIVE", "feedAudio exception: ${e.message}")
         }
     }
 
@@ -80,39 +99,47 @@ class VoskLiveTranscriber(
      */
     fun flushRemaining(): String {
         var finalResult = ""
-        val rec = recognizer ?: return ""
+        if (isClosed) return ""
         try {
-            val finalJson = rec.finalResult
-            finalResult = parseText(finalJson)
+            synchronized(nativeLock) {
+                val rec = recognizer ?: return ""
+                val finalJson = rec.finalResult
+                finalResult = parseText(finalJson)
+            }
             if (finalResult.isNotBlank()) {
                 AppLogger.i("VOSK_LIVE", "Flushed final audio buffer speech: \"$finalResult\"")
                 onFinal(finalResult)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             AppLogger.w("VOSK_LIVE", "Error flushing Vosk final result: ${e.message}")
         }
         return finalResult
     }
 
     /**
-     * Releases native C++ Vosk model and recognizer memory.
+     * Releases native C++ Vosk model and recognizer memory safely.
      */
     fun close() {
+        if (isClosed) return
         isClosed = true
         isReady = false
-        executor.execute {
+        try {
+            executor.shutdownNow()
+        } catch (_: Throwable) {}
+
+        Thread {
             try {
-                recognizer?.close()
-                model?.close()
-            } catch (e: Exception) {
-                AppLogger.w("VOSK_LIVE", "Error closing Vosk: ${e.message}")
-            } finally {
-                recognizer = null
-                model = null
+                synchronized(nativeLock) {
+                    recognizer?.close()
+                    model?.close()
+                    recognizer = null
+                    model = null
+                }
                 AppLogger.d("VOSK_LIVE", "Vosk Live Transcriber closed and native memory freed.")
+            } catch (e: Throwable) {
+                AppLogger.w("VOSK_LIVE", "Error closing Vosk native handles: ${e.message}")
             }
-        }
-        executor.shutdown()
+        }.start()
     }
 
     companion object {
