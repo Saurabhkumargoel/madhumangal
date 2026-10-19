@@ -83,7 +83,8 @@ data class UserPreferences(
     val showDashboardTab: Boolean = true,
     val showRecorderTab: Boolean = true,
     val showMediaTab: Boolean = true,
-    val showAssistantTab: Boolean = true
+    val showAssistantTab: Boolean = true,
+    val tabOrder: String = "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS"
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.

@@ -463,6 +463,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateTabOrder(tabOrder: String) {
+        viewModelScope.launch {
+            prefsRepo.updateTabOrder(tabOrder)
+        }
+    }
+
     fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
         startOrResumeModelDownload(modelId, onProgress, onComplete)
     }

@@ -17,12 +17,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -534,6 +536,69 @@ fun RecorderTab(
                         style = MaterialTheme.typography.labelSmall,
                         color = AccentPurple
                     )
+                }
+            }
+        }
+
+        // ── ⚡ 1-Tap Offline Model Download Banner (if Vosk Hindi not installed) ─────
+        val isVoskHindiInstalled = remember(userPreferences.downloadedModels) {
+            com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+        }
+        if (!isVoskHindiInstalled) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, CardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isHindi) "⚡ ऑफ़लाइन मॉडल डाउनलोड करें" else "⚡ 100% Offline Model",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (isHindi) "बिना इंटरनेट के ट्रांसक्रिप्शन के लिए Vosk Hindi (45 MB) डाउनलोड करें।"
+                                   else "Download Vosk Hindi (45 MB) for 100% offline file transcription without internet.",
+                            fontSize = 10.sp,
+                            color = TextMuted,
+                            lineHeight = 14.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            viewModel.downloadModel(UserPreferences.STT_MODEL_VOSK_HINDI)
+                            Toast.makeText(context, if (isHindi) "Vosk Hindi डाउनलोड शुरू..." else "Starting Vosk Hindi download...", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = "Download",
+                            modifier = Modifier.size(14.dp),
+                            tint = DarkBackground
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isHindi) "डाउनलोड" else "Download",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DarkBackground
+                        )
+                    }
                 }
             }
         }

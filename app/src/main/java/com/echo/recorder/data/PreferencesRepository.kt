@@ -53,6 +53,7 @@ class PreferencesRepository(private val context: Context) {
         val SHOW_RECORDER_TAB = booleanPreferencesKey("show_recorder_tab")
         val SHOW_MEDIA_TAB = booleanPreferencesKey("show_media_tab")
         val SHOW_ASSISTANT_TAB = booleanPreferencesKey("show_assistant_tab")
+        val TAB_ORDER = stringPreferencesKey("tab_order")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FONT_MODE = stringPreferencesKey("font_mode")
         val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
@@ -102,7 +103,8 @@ class PreferencesRepository(private val context: Context) {
             showDashboardTab = preferences[PreferencesKeys.SHOW_DASHBOARD_TAB] ?: true,
             showRecorderTab = preferences[PreferencesKeys.SHOW_RECORDER_TAB] ?: true,
             showMediaTab = preferences[PreferencesKeys.SHOW_MEDIA_TAB] ?: true,
-            showAssistantTab = preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] ?: true
+            showAssistantTab = preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] ?: true,
+            tabOrder = preferences[PreferencesKeys.TAB_ORDER] ?: "DUMB_ASSISTANT,DASHBOARD,RECORDER,AI,MEDIA,LOGS,SETTINGS"
         )
     }
 
@@ -350,6 +352,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateShowAssistantTab(show: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] = show
+        }
+    }
+
+    suspend fun updateTabOrder(tabOrder: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TAB_ORDER] = tabOrder
         }
     }
 

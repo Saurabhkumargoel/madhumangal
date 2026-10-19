@@ -99,12 +99,13 @@ fun MainScreen(
         userPreferences.showRecorderTab,
         userPreferences.showAiTab,
         userPreferences.showMediaTab,
-        userPreferences.showLogsTab
+        userPreferences.showLogsTab,
+        userPreferences.tabOrder
     ) {
         if (userPreferences.settingsMode == SettingsMode.SMART) {
             listOf(MainTab.HOME, MainTab.SETTINGS)
         } else {
-            buildList {
+            val enabledTabs = buildSet {
                 if (userPreferences.showAssistantTab || userPreferences.homeTab == "DUMB_ASSISTANT") {
                     add(MainTab.DUMB_ASSISTANT)
                 }
@@ -125,6 +126,31 @@ fun MainScreen(
                 }
                 add(MainTab.SETTINGS)
             }
+
+            val orderTokens = userPreferences.tabOrder.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val nameToTab = mapOf(
+                "DUMB_ASSISTANT" to MainTab.DUMB_ASSISTANT,
+                "DASHBOARD" to MainTab.DASHBOARD,
+                "RECORDER" to MainTab.RECORDER,
+                "AI" to MainTab.AI,
+                "MEDIA" to MainTab.MEDIA,
+                "LOGS" to MainTab.LOGS,
+                "SETTINGS" to MainTab.SETTINGS
+            )
+
+            val ordered = mutableListOf<MainTab>()
+            for (token in orderTokens) {
+                val tab = nameToTab[token]
+                if (tab != null && tab in enabledTabs && tab !in ordered) {
+                    ordered.add(tab)
+                }
+            }
+            for (tab in enabledTabs) {
+                if (tab !in ordered) {
+                    ordered.add(tab)
+                }
+            }
+            ordered
         }
     }
 

@@ -60,7 +60,9 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PermMedia
@@ -685,6 +687,13 @@ fun SettingsTab(
                             }
                         }
 
+                        // ── 📑 App Tabs Reordering with Hamburger (Smart Mode) ─────────
+                        AppTabReorderingCard(
+                            userPreferences = userPreferences,
+                            viewModel = viewModel,
+                            isHindi = isHindi
+                        )
+
                         // ── 🔊 Voice Speech Speed Slider (Smart & Advanced) ───────────
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -925,6 +934,13 @@ fun SettingsTab(
                                     }
                                 }
                             }
+
+                            // ── 📑 App Tabs Reordering with Hamburger (Advanced Mode) ─────
+                            AppTabReorderingCard(
+                                userPreferences = userPreferences,
+                                viewModel = viewModel,
+                                isHindi = isHindi
+                            )
 
                             // ── 📜 Log File Extension Selector ───────────────────────────
                             Surface(
@@ -3881,3 +3897,208 @@ private data class CatalogModelInfo(
     val pros: String,
     val cons: String
 )
+
+@Composable
+fun AppTabReorderingCard(
+    userPreferences: UserPreferences,
+    viewModel: MainViewModel,
+    isHindi: Boolean
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val rawOrder = userPreferences.tabOrder
+    val defaultTabs = listOf(
+        "DUMB_ASSISTANT",
+        "DASHBOARD",
+        "RECORDER",
+        "AI",
+        "MEDIA",
+        "LOGS",
+        "SETTINGS"
+    )
+
+    val currentList = remember(rawOrder) {
+        val tokens = rawOrder.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val result = mutableListOf<String>()
+        for (t in tokens) {
+            if (t in defaultTabs && t !in result) {
+                result.add(t)
+            }
+        }
+        for (d in defaultTabs) {
+            if (d !in result) {
+                result.add(d)
+            }
+        }
+        result
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, CardBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Hamburger",
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHindi) "टैब क्रम व्यवस्थित करें (Hamburger)" else "App Tabs Arrangement (Hamburger)",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        fontSize = 13.sp
+                    )
+                }
+
+                TextButton(
+                    onClick = {
+                        val defaultOrder = defaultTabs.joinToString(",")
+                        viewModel.updateTabOrder(defaultOrder)
+                        Toast.makeText(context, if (isHindi) "डिफ़ॉल्ट क्रम रीसेट" else "Reset to default order", Toast.LENGTH_SHORT).show()
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (isHindi) "रीसेट" else "Reset",
+                        fontSize = 11.sp,
+                        color = AccentPurple,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Text(
+                text = if (isHindi) "बॉटम नेविगेशन बार में टैब का क्रम बदलने के लिए 🔼 या 🔽 दबाएं।"
+                       else "Use 🔼 and 🔽 buttons with the hamburger handles to reorder tabs in the bottom bar.",
+                fontSize = 10.sp,
+                color = TextMuted,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            currentList.forEachIndexed { index, tabId ->
+                val (engLabel, hiLabel, icon) = when (tabId) {
+                    "DUMB_ASSISTANT" -> Triple("Good Bot Assistant", "गुड बॉट", Icons.Default.SmartToy)
+                    "DASHBOARD" -> Triple("Tasks Dashboard", "कार्य सूची", Icons.Default.CheckCircle)
+                    "RECORDER" -> Triple("Audio Recorder", "ऑडियो रिकॉर्डर", Icons.Default.Mic)
+                    "AI" -> Triple("Ask AI Studio", "एआई स्टूडियो", Icons.Default.AutoAwesome)
+                    "MEDIA" -> Triple("Media Transcripts", "मीडिया ट्रांसक्रिप्ट्स", Icons.Default.PermMedia)
+                    "LOGS" -> Triple("System Logs", "सिस्टम लॉग", Icons.Default.Terminal)
+                    "SETTINGS" -> Triple("Settings", "सेटिंग्स", Icons.Default.Settings)
+                    else -> Triple(tabId, tabId, Icons.Default.Tune)
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    border = BorderStroke(0.5.dp, CardBorder.copy(alpha = 0.6f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Hamburger icon handle
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Reorder handle",
+                            tint = PrimaryBlue.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Tab icon
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(PrimaryBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Tab name
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isHindi) hiLabel else engLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Position #${index + 1}",
+                                fontSize = 9.sp,
+                                color = TextMuted
+                            )
+                        }
+
+                        // Move Up
+                        IconButton(
+                            onClick = {
+                                if (index > 0) {
+                                    val mutable = currentList.toMutableList()
+                                    val temp = mutable[index]
+                                    mutable[index] = mutable[index - 1]
+                                    mutable[index - 1] = temp
+                                    viewModel.updateTabOrder(mutable.joinToString(","))
+                                }
+                            },
+                            enabled = index > 0,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Move Up",
+                                tint = if (index > 0) PrimaryBlue else TextMuted.copy(alpha = 0.3f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // Move Down
+                        IconButton(
+                            onClick = {
+                                if (index < currentList.size - 1) {
+                                    val mutable = currentList.toMutableList()
+                                    val temp = mutable[index]
+                                    mutable[index] = mutable[index + 1]
+                                    mutable[index + 1] = temp
+                                    viewModel.updateTabOrder(mutable.joinToString(","))
+                                }
+                            },
+                            enabled = index < currentList.size - 1,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Move Down",
+                                tint = if (index < currentList.size - 1) PrimaryBlue else TextMuted.copy(alpha = 0.3f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

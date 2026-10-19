@@ -43,8 +43,8 @@ class AudioRecordingService : Service() {
 
     private lateinit var bufferManager: AudioBufferManager
     private var hardwareSampleRate = 16000
-    private var targetSampleRate = UserPreferences.QUALITY_TINIEST // 8000 Hz default
-    private var pcmResampler = PcmResampler(16000, 8000)
+    private var targetSampleRate = UserPreferences.QUALITY_SPEECH // 16000 Hz standard for STT
+    private var pcmResampler = PcmResampler(16000, 16000)
 
     private var liveSpeechRecognizer: LiveSpeechRecognizer? = null
     private val currentCycleSpeech = StringBuilder()
@@ -245,11 +245,11 @@ class AudioRecordingService : Service() {
     @SuppressLint("MissingPermission")
     private fun createAudioRecord(preferredRate: Int): Pair<AudioRecord, Int>? {
         val sources = listOf(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
             MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.DEFAULT,
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
+            MediaRecorder.AudioSource.DEFAULT
         )
-        val rates = listOf(preferredRate, 16000, 44100, 48000, 8000).distinct()
+        val rates = listOf(16000, preferredRate, 44100, 48000, 8000).distinct()
 
         for (source in sources) {
             for (rate in rates) {

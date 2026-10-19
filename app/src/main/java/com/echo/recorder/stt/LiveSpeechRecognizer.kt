@@ -108,8 +108,8 @@ class LiveSpeechRecognizer(
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            // Support mixed Hindi + English (Hinglish) speech recognition seamlessly
+            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "hi-IN", "en-US"))
         }
     }
 
@@ -130,7 +130,11 @@ class LiveSpeechRecognizer(
                         AudioRecordingState.isSpeechDetected.value = true
                     }
 
-                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onRmsChanged(rmsdB: Float) {
+                        if (rmsdB > 1.5f) {
+                            AudioRecordingState.isSpeechDetected.value = true
+                        }
+                    }
 
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
@@ -246,12 +250,13 @@ class LiveSpeechRecognizer(
                                 mainHandler.postDelayed({
                                     if (isListening) {
                                         try {
+                                            speechRecognizer?.cancel()
                                             speechRecognizer?.startListening(createRecognizerIntent())
                                         } catch (e: Exception) {
                                             restartListening()
                                         }
                                     }
-                                }, 100L)
+                                }, 150L)
                             }
 
                             else -> {
