@@ -55,21 +55,26 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FormatPaint
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.Tune
@@ -118,6 +123,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -377,79 +383,6 @@ fun SettingsTab(
             item(key = "content_section_0") {
                 SettingsSectionCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // ── ⚡ Operation Mode: Compact Segmented Select Button ────────
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            border = BorderStroke(1.dp, CardBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (userPreferences.settingsMode == SettingsMode.SMART) Icons.Default.Bolt else Icons.Default.Tune,
-                                        contentDescription = null,
-                                        tint = if (userPreferences.settingsMode == SettingsMode.SMART) PrimaryBlue else AccentPurple,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = AppStrings.get("mode_selection", isHindi),
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    val isSmart = userPreferences.settingsMode == SettingsMode.SMART
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (isSmart) PrimaryBlue else Color.Transparent,
-                                        border = BorderStroke(1.dp, if (isSmart) PrimaryBlue else CardBorder),
-                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.SMART) }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "⚡ " + AppStrings.get("smart_mode", isHindi),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSmart) DarkBackground else TextPrimary
-                                            )
-                                        }
-                                    }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (!isSmart) AccentPurple else Color.Transparent,
-                                        border = BorderStroke(1.dp, if (!isSmart) AccentPurple else CardBorder),
-                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.ADVANCED) }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "⚙️ " + AppStrings.get("advanced_mode", isHindi),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (!isSmart) Color.White else TextPrimary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         // ── 🌐 App Language Selector (Clean English without flag) ────
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -575,6 +508,360 @@ fun SettingsTab(
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                             )
                                         }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── ⚡ Operation Mode: Compact Segmented Select Button (After AI Language) ────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (userPreferences.settingsMode == SettingsMode.SMART) Icons.Default.Bolt else Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = if (userPreferences.settingsMode == SettingsMode.SMART) PrimaryBlue else AccentPurple,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = AppStrings.get("mode_selection", isHindi),
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    val isSmart = userPreferences.settingsMode == SettingsMode.SMART
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSmart) PrimaryBlue else Color.Transparent,
+                                        border = BorderStroke(1.dp, if (isSmart) PrimaryBlue else CardBorder),
+                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.SMART) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "⚡ " + AppStrings.get("smart_mode", isHindi),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSmart) DarkBackground else TextPrimary
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (!isSmart) AccentPurple else Color.Transparent,
+                                        border = BorderStroke(1.dp, if (!isSmart) AccentPurple else CardBorder),
+                                        modifier = Modifier.clickable { viewModel.updateSettingsMode(SettingsMode.ADVANCED) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "⚙️ " + AppStrings.get("advanced_mode", isHindi),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (!isSmart) Color.White else TextPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 🏠 Home Screen Selector (Smart & Advanced Modes) ───────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Home,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "होम स्क्रीन" else "Home Screen",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = if (userPreferences.settingsMode == SettingsMode.SMART) {
+                                            if (isHindi) "2-टैब नेविगेशन" else "2-Tab Navigation"
+                                        } else {
+                                            if (isHindi) "प्रारंभिक स्क्रीन" else "Start Screen"
+                                        },
+                                        fontSize = 10.sp,
+                                        color = TextMuted
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                val homeOptions = if (userPreferences.settingsMode == SettingsMode.SMART) {
+                                    listOf(
+                                        Triple("DUMB_ASSISTANT", "🤖 Good Bot Assistant", "🤖 गुड बॉट सहायक"),
+                                        Triple("RECORDER", "🎙️ Audio Recorder", "🎙️ ऑडियो रिकॉर्डर"),
+                                        Triple("AI", "✨ Ask AI", "✨ एआई सहायक")
+                                    )
+                                } else {
+                                    listOf(
+                                        Triple("DUMB_ASSISTANT", "🤖 Good Bot", "🤖 गुड बॉट"),
+                                        Triple("DASHBOARD", "📋 Tasks", "📋 कार्य सूची"),
+                                        Triple("RECORDER", "🎙️ Recorder", "🎙️ रिकॉर्डर"),
+                                        Triple("AI", "✨ Ask AI", "✨ एआई"),
+                                        Triple("MEDIA", "📁 Media", "📁 मीडिया")
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    homeOptions.forEach { (key, engLabel, hiLabel) ->
+                                        val isCurrentHome = userPreferences.homeTab == key
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isCurrentHome) PrimaryBlue else Color.Transparent,
+                                            border = BorderStroke(1.dp, if (isCurrentHome) PrimaryBlue else CardBorder),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    viewModel.updateHomeTab(key)
+                                                    // Ensure the selected home tab is enabled
+                                                    when (key) {
+                                                        "DUMB_ASSISTANT" -> viewModel.updateShowAssistantTab(true)
+                                                        "DASHBOARD" -> viewModel.updateShowDashboardTab(true)
+                                                        "RECORDER" -> viewModel.updateShowRecorderTab(true)
+                                                        "AI" -> viewModel.updateShowAiTab(true)
+                                                        "MEDIA" -> viewModel.updateShowMediaTab(true)
+                                                    }
+                                                    Toast.makeText(context, if (isHindi) "होम: $hiLabel" else "Home set to: $engLabel", Toast.LENGTH_SHORT).show()
+                                                }
+                                        ) {
+                                            Text(
+                                                text = if (isHindi) hiLabel else engLabel,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCurrentHome) DarkBackground else TextPrimary,
+                                                maxLines = 1,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 📑 App Sections & Tab Visibility Checkboxes (Advanced Mode Only) ─
+                        if (userPreferences.settingsMode == SettingsMode.ADVANCED) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Tune,
+                                            contentDescription = null,
+                                            tint = AccentPurple,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column {
+                                            Text(
+                                                text = if (isHindi) "ऐप अनुभाग और टैब दृश्यता" else "App Sections & Tab Visibility",
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                text = if (isHindi) "होम और सेटिंग्स टैब अक्षम नहीं किए जा सकते" else "Home and Settings tabs cannot be disabled",
+                                                fontSize = 10.sp,
+                                                color = TextMuted
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Sections list:
+                                    // 1. Good Bot Assistant
+                                    val isAssistantHome = userPreferences.homeTab == "DUMB_ASSISTANT"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isAssistantHome) "🤖 Good Bot Assistant (Home - Locked)" else "🤖 Good Bot Assistant",
+                                            fontSize = 11.sp,
+                                            color = if (isAssistantHome) PrimaryBlue else TextPrimary,
+                                            fontWeight = if (isAssistantHome) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Checkbox(
+                                            checked = isAssistantHome || userPreferences.showAssistantTab,
+                                            enabled = !isAssistantHome,
+                                            onCheckedChange = { viewModel.updateShowAssistantTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // 2. Tasks Dashboard
+                                    val isDashboardHome = userPreferences.homeTab == "DASHBOARD"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isDashboardHome) "📋 Tasks Dashboard (Home - Locked)" else "📋 Tasks Dashboard",
+                                            fontSize = 11.sp,
+                                            color = if (isDashboardHome) PrimaryBlue else TextPrimary,
+                                            fontWeight = if (isDashboardHome) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Checkbox(
+                                            checked = isDashboardHome || userPreferences.showDashboardTab,
+                                            enabled = !isDashboardHome,
+                                            onCheckedChange = { viewModel.updateShowDashboardTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // 3. Audio Recorder
+                                    val isRecorderHome = userPreferences.homeTab == "RECORDER"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isRecorderHome) "🎙️ Audio Recorder (Home - Locked)" else "🎙️ Audio Recorder",
+                                            fontSize = 11.sp,
+                                            color = if (isRecorderHome) PrimaryBlue else TextPrimary,
+                                            fontWeight = if (isRecorderHome) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Checkbox(
+                                            checked = isRecorderHome || userPreferences.showRecorderTab,
+                                            enabled = !isRecorderHome,
+                                            onCheckedChange = { viewModel.updateShowRecorderTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // 4. Ask AI
+                                    val isAiHome = userPreferences.homeTab == "AI"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isAiHome) "✨ Ask AI (Home - Locked)" else "✨ Ask AI",
+                                            fontSize = 11.sp,
+                                            color = if (isAiHome) PrimaryBlue else TextPrimary,
+                                            fontWeight = if (isAiHome) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Checkbox(
+                                            checked = isAiHome || userPreferences.showAiTab,
+                                            enabled = !isAiHome,
+                                            onCheckedChange = { viewModel.updateShowAiTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = AccentPurple)
+                                        )
+                                    }
+
+                                    // 5. Media Transcripts
+                                    val isMediaHome = userPreferences.homeTab == "MEDIA"
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isMediaHome) "📁 Media Transcripts (Home - Locked)" else "📁 Media Transcripts",
+                                            fontSize = 11.sp,
+                                            color = if (isMediaHome) PrimaryBlue else TextPrimary,
+                                            fontWeight = if (isMediaHome) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Checkbox(
+                                            checked = isMediaHome || userPreferences.showMediaTab,
+                                            enabled = !isMediaHome,
+                                            onCheckedChange = { viewModel.updateShowMediaTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // 6. System Logs
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "📜 System Logs",
+                                            fontSize = 11.sp,
+                                            color = TextPrimary
+                                        )
+                                        Checkbox(
+                                            checked = userPreferences.showLogsTab,
+                                            onCheckedChange = { viewModel.updateShowLogsTab(it) },
+                                            colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
+                                        )
+                                    }
+
+                                    // 7. Settings (Always Active)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "⚙️ Settings (Always Active)",
+                                            fontSize = 11.sp,
+                                            color = TextMuted,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Checkbox(
+                                            checked = true,
+                                            enabled = false,
+                                            onCheckedChange = {},
+                                            colors = CheckboxDefaults.colors(disabledCheckedColor = PrimaryBlue.copy(alpha = 0.5f))
+                                        )
                                     }
                                 }
                             }

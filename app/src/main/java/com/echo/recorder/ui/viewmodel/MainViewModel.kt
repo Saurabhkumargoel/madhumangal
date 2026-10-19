@@ -433,6 +433,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateHomeTab(homeTab: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHomeTab(homeTab)
+        }
+    }
+
+    fun updateShowDashboardTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowDashboardTab(show)
+        }
+    }
+
+    fun updateShowRecorderTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowRecorderTab(show)
+        }
+    }
+
+    fun updateShowMediaTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowMediaTab(show)
+        }
+    }
+
+    fun updateShowAssistantTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowAssistantTab(show)
+        }
+    }
+
     fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
         startOrResumeModelDownload(modelId, onProgress, onComplete)
     }
@@ -2008,6 +2038,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     put("defaultAbortSelection", prefs.defaultAbortSelection)
                     put("showLogsTab", prefs.showLogsTab)
                     put("showAiTab", prefs.showAiTab)
+                    put("homeTab", prefs.homeTab)
+                    put("showDashboardTab", prefs.showDashboardTab)
+                    put("showRecorderTab", prefs.showRecorderTab)
+                    put("showMediaTab", prefs.showMediaTab)
+                    put("showAssistantTab", prefs.showAssistantTab)
                 }
                 put("appearanceConfig", appObj)
             }
@@ -2131,6 +2166,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (appObj.has("defaultAbortSelection")) prefsRepo.updateDefaultAbortSelection(appObj.optString("defaultAbortSelection", "ALL_FILES"))
                     if (appObj.has("showLogsTab")) prefsRepo.updateShowLogsTab(appObj.optBoolean("showLogsTab", false))
                     if (appObj.has("showAiTab")) prefsRepo.updateShowAiTab(appObj.optBoolean("showAiTab", true))
+                    if (appObj.has("showDashboardTab")) prefsRepo.updateShowDashboardTab(appObj.optBoolean("showDashboardTab", true))
+                    if (appObj.has("showRecorderTab")) prefsRepo.updateShowRecorderTab(appObj.optBoolean("showRecorderTab", true))
+                    if (appObj.has("showMediaTab")) prefsRepo.updateShowMediaTab(appObj.optBoolean("showMediaTab", true))
+                    if (appObj.has("showAssistantTab")) prefsRepo.updateShowAssistantTab(appObj.optBoolean("showAssistantTab", true))
+                    if (appObj.has("homeTab")) prefsRepo.updateHomeTab(appObj.optString("homeTab", "DUMB_ASSISTANT"))
                     if (appObj.has("settingsMode")) {
                         val mode = if (appObj.optString("settingsMode", "SMART").equals("ADVANCED", ignoreCase = true)) {
                             com.echo.recorder.data.SettingsMode.ADVANCED

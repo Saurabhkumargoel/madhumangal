@@ -78,7 +78,12 @@ data class UserPreferences(
     val recorderLayoutMode: String = "BOTH_TABS", // "BOTH_TABS", "DEDICATED_TAB_ONLY", "BOTTOM_MEDIA_ONLY"
     val defaultAbortSelection: String = "ALL_FILES", // "ALL_FILES", "LAST_FILE_ONLY"
     val showLogsTab: Boolean = false, // Hidden by default for basic users
-    val showAiTab: Boolean = true // Visible by default for basic users
+    val showAiTab: Boolean = true, // Visible by default for basic users
+    val homeTab: String = "DUMB_ASSISTANT", // "DUMB_ASSISTANT", "RECORDER", "AI", "DASHBOARD", "MEDIA"
+    val showDashboardTab: Boolean = true,
+    val showRecorderTab: Boolean = true,
+    val showMediaTab: Boolean = true,
+    val showAssistantTab: Boolean = true
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.

@@ -10,8 +10,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.echo.recorder.data.SettingsMode
 import com.echo.recorder.data.UserPreferences
 import com.echo.recorder.ui.components.AbortSessionDialog
 import com.echo.recorder.ui.components.AiAskBottomSheet
@@ -50,6 +53,8 @@ import com.echo.recorder.ui.theme.TextMuted
 import com.echo.recorder.ui.viewmodel.MainViewModel
 
 enum class MainTab {
+    HOME,
+    DUMB_ASSISTANT,
     DASHBOARD,
     RECORDER,
     AI,
@@ -86,32 +91,77 @@ fun MainScreen(
 
     val isHindi = userPreferences.appLanguage == "hi"
 
-    val visibleTabs = remember(userPreferences.recorderLayoutMode, userPreferences.showAiTab, userPreferences.showLogsTab) {
-        buildList {
-            add(MainTab.DASHBOARD)
-            if (userPreferences.recorderLayoutMode != "BOTTOM_MEDIA_ONLY") {
-                add(MainTab.RECORDER)
+    val visibleTabs = remember(
+        userPreferences.settingsMode,
+        userPreferences.homeTab,
+        userPreferences.showAssistantTab,
+        userPreferences.showDashboardTab,
+        userPreferences.showRecorderTab,
+        userPreferences.showAiTab,
+        userPreferences.showMediaTab,
+        userPreferences.showLogsTab
+    ) {
+        if (userPreferences.settingsMode == SettingsMode.SMART) {
+            listOf(MainTab.HOME, MainTab.SETTINGS)
+        } else {
+            buildList {
+                if (userPreferences.showAssistantTab || userPreferences.homeTab == "DUMB_ASSISTANT") {
+                    add(MainTab.DUMB_ASSISTANT)
+                }
+                if (userPreferences.showDashboardTab || userPreferences.homeTab == "DASHBOARD") {
+                    add(MainTab.DASHBOARD)
+                }
+                if (userPreferences.showRecorderTab || userPreferences.homeTab == "RECORDER") {
+                    add(MainTab.RECORDER)
+                }
+                if (userPreferences.showAiTab || userPreferences.homeTab == "AI") {
+                    add(MainTab.AI)
+                }
+                if (userPreferences.showMediaTab || userPreferences.homeTab == "MEDIA") {
+                    add(MainTab.MEDIA)
+                }
+                if (userPreferences.showLogsTab) {
+                    add(MainTab.LOGS)
+                }
+                add(MainTab.SETTINGS)
             }
-            if (userPreferences.showAiTab) {
-                add(MainTab.AI)
-            }
-            add(MainTab.MEDIA)
-            if (userPreferences.showLogsTab) {
-                add(MainTab.LOGS)
-            }
-            add(MainTab.SETTINGS)
         }
     }
 
     var selectedTab by remember {
         mutableStateOf(
-            if (userPreferences.recorderLayoutMode == "BOTTOM_MEDIA_ONLY") MainTab.MEDIA else MainTab.RECORDER
+            if (userPreferences.settingsMode == SettingsMode.SMART) {
+                MainTab.HOME
+            } else {
+                when (userPreferences.homeTab) {
+                    "DUMB_ASSISTANT" -> MainTab.DUMB_ASSISTANT
+                    "DASHBOARD" -> MainTab.DASHBOARD
+                    "RECORDER" -> MainTab.RECORDER
+                    "AI" -> MainTab.AI
+                    "MEDIA" -> MainTab.MEDIA
+                    else -> MainTab.DUMB_ASSISTANT
+                }
+            }
         )
     }
 
-    LaunchedEffect(visibleTabs) {
-        if (selectedTab !in visibleTabs) {
-            selectedTab = if (MainTab.RECORDER in visibleTabs) MainTab.RECORDER else visibleTabs.firstOrNull() ?: MainTab.DASHBOARD
+    LaunchedEffect(visibleTabs, userPreferences.settingsMode) {
+        if (userPreferences.settingsMode == SettingsMode.SMART) {
+            if (selectedTab != MainTab.HOME && selectedTab != MainTab.SETTINGS) {
+                selectedTab = MainTab.HOME
+            }
+        } else {
+            if (selectedTab !in visibleTabs) {
+                val targetHome = when (userPreferences.homeTab) {
+                    "DUMB_ASSISTANT" -> MainTab.DUMB_ASSISTANT
+                    "DASHBOARD" -> MainTab.DASHBOARD
+                    "RECORDER" -> MainTab.RECORDER
+                    "AI" -> MainTab.AI
+                    "MEDIA" -> MainTab.MEDIA
+                    else -> MainTab.DUMB_ASSISTANT
+                }
+                selectedTab = if (targetHome in visibleTabs) targetHome else visibleTabs.firstOrNull() ?: MainTab.SETTINGS
+            }
         }
     }
 
@@ -144,6 +194,41 @@ fun MainScreen(
             ) {
                 visibleTabs.forEach { tab ->
                     when (tab) {
+                        MainTab.HOME -> NavigationBarItem(
+                            selected = selectedTab == MainTab.HOME,
+                            onClick = { selectedTab = MainTab.HOME },
+                            icon = {
+                                val homeIcon = when (userPreferences.homeTab) {
+                                    "RECORDER" -> Icons.Default.Mic
+                                    "AI" -> Icons.Default.AutoAwesome
+                                    "DASHBOARD" -> Icons.Default.CheckCircle
+                                    "MEDIA" -> Icons.Default.PermMedia
+                                    else -> Icons.Default.SmartToy
+                                }
+                                Icon(homeIcon, contentDescription = "Home")
+                            },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_home", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
+                        MainTab.DUMB_ASSISTANT -> NavigationBarItem(
+                            selected = selectedTab == MainTab.DUMB_ASSISTANT,
+                            onClick = { selectedTab = MainTab.DUMB_ASSISTANT },
+                            icon = { Icon(Icons.Default.SmartToy, contentDescription = "Good Bot") },
+                            label = { Text(com.echo.recorder.util.AppStrings.get("tab_assistant", isHindi), fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PrimaryBlue,
+                                selectedTextColor = PrimaryBlue,
+                                indicatorColor = DarkBackground,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
+                        )
                         MainTab.DASHBOARD -> NavigationBarItem(
                             selected = selectedTab == MainTab.DASHBOARD,
                             onClick = { selectedTab = MainTab.DASHBOARD },
@@ -246,6 +331,204 @@ fun MainScreen(
         }
     ) { paddingValues ->
         when (selectedTab) {
+            MainTab.HOME -> {
+                when (userPreferences.homeTab) {
+                    "RECORDER" -> RecorderTab(
+                        viewModel = viewModel,
+                        isServiceRunning = isServiceRunning,
+                        currentAmplitude = currentAmplitude,
+                        currentDb = currentDb,
+                        elapsedSeconds = elapsedSeconds,
+                        liveTranscript = liveTranscript,
+                        createdSegmentsCount = createdSegmentsCount,
+                        isSpeechDetected = isSpeechDetected,
+                        statusMessage = statusMessage,
+                        userPreferences = userPreferences,
+                        onRequestPermission = onRequestPermission,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                    "AI" -> AiTab(
+                        viewModel = viewModel,
+                        tasks = noteTasks,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                    "DASHBOARD" -> DashboardTab(
+                        tasks = noteTasks,
+                        lowHangingFruits = lowHangingFruits,
+                        userPreferences = userPreferences,
+                        onToggleCompletion = { id, done -> viewModel.toggleTaskCompletion(id, done) },
+                        onDeleteTask = { id -> viewModel.deleteTask(id) },
+                        onCreateTask = { title, cat, prio, fruit, due, parent, autoDone ->
+                            viewModel.createTask(title, cat, prio, fruit, due, parent, autoDone)
+                        },
+                        onAddSubtask = { parentId, title ->
+                            viewModel.addSubtask(parentId, title)
+                        },
+                        onMoveTaskToCategory = { id, newCat ->
+                            viewModel.moveTaskToCategory(id, newCat)
+                        },
+                        onTogglePinCategory = { cat ->
+                            viewModel.togglePinCategory(cat)
+                        },
+                        onAddCustomCategory = { cat ->
+                            viewModel.addCustomCategory(cat)
+                        },
+                        onDeleteCustomCategory = { cat ->
+                            viewModel.deleteCustomCategory(cat)
+                        },
+                        onExportDashboard = { format ->
+                            viewModel.exportDashboardToFile(format) { success, msg, _ ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onOpenAiAsk = {
+                            if (MainTab.AI in visibleTabs) selectedTab = MainTab.AI else showAiAskSheet = true
+                        },
+                        onEditTask = { id, title, desc, prio, fruit, due ->
+                            viewModel.editTask(id, title, desc, prio, fruit, due)
+                        },
+                        onReorderTasks = { fromIndex, toIndex, updatedList ->
+                            viewModel.reorderTasks(fromIndex, toIndex, updatedList)
+                        },
+                        onReorderGroups = { fromIndex, toIndex, updatedCategories ->
+                            viewModel.reorderCategoryGroups(fromIndex, toIndex, updatedCategories)
+                        },
+                        onReorderTasksBulk = { selectedIds, moveUp, siblingList ->
+                            viewModel.reorderTasksBulk(selectedIds, moveUp, siblingList)
+                        },
+                        onDeleteTasksBulk = { ids ->
+                            viewModel.deleteTasksBulk(ids)
+                        },
+                        onImportTasksJson = { jsonStr, callback ->
+                            viewModel.importTasksFromJson(jsonStr, callback)
+                        },
+                        isRecording = isServiceRunning,
+                        elapsedSeconds = elapsedSeconds,
+                        onToggleRecording = {
+                            if (isServiceRunning) {
+                                viewModel.stopRecordingService(context)
+                            } else {
+                                onRequestPermission()
+                                viewModel.startRecordingService(context)
+                            }
+                        },
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                    "MEDIA" -> TranscriptsTab(
+                        transcriptions = transcriptions,
+                        allTasks = noteTasks,
+                        transcribingIds = transcribingIds,
+                        processingAiIds = processingAiIds,
+                        defaultSttModel = userPreferences.selectedSttModel,
+                        defaultAiModel = userPreferences.selectedAiModel,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { viewModel.updateSearchQuery(it) },
+                        onDeleteTranscription = { viewModel.deleteTranscription(it) },
+                        onRetranscribe = { id ->
+                            viewModel.retranscribeSegment(id) { success, msg ->
+                                android.widget.Toast.makeText(context, if (success) "✅ Segment #$id transcribed successfully!" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onRetranscribeWithModel = { id, modelId ->
+                            viewModel.retranscribeSegment(id, modelId) { success, msg ->
+                                android.widget.Toast.makeText(context, if (success) "✅ Segment #$id transcribed!" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onReprocessAiWithModel = { id, aiModelId ->
+                            viewModel.reprocessAiTasks(id, aiModelId) { success, msg ->
+                                android.widget.Toast.makeText(context, if (success) "✅ $msg" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onUpdateText = { id, text -> viewModel.updateTranscriptionText(id, text) },
+                        onToggleTaskCompletion = { id, done -> viewModel.toggleTaskCompletion(id, done) },
+                        onUpdateTaskDetails = { id, title, desc, cat, prio -> viewModel.updateTaskDetails(id, title, desc, cat, prio) },
+                        onDeleteTask = { id -> viewModel.deleteTask(id) },
+                        onMergeSession = { sessionId ->
+                            viewModel.mergeSessionTranscriptions(sessionId) { success, msg, _ ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onExportMedia = {
+                            viewModel.exportAllMedia { success, message ->
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onSyncMedia = {
+                            viewModel.syncStorageFilesWithDatabase { success, message ->
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        onRunFlow = { sessionId, chunkId ->
+                            viewModel.runCompleteFlow(
+                                sessionId = sessionId,
+                                chunkId = chunkId,
+                                onProgress = { step ->
+                                    android.widget.Toast.makeText(context, step, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            ) { success, msg ->
+                                android.widget.Toast.makeText(context, if (success) "✅ $msg" else "⚠️ $msg", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        isRecording = isServiceRunning,
+                        elapsedSeconds = elapsedSeconds,
+                        onToggleRecording = {
+                            if (isServiceRunning) {
+                                viewModel.stopRecordingService(context)
+                            } else {
+                                onRequestPermission()
+                                viewModel.startRecordingService(context)
+                            }
+                        },
+                        onAbortRecording = {
+                            scope.launch {
+                                abortSegments = viewModel.getCurrentSessionSegments()
+                                showAbortDialog = true
+                            }
+                        },
+                        recorderLayoutMode = userPreferences.recorderLayoutMode,
+                        isHindi = isHindi,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                    else -> DumbHomeTab(
+                        viewModel = viewModel,
+                        isRecording = isServiceRunning,
+                        currentAmplitude = currentAmplitude,
+                        currentDb = currentDb,
+                        elapsedSeconds = elapsedSeconds,
+                        liveTranscript = liveTranscript,
+                        isSpeechDetected = isSpeechDetected,
+                        userPreferences = userPreferences,
+                        onToggleRecording = {
+                            if (isServiceRunning) {
+                                viewModel.stopRecordingService(context)
+                            } else {
+                                onRequestPermission()
+                                viewModel.startRecordingService(context)
+                            }
+                        },
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                }
+            }
+            MainTab.DUMB_ASSISTANT -> DumbHomeTab(
+                viewModel = viewModel,
+                isRecording = isServiceRunning,
+                currentAmplitude = currentAmplitude,
+                currentDb = currentDb,
+                elapsedSeconds = elapsedSeconds,
+                liveTranscript = liveTranscript,
+                isSpeechDetected = isSpeechDetected,
+                userPreferences = userPreferences,
+                onToggleRecording = {
+                    if (isServiceRunning) {
+                        viewModel.stopRecordingService(context)
+                    } else {
+                        onRequestPermission()
+                        viewModel.startRecordingService(context)
+                    }
+                },
+                modifier = Modifier.padding(paddingValues)
+            )
             MainTab.DASHBOARD -> DashboardTab(
                 tasks = noteTasks,
                 lowHangingFruits = lowHangingFruits,

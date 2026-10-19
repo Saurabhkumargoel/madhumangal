@@ -48,6 +48,11 @@ class PreferencesRepository(private val context: Context) {
         val DEFAULT_ABORT_SELECTION = stringPreferencesKey("default_abort_selection")
         val SHOW_LOGS_TAB = booleanPreferencesKey("show_logs_tab")
         val SHOW_AI_TAB = booleanPreferencesKey("show_ai_tab")
+        val HOME_TAB = stringPreferencesKey("home_tab")
+        val SHOW_DASHBOARD_TAB = booleanPreferencesKey("show_dashboard_tab")
+        val SHOW_RECORDER_TAB = booleanPreferencesKey("show_recorder_tab")
+        val SHOW_MEDIA_TAB = booleanPreferencesKey("show_media_tab")
+        val SHOW_ASSISTANT_TAB = booleanPreferencesKey("show_assistant_tab")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FONT_MODE = stringPreferencesKey("font_mode")
         val CUSTOM_THEME_JSON = stringPreferencesKey("custom_theme_json")
@@ -92,7 +97,12 @@ class PreferencesRepository(private val context: Context) {
             recorderLayoutMode = preferences[PreferencesKeys.RECORDER_LAYOUT_MODE] ?: "BOTH_TABS",
             defaultAbortSelection = preferences[PreferencesKeys.DEFAULT_ABORT_SELECTION] ?: "ALL_FILES",
             showLogsTab = preferences[PreferencesKeys.SHOW_LOGS_TAB] ?: false,
-            showAiTab = preferences[PreferencesKeys.SHOW_AI_TAB] ?: true
+            showAiTab = preferences[PreferencesKeys.SHOW_AI_TAB] ?: true,
+            homeTab = preferences[PreferencesKeys.HOME_TAB] ?: "DUMB_ASSISTANT",
+            showDashboardTab = preferences[PreferencesKeys.SHOW_DASHBOARD_TAB] ?: true,
+            showRecorderTab = preferences[PreferencesKeys.SHOW_RECORDER_TAB] ?: true,
+            showMediaTab = preferences[PreferencesKeys.SHOW_MEDIA_TAB] ?: true,
+            showAssistantTab = preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] ?: true
         )
     }
 
@@ -310,6 +320,36 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateShowAiTab(show: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_AI_TAB] = show
+        }
+    }
+
+    suspend fun updateHomeTab(homeTab: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HOME_TAB] = homeTab
+        }
+    }
+
+    suspend fun updateShowDashboardTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_DASHBOARD_TAB] = show
+        }
+    }
+
+    suspend fun updateShowRecorderTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_RECORDER_TAB] = show
+        }
+    }
+
+    suspend fun updateShowMediaTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_MEDIA_TAB] = show
+        }
+    }
+
+    suspend fun updateShowAssistantTab(show: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_ASSISTANT_TAB] = show
         }
     }
 }

@@ -11,6 +11,8 @@ object AppStrings {
 
     private val ENGLISH_MAP = mapOf(
         // Tabs
+        "tab_home" to "Home",
+        "tab_assistant" to "Good Bot",
         "tab_dashboard" to "Tasks",
         "tab_recorder" to "Recorder",
         "tab_ai" to "Ask AI",
@@ -144,6 +146,8 @@ object AppStrings {
 
     private val HINDI_MAP = mapOf(
         // Tabs
+        "tab_home" to "होम",
+        "tab_assistant" to "गुड बॉट",
         "tab_dashboard" to "कार्य सूची",
         "tab_recorder" to "रिकॉर्डर",
         "tab_ai" to "एआई सहायक",

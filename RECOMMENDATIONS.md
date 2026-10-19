@@ -714,6 +714,40 @@ The Vosk Android library (`com.alphacephei:vosk-android:0.3.50`) existed on Mave
 - For destructive operations like Abort recording, implement selective checklist dialogs with quick action helpers and cascading artifact cleanup.
 - Build dynamic navigation bars driven by reactive preference flows rather than hardcoded tab indices.
 
+
+### 2.13 Operation Mode Reordering, Smart Mode 2-Tab Navigation, Advanced Tab Visibility & Experimental "Good Bot" Voice Assistant
+
+#### Description & Rationale
+Users requested a simplified, friction-free experience for daily voice capture ("Smart Mode" or "Dumb Mode" from a user complexity standpoint), where they don't have to fiddle with complex tabs or technical dials. In this mode, the interface presents a single master toggle to start listening and transcribing continuously, while an on-device AI voice companion ("Good Bot" / "गुड बॉट") speaks back to recognized queries and immediately stops speaking when interrupted, without halting background recording.
+
+#### Architecture & Implementation Details
+1. **Operation Mode Reordered in Settings Section 0 (`SettingsTab.kt`):**
+   - Moved Operation Mode selector to appear immediately **after** the AI Output Language setting.
+   - Defaults to `SettingsMode.SMART` for all new users.
+2. **Smart Mode 2-Tab Navigation Bar (`MainScreen.kt` & `SettingsTab.kt`):**
+   - In Smart Mode, the bottom navigation bar strictly renders only **two tabs**: `Home` and `Settings`.
+   - The `Home` tab dispatches dynamically to whatever is configured in `userPreferences.homeTab` (defaults to the new `DumbHomeTab`, but can be switched to `RecorderTab` or `AiTab`).
+3. **Advanced Mode Tab Visibility & Invariant Enforcement (`SettingsTab.kt` & `MainScreen.kt`):**
+   - In Advanced Mode, introduces an interactive checklist of all application sections:
+     - 🤖 Good Bot Assistant (`showAssistantTab`)
+     - 📋 Tasks Dashboard (`showDashboardTab`)
+     - 🎙️ Audio Recorder (`showRecorderTab`)
+     - ✨ Ask AI (`showAiTab`)
+     - 📁 Media Transcripts (`showMediaTab`)
+     - 📜 System Logs (`showLogsTab`)
+     - ⚙️ Settings (Always Active)
+   - Enforces the critical invariant: **The selected Home tab and Settings cannot be disabled**. The checkbox corresponding to the active `homeTab` is locked checked with `enabled = false` and labeled `(Home - Locked)`.
+4. **Experimental Minimalist Voice Assistant Homepage (`DumbHomeTab.kt`):**
+   - Full active theme compliance (`AppThemeColors`, `DarkBackground`, `SurfaceDark`, `PrimaryBlue`, `AccentPurple`, etc.).
+   - Large central animated voice orb that reacts to speech amplitude (`currentAmplitude`) and recording state.
+   - Keyword Matcher: Real-time regex `(?i)\b(good\s*bot|gud\s*bot|गुड\s*बॉट)\b` listens to incoming `liveTranscript`.
+   - On match, parses the query, triggers `viewModel.askAiAssistant(query)`, and speaks the response via Android's `TextToSpeech`.
+   - **Continuous Audio Invariant:** Android `AudioRecordingService` **never stops** listening, even when the bot itself is speaking.
+   - **Instant Interruption Handling:** When `isBotSpeaking` is true, user interruption (speech detection or amplitude > 0.22) or tapping the silence button calls `tts.stop()` immediately without disturbing background recording.
+5. **Full Import/Export Persistence (`MainViewModel.kt`, `PreferencesRepository.kt`, `UserPreferences.kt`):**
+   - Added DataStore keys and Room persistence for `homeTab`, `showAssistantTab`, `showDashboardTab`, `showRecorderTab`, `showMediaTab`.
+   - Both JSON export and visual JSON import seamlessly handle all navigation preferences.
+
 ---
 
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
