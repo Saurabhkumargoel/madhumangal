@@ -18,6 +18,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,7 +61,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -153,13 +156,28 @@ fun RecorderTab(
         }
     }
 
+    var showMissingModelDialog by remember { mutableStateOf(false) }
+
+    val isVoskInstalled = remember(userPreferences.downloadedModels) {
+        com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME) ||
+        com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN) ||
+        com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+    }
+
+    val modelDownloadStates by viewModel.modelDownloadStates.collectAsState()
+    val voskDownload = modelDownloadStates[com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI]
+
     val onStartRecordingAttempt = {
-        val validation = viewModel.validateCurrentModel(context)
-        if (validation is com.echo.recorder.data.ModelValidationResult.Valid) {
-            onRequestPermission()
-            viewModel.startRecordingService(context)
+        if (!isVoskInstalled) {
+            showMissingModelDialog = true
         } else {
-            validationError = validation
+            val validation = viewModel.validateCurrentModel(context)
+            if (validation is com.echo.recorder.data.ModelValidationResult.Valid) {
+                onRequestPermission()
+                viewModel.startRecordingService(context)
+            } else {
+                validationError = validation
+            }
         }
     }
 
@@ -265,7 +283,131 @@ fun RecorderTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // ── ⚡ Prominent Vosk Offline Model Setup & Download Progress Card ──
+        if (!isVoskInstalled) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = AccentPurple.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                tint = AccentPurple,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (voskDownload?.status == com.echo.recorder.ui.viewmodel.ModelDownloadStatus.DOWNLOADING ||
+                                           voskDownload?.status == com.echo.recorder.ui.viewmodel.ModelDownloadStatus.EXTRACTING) {
+                                    if (isHindi) "ऑफ़लाइन मॉडल डाउनलोड हो रहा है..." else "Downloading Speech Model..."
+                                } else {
+                                    if (isHindi) "⚡ ऑफ़लाइन वाक् मॉडल आवश्यक (45 MB)" else "⚡ Offline Speech Model Required (45 MB)"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = TextPrimary
+                            )
+                        }
+
+                        if (voskDownload?.status != com.echo.recorder.ui.viewmodel.ModelDownloadStatus.DOWNLOADING &&
+                            voskDownload?.status != com.echo.recorder.ui.viewmodel.ModelDownloadStatus.EXTRACTING) {
+                            Button(
+                                onClick = { viewModel.downloadModel(com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI) },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (isHindi) "डाउनलोड (45 MB)" else "Download (45 MB)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    if (voskDownload?.status == com.echo.recorder.ui.viewmodel.ModelDownloadStatus.DOWNLOADING ||
+                        voskDownload?.status == com.echo.recorder.ui.viewmodel.ModelDownloadStatus.EXTRACTING) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val progress = voskDownload.progress.coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = AccentPurple,
+                            trackColor = SurfaceDark
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = if (voskDownload.status == com.echo.recorder.ui.viewmodel.ModelDownloadStatus.EXTRACTING) "अनपैक हो रहा है..." else "${(progress * 100).toInt()}%",
+                                fontSize = 11.sp,
+                                color = AccentPurple,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val downloadedMb = String.format(java.util.Locale.US, "%.1f", voskDownload.downloadedBytes / (1024f * 1024f))
+                            val totalMb = String.format(java.util.Locale.US, "%.1f", voskDownload.totalBytes / (1024f * 1024f))
+                            Text(
+                                text = "$downloadedMb MB / $totalMb MB",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isHindi) "बिना इंटरनेट के लाइव और फ़ाइल प्रतिलेखन के लिए Vosk Hindi (45 MB) डाउनलोड करें।"
+                                   else "Download Vosk Hindi (45 MB) to enable real-time speech-to-text without audio conflicts.",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        } else if (!isServiceRunning) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF10B981).copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isHindi) "⚡ ऑफ़लाइन वाक् प्रतिलेखन सक्रिय (Vosk Hindi)" else "⚡ 100% Offline Live STT Active (Vosk Hindi)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF10B981)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Large Elapsed Timer & Voice dB Level
         if (isServiceRunning) {
@@ -540,68 +682,7 @@ fun RecorderTab(
             }
         }
 
-        // ── ⚡ 1-Tap Offline Model Download Banner (if Vosk Hindi not installed) ─────
-        val isVoskHindiInstalled = remember(userPreferences.downloadedModels) {
-            com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
-        }
-        if (!isVoskHindiInstalled) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, CardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isHindi) "⚡ ऑफ़लाइन मॉडल डाउनलोड करें" else "⚡ 100% Offline Model",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (isHindi) "बिना इंटरनेट के ट्रांसक्रिप्शन के लिए Vosk Hindi (45 MB) डाउनलोड करें।"
-                                   else "Download Vosk Hindi (45 MB) for 100% offline file transcription without internet.",
-                            fontSize = 10.sp,
-                            color = TextMuted,
-                            lineHeight = 14.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            viewModel.downloadModel(UserPreferences.STT_MODEL_VOSK_HINDI)
-                            Toast.makeText(context, if (isHindi) "Vosk Hindi डाउनलोड शुरू..." else "Starting Vosk Hindi download...", Toast.LENGTH_SHORT).show()
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudDownload,
-                            contentDescription = "Download",
-                            modifier = Modifier.size(14.dp),
-                            tint = DarkBackground
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isHindi) "डाउनलोड" else "Download",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DarkBackground
-                        )
-                    }
-                }
-            }
-        }
+
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -759,6 +840,54 @@ fun RecorderTab(
                         }
                     ) {
                         Text(if (isHindi) "ऑडियो फ़ाइल चुनें" else "Pick Audio File", color = TextPrimary)
+                    }
+                },
+                containerColor = SurfaceDark
+            )
+        }
+
+        // ── ⚡ Missing Model Confirmation Dialog ──
+        if (showMissingModelDialog) {
+            AlertDialog(
+                onDismissRequest = { showMissingModelDialog = false },
+                icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = AccentPurple) },
+                title = {
+                    Text(
+                        text = if (isHindi) "⚡ ऑफ़लाइन वाक् मॉडल आवश्यक" else "⚡ Offline Speech Model Required",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = if (isHindi) "गुड-इको आपके डिवाइस पर 100% ऑफ़लाइन प्रतिलेखन करता है। लाइव बोलने पर स्क्रीन पर शब्द देखने के लिए Vosk Hindi (45 MB) मॉडल आवश्यक है।\n\nक्या आप इसे अभी डाउनलोड करना चाहते हैं या केवल ऑडियो रिकॉर्ड करना चाहते हैं?"
+                               else "GoodEcho transcribes your speech 100% on-device without internet or audio conflicts. To see live text while speaking, the lightweight Vosk Hindi model (45 MB) is required.\n\nWould you like to download it now or record raw audio only?",
+                        color = TextSecondary,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showMissingModelDialog = false
+                            viewModel.downloadModel(com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI)
+                            onRequestPermission()
+                            viewModel.startRecordingService(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        Text(if (isHindi) "डाउनलोड और रिकॉर्ड (45 MB)" else "Download & Record (45 MB)", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            showMissingModelDialog = false
+                            onRequestPermission()
+                            viewModel.startRecordingService(context)
+                        }
+                    ) {
+                        Text(if (isHindi) "केवल ऑडियो रिकॉर्ड करें" else "Record Audio Only", color = TextPrimary)
                     }
                 },
                 containerColor = SurfaceDark

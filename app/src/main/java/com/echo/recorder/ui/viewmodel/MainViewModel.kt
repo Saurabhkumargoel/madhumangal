@@ -140,6 +140,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Auto-discover any existing audio files and transcripts on disk
             syncStorageFilesWithDatabase()
 
+            // Check if Vosk Hindi model is installed. If not, auto-start download so it's ready for live STT!
+            val voskInstalled = com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(app, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+            if (!voskInstalled) {
+                com.echo.recorder.util.AppLogger.i("MODEL", "Vosk Hindi model missing on launch; auto-initiating background download (45 MB)...")
+                startOrResumeModelDownload(com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI)
+            }
+            // Auto-migrate any stale STT_MODEL_GOOGLE_SPEECH preference to STT_MODEL_VOSK_HINDI
+            val currentPrefs = prefsRepo.userPreferencesFlow.first()
+            if (currentPrefs.selectedSttModel == com.echo.recorder.data.UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+                prefsRepo.updateSttModel(com.echo.recorder.data.UserPreferences.STT_MODEL_VOSK_HINDI)
+            }
+
             // Load persistent AI chat history
             try {
                 val history = aiChatDao.getAllMessages()
@@ -289,8 +301,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val currentPrefs = prefsRepo.userPreferencesFlow.first()
             val currentModel = UserPreferences.AVAILABLE_STT_MODELS.find { it.id == currentPrefs.selectedSttModel }
             if (enabled && currentModel?.capability == com.echo.recorder.data.SttCapability.FILE_ONLY) {
-                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_GOOGLE_SPEECH)
-                com.echo.recorder.util.AppLogger.i("SETTINGS", "Live mode enabled: auto-switched STT model to Google Speech Recognizer")
+                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_VOSK_HINDI)
+                com.echo.recorder.util.AppLogger.i("SETTINGS", "Live mode enabled: auto-switched STT model to Vosk Hindi (Offline)")
             } else if (!enabled && currentModel?.capability == com.echo.recorder.data.SttCapability.LIVE_ONLY) {
                 prefsRepo.updateSttModel(UserPreferences.STT_MODEL_VOSK_HINDI)
                 com.echo.recorder.util.AppLogger.i("SETTINGS", "File mode enabled: auto-switched STT model to Vosk Hindi (Offline)")

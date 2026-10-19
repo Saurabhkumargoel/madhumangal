@@ -46,6 +46,7 @@ class AudioRecordingService : Service() {
     private var targetSampleRate = UserPreferences.QUALITY_SPEECH // 16000 Hz standard for STT
     private var pcmResampler = PcmResampler(16000, 16000)
 
+    private var voskLiveTranscriber: com.echo.recorder.stt.VoskLiveTranscriber? = null
     private var liveSpeechRecognizer: LiveSpeechRecognizer? = null
     private val currentCycleSpeech = StringBuilder()
     private var lastPartialSpeech = ""
@@ -75,6 +76,7 @@ class AudioRecordingService : Service() {
             sampleRate = UserPreferences.QUALITY_TINIEST,
             skipSilence = true,
             onSegmentCreated = { file, startTime, endTime, duration, overlap ->
+                voskLiveTranscriber?.flushRemaining()
                 val speechCaptured = synchronized(speechLock) {
                     val s = currentCycleSpeech.toString().trim()
                     currentCycleSpeech.clear()
@@ -170,17 +172,29 @@ class AudioRecordingService : Service() {
             }
         }
 
-        // Initialize and start live speech recognizer on Main Thread
-        mainHandler.post {
-            liveSpeechRecognizer = LiveSpeechRecognizer(
-                context = applicationContext,
-                initialLanguage = currentLanguage,
-                onPartialResult = { partial ->
+        // Initialize Vosk live streaming transcriber (100% offline, zero mic conflict)
+        val voskModelDir = when {
+            com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME) ->
+                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+            com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN) ->
+                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+            com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE) ->
+                com.echo.recorder.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+            else -> null
+        }
+
+        if (voskModelDir != null) {
+            com.echo.recorder.util.AppLogger.i("STT", "Starting VoskLiveTranscriber with model: ${voskModelDir.name} at 16000Hz (Zero mic conflict)")
+            voskLiveTranscriber = com.echo.recorder.stt.VoskLiveTranscriber(
+                modelDir = voskModelDir,
+                sampleRate = 16000f,
+                onPartial = { partial ->
                     synchronized(speechLock) {
                         lastPartialSpeech = partial
                     }
+                    AudioRecordingState.liveTranscript.value = partial
                 },
-                onFinalResult = { text ->
+                onFinal = { text ->
                     val now = System.currentTimeMillis()
                     val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
                     val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
@@ -204,9 +218,10 @@ class AudioRecordingService : Service() {
                     }
                     AudioRecordingState.liveTranscript.value = text
                 }
-            ).apply {
-                startListening()
-            }
+            )
+        } else {
+            com.echo.recorder.util.AppLogger.w("STT", "No Vosk offline speech model installed. Live speech transcription inactive until model is downloaded.")
+            AudioRecordingState.liveTranscript.value = "(Offline speech model not installed - download in Settings or Recorder screen)"
         }
 
         audioRecord?.startRecording()
@@ -219,6 +234,9 @@ class AudioRecordingService : Service() {
                 if (read > 0) {
                     val pcmToSend = pcmResampler.resample(audioBuffer, read)
                     bufferManager.appendPcmData(pcmToSend, pcmToSend.size)
+
+                    // Feed 16kHz PCM data directly to Vosk live streaming transcriber
+                    voskLiveTranscriber?.feedAudio(pcmToSend, pcmToSend.size)
 
                     // Calculate amplitude & decibels from raw microphone input
                     var maxAmp = 0
@@ -290,6 +308,10 @@ class AudioRecordingService : Service() {
             liveSpeechRecognizer?.stopListening()
             liveSpeechRecognizer = null
         }
+
+        voskLiveTranscriber?.flushRemaining()
+        voskLiveTranscriber?.close()
+        voskLiveTranscriber = null
 
         try {
             audioRecord?.stop()

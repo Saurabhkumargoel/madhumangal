@@ -71,7 +71,7 @@ class PreferencesRepository(private val context: Context) {
             skipSilence = preferences[PreferencesKeys.SKIP_SILENCE] ?: true,
             autoDeleteAudio = preferences[PreferencesKeys.AUTO_DELETE_AUDIO] ?: false,
             selectedLanguage = preferences[PreferencesKeys.SELECTED_LANGUAGE] ?: "hi-IN",
-            selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_GOOGLE_SPEECH,
+            selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_VOSK_HINDI,
             selectedAiModel = preferences[PreferencesKeys.SELECTED_AI_MODEL] ?: UserPreferences.AI_MODEL_LOCAL_TINY,
             cloudApiKey = preferences[PreferencesKeys.CLOUD_API_KEY] ?: "",
             audioFolderPath = preferences[PreferencesKeys.AUDIO_FOLDER_PATH] ?: "",

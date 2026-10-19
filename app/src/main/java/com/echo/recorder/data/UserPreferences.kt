@@ -50,7 +50,7 @@ data class UserPreferences(
     val skipSilence: Boolean = true,   // Voice Activity Detection / skip silence
     val autoDeleteAudio: Boolean = false,
     val selectedLanguage: String = "hi-IN", // Hindi / Hinglish
-    val selectedSttModel: String = STT_MODEL_GOOGLE_SPEECH,
+    val selectedSttModel: String = STT_MODEL_VOSK_HINDI,
     val selectedAiModel: String = AI_MODEL_LOCAL_TINY,
     val cloudApiKey: String = "",
     val cloudModelName: String = "gemini-1.5-flash",
@@ -138,8 +138,8 @@ Objectives:
                 id = STT_MODEL_VOSK_HINDI,
                 name = "Vosk Hindi Small (Offline)",
                 tag = "TRULY OFFLINE • 45 MB",
-                description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes saved WAV recordings without any internet or API key. Fast and lightweight.",
-                capability = SttCapability.FILE_ONLY,
+                description = "Alpha Cephei Vosk small Hindi model. 100% on-device neural STT — transcribes live speech & saved WAV recordings without internet or API key. Fast and lightweight.",
+                capability = SttCapability.BOTH,
                 isRecommended = true,
                 sizeText = "45 MB",
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
@@ -149,7 +149,7 @@ Objectives:
                 name = "Vosk Hindi Full / Large (Offline)",
                 tag = "HIGH ACCURACY • 1.5 GB",
                 description = "Full-scale Alpha Cephei Hindi acoustic model (vosk-model-hi-0.22). Massive vocabulary, vastly superior recognition for rapid, formal, or accented Hindi.",
-                capability = SttCapability.FILE_ONLY,
+                capability = SttCapability.BOTH,
                 isRecommended = true,
                 sizeText = "1.5 GB",
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
@@ -179,7 +179,7 @@ Objectives:
                 name = "Vosk Indian English (Offline)",
                 tag = "INDIAN ACCENT • 31 MB",
                 description = "Alpha Cephei Vosk Indian English acoustic model (en-in). Optimized for Indian English terminology and accents offline.",
-                capability = SttCapability.FILE_ONLY,
+                capability = SttCapability.BOTH,
                 isRecommended = false,
                 sizeText = "31 MB",
                 downloadUrl = "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
@@ -324,6 +324,12 @@ Objectives:
                     return ModelValidationResult.IncompatibleMode(
                         message = "\"${modelOption.name}\" only works on recorded files, not live streaming. For live mode, please use Google Speech Recognizer or Gemini Flash.",
                         suggestedModelId = STT_MODEL_GOOGLE_SPEECH
+                    )
+                }
+                if (modelOption.id in listOf(STT_MODEL_VOSK_HINDI, STT_MODEL_VOSK_EN_IN, STT_MODEL_VOSK_HINDI_LARGE) && !isModelDownloaded(modelOption.id)) {
+                    return ModelValidationResult.MissingDownload(
+                        message = "\"${modelOption.name}\" is not downloaded yet. Please tap 'Download Model' on the Recorder screen or in Settings to enable live transcription.",
+                        modelId = modelOption.id
                     )
                 }
                 if (modelOption.id == STT_MODEL_GOOGLE_SPEECH && !isRecognitionAvailable) {
