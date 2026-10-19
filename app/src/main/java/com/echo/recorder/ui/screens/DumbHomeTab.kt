@@ -136,13 +136,15 @@ fun DumbHomeTab(
 
     // Assistant State
     var lastProcessedTranscript by remember { mutableStateOf("") }
+    var lastProcessedTime by remember { mutableLongStateOf(0L) }
     var lastAiResponse by remember { mutableStateOf<String?>(null) }
     var isAiThinking by remember { mutableStateOf(false) }
     var isBotSpeaking by remember { mutableStateOf(false) }
+    var isExplicitlySilenced by remember { mutableStateOf(false) }
     var ttsStartTime by remember { mutableLongStateOf(0L) }
     var detectedQueryText by remember { mutableStateOf("") }
 
-    // Conversational Follow-Up State (15s Window)
+    // Conversational Follow-Up State (Multi-Turn Dynamic Window)
     var isWaitingForFollowUpQuery by remember { mutableStateOf(false) }
     var activeWindowSecondsRemaining by remember { mutableIntStateOf(0) }
 
@@ -178,6 +180,11 @@ fun DumbHomeTab(
 
             override fun onDone(utteranceId: String?) {
                 isBotSpeaking = false
+                // Multi-Turn: Keep listening for follow-up questions after answering unless user explicitly silenced
+                if (!isExplicitlySilenced) {
+                    isWaitingForFollowUpQuery = true
+                    activeWindowSecondsRemaining = 12
+                }
             }
 
             override fun onError(utteranceId: String?) {
@@ -197,6 +204,7 @@ fun DumbHomeTab(
     fun speakBot(text: String) {
         val clean = text.replace(Regex("[*•_#\\[\\]\\-]"), " ").trim()
         if (clean.isNotBlank()) {
+            isExplicitlySilenced = false
             isBotSpeaking = true
             ttsStartTime = System.currentTimeMillis()
             ttsEngine?.setSpeechRate(userPreferences.ttsSpeed)
@@ -205,8 +213,10 @@ fun DumbHomeTab(
     }
 
     fun silenceBot() {
+        isExplicitlySilenced = true
         ttsEngine?.stop()
         isBotSpeaking = false
+        isWaitingForFollowUpQuery = false
     }
 
     // Interruption Detector with configurable noise gate and speaker feedback protection
@@ -230,7 +240,8 @@ fun DumbHomeTab(
         val answer = if (isHindi) "अभी समय $timeStr हुआ है।" else "The current time is $timeStr."
         lastAiResponse = answer
         speakBot(answer)
-        isWaitingForFollowUpQuery = false
+        isWaitingForFollowUpQuery = true
+        activeWindowSecondsRemaining = 12
     }
 
     fun speakCurrentDate() {
@@ -239,7 +250,8 @@ fun DumbHomeTab(
         val answer = if (isHindi) "आज $dateStr है।" else "Today is $dateStr."
         lastAiResponse = answer
         speakBot(answer)
-        isWaitingForFollowUpQuery = false
+        isWaitingForFollowUpQuery = true
+        activeWindowSecondsRemaining = 12
     }
 
     fun speakBatteryLevel() {
@@ -252,26 +264,43 @@ fun DumbHomeTab(
         }
         lastAiResponse = answer
         speakBot(answer)
-        isWaitingForFollowUpQuery = false
+        isWaitingForFollowUpQuery = true
+        activeWindowSecondsRemaining = 12
     }
 
     // Handle user queries (fast local checks first, then AI assistant)
     fun handleQueryText(query: String) {
         val qLower = query.lowercase(Locale.ROOT).trim()
-        val isTimeQuery = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
+
+        // Check if user is asking to silence/dismiss the bot
+        val isDismissQuery = qLower in listOf("bye", "stop", "quiet", "बाय", "अलविदा", "बस", "चुप", "शांत", "थैंक यू", "धन्यवाद", "थैंक्स") ||
+                qLower.startsWith("अलविदा") || qLower.startsWith("bye") || qLower.startsWith("बस करो")
+
+        if (isDismissQuery) {
+            val farewell = if (isHindi) "धन्यवाद! जब भी जरूरत हो, बुला लीजिएगा।" else "You're welcome! Just call me if you need anything."
+            lastAiResponse = farewell
+            isWaitingForFollowUpQuery = false
+            speakBot(farewell)
+            return
+        }
+
+        val isTimeQuery = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
+        val isDateQuery = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
         val isBatteryQuery = qLower.contains("battery") || qLower.contains("बैटरी") || qLower.contains("चार्ज")
 
         when {
             isTimeQuery -> speakCurrentTime()
+            isDateQuery -> speakCurrentDate()
             isBatteryQuery -> speakBatteryLevel()
             else -> {
                 detectedQueryText = query
                 isAiThinking = true
-                isWaitingForFollowUpQuery = false
                 viewModel.askAiAssistant(query) { response ->
                     isAiThinking = false
                     lastAiResponse = response.text
                     speakBot(response.text)
+                    isWaitingForFollowUpQuery = true
+                    activeWindowSecondsRemaining = 12
                 }
             }
         }
@@ -284,6 +313,7 @@ fun DumbHomeTab(
             BotActionType.SPEAK_BATTERY -> speakBatteryLevel()
             BotActionType.WAKE_BOT -> {
                 isWaitingForFollowUpQuery = true
+                activeWindowSecondsRemaining = 15
                 val ack = if (isHindi) "हाँ, मैं सुन रहा हूँ! क्या पूछना चाहते हैं?" else "Yes, I'm listening! What would you like to know?"
                 lastAiResponse = ack
                 speakBot(ack)
@@ -302,13 +332,15 @@ fun DumbHomeTab(
 
     // Keyword Matcher with extensive Vosk Hindi phonetic & acoustic variations from test logs
     val botKeywordRegex = remember {
-        Regex("(?i)\\b(good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद)\\b")
+        Regex("(?i)(good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*भौत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद|गॉड\\s*बाद|गॉड\\s*बात|गार्ड\\s*बात|गत\\s*बात|गत\\s*डॉट|रोड\\s*बाद|घर\\s*बैठे|घोर\\s*बाद|घोर\\s*बॉट|दैट\\s*दे)")
     }
 
-    // Active Conversational Window Countdown (15s)
+    // Active Conversational Window Countdown (15s default, 12s on follow-up)
     LaunchedEffect(isWaitingForFollowUpQuery) {
         if (isWaitingForFollowUpQuery) {
-            activeWindowSecondsRemaining = 15
+            if (activeWindowSecondsRemaining <= 0) {
+                activeWindowSecondsRemaining = 15
+            }
             while (activeWindowSecondsRemaining > 0 && isWaitingForFollowUpQuery) {
                 delay(1000)
                 activeWindowSecondsRemaining--
@@ -324,25 +356,31 @@ fun DumbHomeTab(
         if (!isRecording || isAiThinking) return@LaunchedEffect
 
         val trimmed = liveTranscript.trim()
-        if (trimmed.isNotBlank() && trimmed != lastProcessedTranscript) {
+        val now = System.currentTimeMillis()
+        val isDifferentUtterance = trimmed != lastProcessedTranscript || (now - lastProcessedTime > 2500L)
+
+        if (trimmed.isNotBlank() && isDifferentUtterance) {
             val match = botKeywordRegex.find(trimmed)
             if (match != null) {
                 val queryAfterKeyword = trimmed.substring(match.range.last + 1).trim()
                 lastProcessedTranscript = trimmed
+                lastProcessedTime = now
 
                 if (queryAfterKeyword.length >= 2) {
                     handleQueryText(queryAfterKeyword)
                 } else {
                     isWaitingForFollowUpQuery = true
+                    activeWindowSecondsRemaining = 15
                     val ack = if (isHindi) "हाँ, मैं सुन रहा हूँ! क्या पूछना चाहते हैं?" else "Yes, I'm listening! What would you like to know?"
                     lastAiResponse = ack
                     speakBot(ack)
                 }
-            } else if (isWaitingForFollowUpQuery && !isBotSpeaking && trimmed.length >= 3) {
-                // Filter out short noise hallucinations like "और", "बाद", "बात" when alone
+            } else if (isWaitingForFollowUpQuery && !isBotSpeaking && trimmed.length >= 2) {
+                // Filter out single short noise hallucinations when alone
                 val isNoiseArtifact = trimmed in listOf("और", "बाद", "बात", "दो", "घोर", "था", "थी", "है", "or", "and")
                 if (!isNoiseArtifact) {
                     lastProcessedTranscript = trimmed
+                    lastProcessedTime = now
                     handleQueryText(trimmed)
                 }
             }

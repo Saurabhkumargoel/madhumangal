@@ -813,6 +813,56 @@ Real-world field testing with 75+ session logs and Hindi voice commands revealed
 
 ---
 
+### 2.16 Multi-Turn Conversational GoodBot Persistence, Double-Back 5-Second Exit, Selection Cancellation on Back, Google Offline Language Pack Settings, and Smart Hybrid Hinglish STT
+
+#### Description & Root Cause Analysis
+Field testing with merged log `session_20261020_005559_merged.txt` and user feedback revealed five critical bugs and UX friction points:
+1. **Premature Conversational Window Closure & Repeated Query Suppression:**
+   - **Root Cause:** In `DumbHomeTab.kt`, `handleQueryText` immediately executed `isWaitingForFollowUpQuery = false` upon handling the first question. When the user asked multiple queries in sequence ("कोई न्यूज़ अपडेट दो", "न्यूज", "वेदर", "के बजे", "तारीख बताएं", "दिन कौन सा है"), all subsequent questions were ignored because the conversational window was closed.
+   - **String Equality Block:** `if (trimmed.isNotBlank() && trimmed != lastProcessedTranscript)` prevented consecutive repeated queries (such as saying "तारीख" 4 times in a row or "समय" twice).
+   - **Missing Date Query Detection:** `handleQueryText` only tested for time and battery, completely omitting date and day queries ("तारीख", "दिन", "आज क्या दिन है", "डेट", "आज क्या देन है"), routing them to generic AI thinking instead of instant on-device voice answers.
+   - **Devanagari Regex Word Boundary Bug:** Using ASCII `\b` around Devanagari Unicode characters prevented matching when utterances began or ended with Devanagari words without surrounding ASCII characters.
+2. **Back Button Exiting Immediately Instead of Canceling Selection:**
+   - **Root Cause:** Neither `LogsTab.kt` nor `MainScreen.kt` handled back press statefully. When files were selected in `LogsTab`, or when browsing secondary tabs/search, pressing Back immediately finished the Android Activity.
+3. **App Exit Without Confirmation:**
+   - **Root Cause:** Users frequently exited the app by accident on a single accidental Back press on the home tab.
+4. **Google SpeechRecognizer "Dumb" / Missing Hinglish Hybrid Recognition:**
+   - **Root Cause:** In `LiveSpeechRecognizer.kt`, line 112 used the invalid key `"android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES"` instead of the standard `"android.speech.extra.ADDITIONAL_LANGUAGES"`. The double `EXTRA_` caused Google Speech to completely ignore secondary languages, locking it strictly to Hindi without multilingual fallback for mixed English words.
+   - It also lacked `"android.speech.extra.ENABLE_LANGUAGE_DETECTION" = true` and `"android.speech.extra.LANGUAGE_DETECTION_ALLOWED_LANGUAGES" = arrayOf("hi-IN", "en-IN", "hi-Latn", "en-US")`.
+5. **No Direct Way to Download Google Offline Speech Language Packs:**
+   - **Root Cause:** When running without internet or in low-connectivity areas, Google Speech failed or degraded unless users manually navigated deep into Android device settings to download Hindi and English voice packs.
+
+#### Complete Solution Implemented
+1. **Persistent Multi-Turn Conversational Follow-Up Window (`DumbHomeTab.kt`):**
+   - TTS `UtteranceProgressListener.onDone` re-arms `isWaitingForFollowUpQuery = true` with a 12-second countdown (`activeWindowSecondsRemaining = 12`).
+   - GoodBot continues listening for follow-up questions after speaking each answer. Users can ask "समय?", "और तारीख?", "मौसम?" naturally in sequence.
+   - If the user explicitly silences the bot ("बाय", "अलविदा", "बस", "चुप"), GoodBot says farewell and closes the window (`isWaitingForFollowUpQuery = false`).
+2. **Timestamp-Based Utterance Deduplication (`DumbHomeTab.kt`):**
+   - Replaced pure string equality check with timestamp window: `val isDifferentUtterance = trimmed != lastProcessedTranscript || (now - lastProcessedTime > 2500L)`.
+   - Repeated questions (e.g. asking "तारीख" again after 2.5 seconds) are recognized and answered immediately.
+3. **Instant Date & Day Recognition (`DumbHomeTab.kt`):**
+   - Added regex detection for date and day queries: `"तारीख"`, `"तिथि"`, `"दिनांक"`, `"डेट"`, `"दैट"`, `"दिन"`, `"देन"`, `"आज क्या"`, `"आज के"`, `"वार"`, calling `speakCurrentDate()`.
+   - Removed `\b` ASCII anchors from Devanagari regex to ensure 100% reliable Unicode matching.
+   - Added new phonetic variants from latest logs: `"गुड भौत"`, `"गॉड बाद"`, `"गॉड बात"`, `"गार्ड बात"`, `"गत बात"`, `"गत डॉट"`, `"रोड बाद"`, `"घर बैठे"`, `"घोर बाद"`, `"घोर बॉट"`, `"गॉड गॉड"`, `"गत बाद"`, `"दैट दे"`.
+4. **Smart Priority-Based Back Button Architecture (`LogsTab.kt`, `MainScreen.kt`):**
+   - **Priority 1 (Selection/Confirmation in Logs):** `LogsTab.kt` BackHandler intercepts first when `selectedFiles.isNotEmpty()`, clearing selection (`selectedFiles = emptySet()`) and dismissing confirmation dialogs.
+   - **Priority 2 (Active Sheets & Dialogs):** `MainScreen.kt` BackHandler dismisses `showAiAskSheet`, `showWhatsNewDialog`, or `showAbortDialog`.
+   - **Priority 3 (Search Filter):** Clears `searchQuery` if active.
+   - **Priority 4 (Tab Navigation):** If currently on another tab (`SETTINGS`, `LOGS`, `MEDIA`, `RECORDER`, `AI`), pressing Back returns to the default Home tab.
+   - **Priority 5 (Consecutive 2-Back 5-Second App Exit):** On the Home tab, pressing Back prompts with a Toast: `"ऐप से बाहर निकलने के लिए 5 सेकंड में दोबारा बैक दबाएं"` / `"Press back again within 5 seconds to exit"`. Pressing Back a second time within 5000ms safely exits the application via `activity.finish()`.
+5. **Google SpeechRecognizer Hybrid Hinglish & Multilingual Detection (`LiveSpeechRecognizer.kt`):**
+   - Corrected extra key to `"android.speech.extra.ADDITIONAL_LANGUAGES"`.
+   - Enabled `"android.speech.extra.ENABLE_LANGUAGE_DETECTION" = true`.
+   - Added `"android.speech.extra.LANGUAGE_DETECTION_ALLOWED_LANGUAGES" = arrayOf("hi-IN", "en-IN", "hi-Latn", "en-US")`.
+   - Set `"android.speech.extra.DICTATION_MODE" = true` and `"android.speech.extra.PREFER_OFFLINE" = false` for hybrid cloud streaming with offline fallback.
+6. **Google Speech Offline Languages Shortcut (`SettingsTab.kt`):**
+   - Implemented `openGoogleVoiceLanguageSettings(context)` with an intent fallback cascade (`DOWNLOAD_VOICE_PACK`, `ACTION_VOICE_INPUT_SETTINGS`, `ACTION_LOCALE_SETTINGS`).
+   - Added a dedicated 1-tap button in Settings under STT and directly on the Google Speech Recognizer card to download offline Hindi and English language packs.
+   - Added Live Speech Recognition Language selector for toggling between Hinglish (Hybrid) and Indian English.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
+
 
 

@@ -2,6 +2,7 @@ package com.echo.recorder.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -214,6 +215,15 @@ fun LogsTab(
     var showClearLogsConfirm by remember { mutableStateOf(false) }
     var showDeleteFilesConfirm by remember { mutableStateOf(false) }
     var refreshFilesTrigger by remember { mutableStateOf(0) }
+
+    // Intercept Back button: cancel file selection first before ever exiting the app
+    BackHandler(enabled = selectedFiles.isNotEmpty() || showClearLogsConfirm || showDeleteFilesConfirm) {
+        when {
+            showClearLogsConfirm -> showClearLogsConfirm = false
+            showDeleteFilesConfirm -> showDeleteFilesConfirm = false
+            selectedFiles.isNotEmpty() -> selectedFiles = emptySet()
+        }
+    }
 
     var currentLogPage by remember { mutableStateOf(0) }
     var collapsedSeriesIds by remember { mutableStateOf<Set<String>>(emptySet()) }

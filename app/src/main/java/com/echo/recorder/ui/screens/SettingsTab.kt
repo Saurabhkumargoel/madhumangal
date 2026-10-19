@@ -2042,6 +2042,154 @@ fun SettingsTab(
             item(key = "content_stt") {
                 SettingsSectionCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // ── 🌐 Spoken Speech Recognition Language ──────────────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Language,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "पहचान भाषा (Live Speech Language)" else "Live Speech Language",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 12.sp,
+                                            color = TextPrimary
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = PrimaryBlue.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = if (userPreferences.selectedLanguage == "en-IN") "English (IN)" else "Hinglish (Hybrid)",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryBlue,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (isHindi)
+                                        "Google और Vosk में हाइब्रिड हिन्दी+अंग्रेजी (Hinglish) या Indian English पहचान चुनें।"
+                                    else
+                                        "Select hybrid Hindi+English (Hinglish) or Indian English for live recognition.",
+                                    fontSize = 11.sp,
+                                    color = TextMuted
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val langOptions = listOf(
+                                        "hi-IN" to (if (isHindi) "🇮🇳 हाइब्रिड (Hinglish)" else "🇮🇳 Hinglish Hybrid"),
+                                        "en-IN" to (if (isHindi) "🇮🇳 Indian English" else "🇮🇳 Indian English")
+                                    )
+                                    langOptions.forEach { (code, label) ->
+                                        val isSelected = userPreferences.selectedLanguage == code || (code == "hi-IN" && userPreferences.selectedLanguage != "en-IN")
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isSelected) PrimaryBlue else SurfaceDark,
+                                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorder),
+                                            modifier = Modifier.weight(1f).clickable {
+                                                viewModel.updateLanguage(code)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isSelected) DarkBackground else TextPrimary,
+                                                modifier = Modifier.padding(vertical = 7.dp),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 📥 Google Speech Offline Language Packs Shortcut ────────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = PrimaryBlue.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudDownload,
+                                            contentDescription = null,
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "Google ऑफ़लाइन भाषा डाउनलोड" else "Google Speech Offline Languages",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = PrimaryBlue
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = if (isHindi)
+                                        "Google वॉयस टाइपिंग सेटिंग्स खोलकर हिन्दी और English भाषा पैक डाउनलोड करें ताकि बिना इंटरनेट भी सटीक हाइब्रिड पहचान मिले।"
+                                    else
+                                        "Download Hindi & English offline voice packs in Google settings for fast, intelligent hybrid recognition without internet.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { openGoogleVoiceLanguageSettings(context) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().height(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "📥 Google ऑफ़लाइन भाषा सेटिंग्स खोलें" else "📥 Open Google Offline Language Settings",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
                         UserPreferences.AVAILABLE_STT_MODELS.forEach { model ->
                             val isSelected = userPreferences.selectedSttModel == model.id
                             val isDownloaded = UserPreferences.isSttModelRequirementFulfilled(
@@ -2104,6 +2252,26 @@ fun SettingsTab(
                                             onClick = { onModelClick() },
                                             colors = RadioButtonDefaults.colors(selectedColor = PrimaryBlue)
                                         )
+                                    }
+
+                                    if (model.id == UserPreferences.STT_MODEL_GOOGLE_SPEECH && isSelected) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedButton(
+                                            onClick = { openGoogleVoiceLanguageSettings(context) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, PrimaryBlue),
+                                            modifier = Modifier.fillMaxWidth().height(32.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Default.CloudDownload, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = if (isHindi) "📥 ऑफ़लाइन भाषा पैक डाउनलोड करें" else "📥 Download Offline Language Packs",
+                                                fontSize = 11.sp,
+                                                color = PrimaryBlue,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
                                     }
 
                                     val isOfflineDownloadable = model.id in listOf(
@@ -4177,4 +4345,57 @@ fun AppTabReorderingCard(
         }
     }
 }
+
+/**
+ * Intent cascade to open Google Speech Services / Voice Typing settings
+ * to allow downloading offline language packs (Hindi, Hinglish, English).
+ */
+fun openGoogleVoiceLanguageSettings(context: android.content.Context) {
+    val intents = listOf(
+        // Direct intent to Google Offline Voice Recognition Download page
+        Intent("com.google.android.voicesearch.intent.action.DOWNLOAD_VOICE_PACK").apply {
+            setPackage("com.google.android.googlequicksearchbox")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+        Intent("com.google.android.voicesearch.intent.action.DOWNLOAD_VOICE_PACK").apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+        // Speech Services by Google settings
+        Intent().apply {
+            component = android.content.ComponentName("com.google.android.tts", "com.google.android.clockwork.settings.VoiceSettingsActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+        // System Voice Input Settings
+        Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+        // Google App Settings
+        Intent("com.google.android.googlequicksearchbox.action.SETTINGS").apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        },
+        // Locale / Language settings
+        Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+    )
+
+    var launched = false
+    for (intent in intents) {
+        try {
+            context.startActivity(intent)
+            launched = true
+            break
+        } catch (_: Exception) {
+            // Try next fallback intent
+        }
+    }
+    if (!launched) {
+        android.widget.Toast.makeText(
+            context,
+            "Please open Android Settings -> System -> Languages & Input -> Voice input.",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
 

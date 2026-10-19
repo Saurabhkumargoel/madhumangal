@@ -17,6 +17,21 @@ object ReleaseNotesRegistry {
 
     val releases: List<ReleaseEntry> = listOf(
         ReleaseEntry(
+            versionCode = 202610202,
+            versionName = "0.0.2026.10.20.1",
+            releaseDate = "October 20, 2026",
+            summary = "Multi-Turn Conversational GoodBot, Safe 2-Back Exit, Selection Cancellation on Back, Google Offline Language Pack Settings, and Smart Hybrid Hinglish STT.",
+            highlights = listOf(
+                ReleaseHighlight("FIX", "🤖 Multi-Turn Continuous GoodBot: Conversational window remains active for 12s after each response so you can ask consecutive questions ('और मौसम?', 'तारीख?') without repeating wake-words."),
+                ReleaseHighlight("FIX", "🔁 Repeated Utterance Support: Removed string equality deduplication block so repeated queries like 'तारीख' or 'समय' are immediately recognized."),
+                ReleaseHighlight("NEW", "📅 Instant Date & Day Voice Answers: Direct answers for 'तारीख बताएं', 'दिन कौन सा है', 'आज क्या तारीख है', 'आज क्या दिन है'."),
+                ReleaseHighlight("NEW", "🔙 Smart Back Navigation: Pressing Back cancels item selection in Logs and Dashboard first. Pressing Back twice within 5 seconds exits app with Toast prompt on 1st back."),
+                ReleaseHighlight("NEW", "📥 Google Offline Language Pack Settings: 1-tap button in Settings to directly open Google Voice Typing to download Hindi and English offline models."),
+                ReleaseHighlight("IMPROVEMENT", "🇮🇳 Smart Hybrid Multilingual STT (Hinglish): Fixed intent extras typo and enabled Google Speech multilingual language detection (hi-IN, en-IN, hi-Latn, en-US) for natural mixed speech."),
+                ReleaseHighlight("IMPROVEMENT", "🗣️ Latest Acoustic Log Variations: Added 'गुड भौत', 'गॉड बाद', 'गत बात', 'गत डॉट', 'रोड बाद', 'घर बैठे', 'घोर बाद', 'घोर बॉट' to wake-word matcher.")
+            )
+        ),
+        ReleaseEntry(
             versionCode = 202610201,
             versionName = "0.0.2026.10.20",
             releaseDate = "October 20, 2026",

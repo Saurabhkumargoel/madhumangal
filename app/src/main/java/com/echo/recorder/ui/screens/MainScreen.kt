@@ -16,6 +16,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.PermMedia
+import android.app.Activity
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FabPosition
@@ -83,6 +86,8 @@ fun MainScreen(
 
     var showWhatsNewDialog by remember { mutableStateOf(false) }
     var releasesToShow by remember { mutableStateOf<List<com.echo.recorder.ui.releasenotes.ReleaseEntry>>(emptyList()) }
+    var showAbortDialog by remember { mutableStateOf(false) }
+    var abortSegments by remember { mutableStateOf<List<com.echo.recorder.data.AudioSegment>>(emptyList()) }
 
     val userPreferences by viewModel.userPreferences.collectAsState(initial = UserPreferences())
 
@@ -168,6 +173,21 @@ fun MainScreen(
         }
     }
 
+    val defaultHomeTab = remember(userPreferences.settingsMode, userPreferences.homeTab) {
+        if (userPreferences.settingsMode == SettingsMode.SMART) {
+            MainTab.HOME
+        } else {
+            when (userPreferences.homeTab) {
+                "DUMB_ASSISTANT" -> MainTab.DUMB_ASSISTANT
+                "DASHBOARD" -> MainTab.DASHBOARD
+                "RECORDER" -> MainTab.RECORDER
+                "AI" -> MainTab.AI
+                "MEDIA" -> MainTab.MEDIA
+                else -> MainTab.DUMB_ASSISTANT
+            }
+        }
+    }
+
     var selectedTab by remember {
         mutableStateOf(
             if (userPreferences.settingsMode == SettingsMode.SMART) {
@@ -183,6 +203,48 @@ fun MainScreen(
                 }
             }
         )
+    }
+
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+    val activity = context as? Activity
+
+    // Global Back Press Interceptor:
+    // 1. Dismiss bottom sheets & dialogs first
+    // 2. Clear search if active
+    // 3. Return to default Home tab if on another tab
+    // 4. Consecutive 2 back presses within 5 seconds exits app with Toast on first press
+    BackHandler(enabled = true) {
+        when {
+            showAiAskSheet -> {
+                showAiAskSheet = false
+            }
+            showWhatsNewDialog -> {
+                showWhatsNewDialog = false
+            }
+            showAbortDialog -> {
+                showAbortDialog = false
+            }
+            searchQuery.isNotBlank() -> {
+                viewModel.updateSearchQuery("")
+            }
+            selectedTab != defaultHomeTab -> {
+                selectedTab = defaultHomeTab
+            }
+            else -> {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPressTime < 5000L) {
+                    activity?.finish()
+                } else {
+                    lastBackPressTime = now
+                    val exitMsg = if (isHindi) {
+                        "ऐप से बाहर निकलने के लिए 5 सेकंड में दोबारा बैक दबाएं"
+                    } else {
+                        "Press back again within 5 seconds to exit"
+                    }
+                    Toast.makeText(context, exitMsg, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     LaunchedEffect(visibleTabs, userPreferences.settingsMode) {
@@ -205,8 +267,6 @@ fun MainScreen(
         }
     }
 
-    var showAbortDialog by remember { mutableStateOf(false) }
-    var abortSegments by remember { mutableStateOf<List<com.echo.recorder.data.AudioSegment>>(emptyList()) }
 
     if (showAbortDialog) {
         AbortSessionDialog(

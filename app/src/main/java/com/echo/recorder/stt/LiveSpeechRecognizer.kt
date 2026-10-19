@@ -49,9 +49,9 @@ class LiveSpeechRecognizer(
     private fun resolveLanguageTag(lang: String): String {
         val clean = lang.trim()
         return when {
-            clean.equals("hi", ignoreCase = true) || clean.equals("hin", ignoreCase = true) -> "hi-IN"
-            clean.equals("en", ignoreCase = true) || clean.equals("eng", ignoreCase = true) -> "en-IN"
-            clean.equals("auto", ignoreCase = true) -> "hi-IN"
+            clean.equals("hi", ignoreCase = true) || clean.equals("hin", ignoreCase = true) || clean.equals("hi-IN", ignoreCase = true) -> "hi-IN"
+            clean.equals("en", ignoreCase = true) || clean.equals("eng", ignoreCase = true) || clean.equals("en-IN", ignoreCase = true) -> "en-IN"
+            clean.equals("hinglish", ignoreCase = true) || clean.equals("hybrid", ignoreCase = true) || clean.equals("auto", ignoreCase = true) -> "hi-IN"
             clean.isBlank() -> "hi-IN"
             else -> clean
         }
@@ -101,15 +101,28 @@ class LiveSpeechRecognizer(
 
     private fun createRecognizerIntent(): Intent {
         val resolvedLang = resolveLanguageTag(languageCode)
+        val additionalLangs = when (resolvedLang) {
+            "hi-IN" -> arrayOf("en-IN", "hi-Latn", "en-US")
+            "en-IN" -> arrayOf("hi-IN", "hi-Latn", "en-US")
+            else -> arrayOf("hi-IN", "en-IN", "hi-Latn", "en-US")
+        }
         return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, resolvedLang)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, resolvedLang)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            // Support mixed Hindi + English (Hinglish) speech recognition seamlessly
-            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-IN", "hi-IN", "en-US"))
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+
+            // Multilingual / Hybrid Hinglish Recognition Extras
+            // Standard Android RecognizerIntent.EXTRA_ADDITIONAL_LANGUAGES is "android.speech.extra.ADDITIONAL_LANGUAGES"
+            putExtra("android.speech.extra.ADDITIONAL_LANGUAGES", additionalLangs)
+            putExtra("android.speech.extra.ENABLE_LANGUAGE_DETECTION", true)
+            putExtra("android.speech.extra.LANGUAGE_DETECTION_ALLOWED_LANGUAGES", arrayOf("hi-IN", "en-IN", "hi-Latn", "en-US"))
+            putExtra("android.speech.extra.LANGUAGE_SWITCH_INITIAL_ACTIVE_DURATION_TIME_MILLIS", 15000L)
+            putExtra("android.speech.extra.DICTATION_MODE", true)
+            // Use cloud streaming if available, seamlessly falling back to offline voice packs when offline
+            putExtra("android.speech.extra.PREFER_OFFLINE", false)
         }
     }
 
