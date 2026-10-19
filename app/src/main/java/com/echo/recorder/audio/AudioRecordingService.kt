@@ -55,6 +55,7 @@ class AudioRecordingService : Service() {
     private var sessionStartMillis: Long = 0L
     private var subtitleSequence: Int = 0
     private var customTranscriptionDir: String? = null
+    private var currentLanguage: String = "hi-IN"
 
     inner class LocalBinder : Binder() {
         fun getService(): AudioRecordingService = this@AudioRecordingService
@@ -106,6 +107,7 @@ class AudioRecordingService : Service() {
                     AudioRecordingState.actualSampleRate.value = targetSampleRate
                 }
                 bufferManager.skipSilence = prefs.skipSilence
+                currentLanguage = prefs.selectedLanguage
                 liveSpeechRecognizer?.setLanguage(prefs.selectedLanguage)
             }
         }
@@ -158,7 +160,7 @@ class AudioRecordingService : Service() {
         AudioRecordingState.currentSessionId.value = "session_$sessionTimestamp"
         AudioRecordingState.statusMessage.value = "RECORDING LIVE"
         AudioRecordingState.elapsedSeconds.value = 0L
-        AudioRecordingState.liveTranscript.value = "Listening for Hindi & Hinglish voice..."
+        AudioRecordingState.liveTranscript.value = ""
 
         // Start ticking timer
         timerJob = serviceScope.launch {
@@ -172,6 +174,7 @@ class AudioRecordingService : Service() {
         mainHandler.post {
             liveSpeechRecognizer = LiveSpeechRecognizer(
                 context = applicationContext,
+                initialLanguage = currentLanguage,
                 onPartialResult = { partial ->
                     synchronized(speechLock) {
                         lastPartialSpeech = partial

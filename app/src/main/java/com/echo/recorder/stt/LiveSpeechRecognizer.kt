@@ -12,16 +12,19 @@ import com.echo.recorder.audio.AudioRecordingState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 
 class LiveSpeechRecognizer(
     private val context: Context,
+    initialLanguage: String = "hi-IN",
     private val onPartialResult: ((String) -> Unit)? = null,
     private val onFinalResult: (String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
-    private var languageCode: String = "hi-IN" // Default Hindi / Hinglish
+    private var languageCode: String = resolveLanguageTag(initialLanguage)
+    private var hasFallenBackLanguage = false
 
     private val _liveTranscript = MutableStateFlow("")
     val liveTranscript: StateFlow<String> = _liveTranscript.asStateFlow()
@@ -33,6 +36,7 @@ class LiveSpeechRecognizer(
         val normalized = resolveLanguageTag(lang)
         if (languageCode != normalized) {
             languageCode = normalized
+            hasFallenBackLanguage = false
             if (isListening) {
                 com.echo.recorder.util.AppLogger.i("STT", "LiveSpeechRecognizer language updated to: $languageCode")
                 mainHandler.post {
@@ -79,6 +83,7 @@ class LiveSpeechRecognizer(
             } finally {
                 speechRecognizer = null
                 _isRecognizing.value = false
+                AudioRecordingState.isSpeechDetected.value = false
             }
         }
     }
@@ -100,10 +105,11 @@ class LiveSpeechRecognizer(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, resolvedLang)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, resolvedLang)
-            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, resolvedLang)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
         }
     }
 
@@ -112,86 +118,163 @@ class LiveSpeechRecognizer(
 
         try {
             if (speechRecognizer == null) {
-                val recognizer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-                    SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
-                    try {
-                        com.echo.recorder.util.AppLogger.i("STT", "Initializing On-Device SpeechRecognizer...")
-                        SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                    } catch (e: Exception) {
-                        SpeechRecognizer.createSpeechRecognizer(context)
-                    }
-                } else {
-                    SpeechRecognizer.createSpeechRecognizer(context)
-                }
+                com.echo.recorder.util.AppLogger.i("STT", "Initializing SpeechRecognizer for live transcription ($languageCode)...")
+                val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
 
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
                         _isRecognizing.value = true
                     }
 
-                    override fun onBeginningOfSpeech() {}
+                    override fun onBeginningOfSpeech() {
+                        AudioRecordingState.isSpeechDetected.value = true
+                    }
 
                     override fun onRmsChanged(rmsdB: Float) {}
 
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
-                    override fun onEndOfSpeech() {}
+                    override fun onEndOfSpeech() {
+                        AudioRecordingState.isSpeechDetected.value = false
+                    }
 
                     override fun onError(error: Int) {
                         _isRecognizing.value = false
+                        AudioRecordingState.isSpeechDetected.value = false
+
                         val errorName = when (error) {
                             SpeechRecognizer.ERROR_AUDIO -> "ERROR_AUDIO (3: Audio recording error)"
                             SpeechRecognizer.ERROR_CLIENT -> "ERROR_CLIENT (5: Client side error)"
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "ERROR_INSUFFICIENT_PERMISSIONS (9)"
-                            SpeechRecognizer.ERROR_NETWORK -> "ERROR_NETWORK (2)"
-                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "ERROR_NETWORK_TIMEOUT (1)"
-                            SpeechRecognizer.ERROR_NO_MATCH -> "ERROR_NO_MATCH (7: No speech detected in slice)"
-                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "ERROR_RECOGNIZER_BUSY (8)"
-                            SpeechRecognizer.ERROR_SERVER -> "ERROR_SERVER (4)"
-                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "ERROR_SPEECH_TIMEOUT (6)"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "ERROR_INSUFFICIENT_PERMISSIONS (9: Missing RECORD_AUDIO)"
+                            SpeechRecognizer.ERROR_NETWORK -> "ERROR_NETWORK (2: No internet connection)"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "ERROR_NETWORK_TIMEOUT (1: Network timeout)"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "ERROR_NO_MATCH (7: Silence/No speech in slice)"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "ERROR_RECOGNIZER_BUSY (8: Service busy)"
+                            SpeechRecognizer.ERROR_SERVER -> "ERROR_SERVER (4: Server error)"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "ERROR_SPEECH_TIMEOUT (6: Speech timeout)"
+                            10 -> "ERROR_TOO_MANY_REQUESTS (10: Rate limit exceeded)"
+                            11 -> "ERROR_SERVER_DISCONNECTED (11: Server disconnected)"
+                            12 -> "ERROR_LANGUAGE_NOT_SUPPORTED (12: Language not supported)"
+                            13 -> "ERROR_LANGUAGE_UNAVAILABLE (13: Offline language pack not installed)"
+                            14 -> "ERROR_CANNOT_CHECK_SUPPORT (14: Cannot check support)"
                             else -> "ERROR_CODE_$error"
                         }
-                        com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer status: $errorName")
 
-                        if (isListening) {
-                            val isFatal = error == SpeechRecognizer.ERROR_CLIENT ||
-                                    error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ||
-                                    error == SpeechRecognizer.ERROR_AUDIO
+                        // Silence / no-match is completely normal in conversational pauses: log only at debug
+                        if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer status: $errorName")
+                        } else {
+                            com.echo.recorder.util.AppLogger.w("STT", "LiveSpeechRecognizer status: $errorName")
+                        }
 
-                            if (isFatal) {
+                        if (!isListening) return
+
+                        when (error) {
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                                com.echo.recorder.util.AppLogger.e("STT", "Speech recognition stopped: Missing permission")
+                                AudioRecordingState.statusMessage.value = "ERROR: Missing Permission"
+                                stopListening()
+                            }
+
+                            12, 13 -> {
+                                // Language unavailable or not supported by recognizer
+                                com.echo.recorder.util.AppLogger.w("STT", "Language $languageCode unavailable for live recognizer. Handling fallback...")
                                 try {
                                     speechRecognizer?.destroy()
                                 } catch (_: Exception) {}
                                 speechRecognizer = null
+
+                                if (!hasFallenBackLanguage && languageCode.startsWith("hi", ignoreCase = true)) {
+                                    hasFallenBackLanguage = true
+                                    languageCode = "en-IN"
+                                    com.echo.recorder.util.AppLogger.i("STT", "Falling back language to: $languageCode")
+                                    mainHandler.postDelayed({
+                                        if (isListening) setupAndStartRecognizer()
+                                    }, 300L)
+                                } else {
+                                    // Language unavailable and fallback exhausted: delay retries so we don't spam loop
+                                    com.echo.recorder.util.AppLogger.w("STT", "Offline speech pack missing for $languageCode. Retrying after delay...")
+                                    mainHandler.postDelayed({
+                                        if (isListening) setupAndStartRecognizer()
+                                    }, 4000L)
+                                }
                             }
 
-                            val delayMs = when (error) {
-                                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 600L
-                                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> 1500L
-                                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 150L
-                                SpeechRecognizer.ERROR_AUDIO -> 500L
-                                else -> 300L
+                            SpeechRecognizer.ERROR_CLIENT, SpeechRecognizer.ERROR_AUDIO -> {
+                                try {
+                                    speechRecognizer?.destroy()
+                                } catch (_: Exception) {}
+                                speechRecognizer = null
+
+                                val delayMs = if (error == SpeechRecognizer.ERROR_AUDIO) 500L else 300L
+                                mainHandler.postDelayed({
+                                    if (isListening) setupAndStartRecognizer()
+                                }, delayMs)
                             }
 
-                            mainHandler.postDelayed({
-                                if (isListening) {
-                                    if (speechRecognizer != null) {
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, 11 -> {
+                                // Network unavailable / offline: back off to 3 seconds
+                                mainHandler.postDelayed({
+                                    if (isListening) {
+                                        if (speechRecognizer != null) {
+                                            try {
+                                                speechRecognizer?.startListening(createRecognizerIntent())
+                                            } catch (e: Exception) {
+                                                restartListening()
+                                            }
+                                        } else {
+                                            setupAndStartRecognizer()
+                                        }
+                                    }
+                                }, 3000L)
+                            }
+
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                                mainHandler.postDelayed({
+                                    if (isListening) {
                                         try {
                                             speechRecognizer?.startListening(createRecognizerIntent())
                                         } catch (e: Exception) {
                                             restartListening()
                                         }
-                                    } else {
-                                        setupAndStartRecognizer()
                                     }
-                                }
-                            }, delayMs)
+                                }, 800L)
+                            }
+
+                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                                // Seamlessly resume listening immediately for next utterance
+                                mainHandler.postDelayed({
+                                    if (isListening) {
+                                        try {
+                                            speechRecognizer?.startListening(createRecognizerIntent())
+                                        } catch (e: Exception) {
+                                            restartListening()
+                                        }
+                                    }
+                                }, 100L)
+                            }
+
+                            else -> {
+                                mainHandler.postDelayed({
+                                    if (isListening) {
+                                        if (speechRecognizer != null) {
+                                            try {
+                                                speechRecognizer?.startListening(createRecognizerIntent())
+                                            } catch (e: Exception) {
+                                                restartListening()
+                                            }
+                                        } else {
+                                            setupAndStartRecognizer()
+                                        }
+                                    }
+                                }, 500L)
+                            }
                         }
                     }
 
                     override fun onResults(results: Bundle?) {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val text = matches?.firstOrNull() ?: ""
+                        val text = matches?.firstOrNull()?.trim() ?: ""
                         if (text.isNotBlank()) {
                             com.echo.recorder.util.AppLogger.i("STT", "LiveSpeechRecognizer captured final text: \"$text\"")
                             _liveTranscript.value = text
@@ -207,13 +290,13 @@ class LiveSpeechRecognizer(
                                         restartListening()
                                     }
                                 }
-                            }, 150)
+                            }, 100L)
                         }
                     }
 
                     override fun onPartialResults(partialResults: Bundle?) {
                         val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val partial = matches?.firstOrNull() ?: ""
+                        val partial = matches?.firstOrNull()?.trim() ?: ""
                         if (partial.isNotBlank()) {
                             com.echo.recorder.util.AppLogger.d("STT", "LiveSpeechRecognizer partial: \"$partial\"")
                             _liveTranscript.value = partial
@@ -230,7 +313,7 @@ class LiveSpeechRecognizer(
 
             speechRecognizer?.startListening(createRecognizerIntent())
         } catch (e: Exception) {
-            e.printStackTrace()
+            com.echo.recorder.util.AppLogger.e("STT", "Exception in setupAndStartRecognizer: ${e.message}", e)
             restartListening()
         }
     }
