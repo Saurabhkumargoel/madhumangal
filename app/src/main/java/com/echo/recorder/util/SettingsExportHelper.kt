@@ -64,6 +64,9 @@ object SettingsExportHelper {
             put("botInterruptionNoiseGateDb", prefs.botInterruptionNoiseGateDb)
             put("logGroupingGapMinutes", prefs.logGroupingGapMinutes)
             put("logFilesPerPage", prefs.logFilesPerPage)
+            put("hasCompletedOnboarding", prefs.hasCompletedOnboarding)
+            put("selectedCalendarApp", prefs.selectedCalendarApp)
+            put("devAdvancedVisibleSettings", JSONArray(prefs.devAdvancedVisibleSettings))
         }
         return root.toString(2)
     }
@@ -130,7 +133,10 @@ object SettingsExportHelper {
                 botCustomActions = root.optString("botCustomActions", "[]"),
                 botInterruptionNoiseGateDb = root.optInt("botInterruptionNoiseGateDb", -20),
                 logGroupingGapMinutes = root.optInt("logGroupingGapMinutes", 5),
-                logFilesPerPage = root.optInt("logFilesPerPage", 10)
+                logFilesPerPage = root.optInt("logFilesPerPage", 10),
+                hasCompletedOnboarding = root.optBoolean("hasCompletedOnboarding", false),
+                selectedCalendarApp = root.optString("selectedCalendarApp", UserPreferences.CALENDAR_APP_GOOGLE),
+                devAdvancedVisibleSettings = optStringSet("devAdvancedVisibleSettings", UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS)
             )
         } catch (e: Exception) {
             AppLogger.e("SETTINGS_IMPORT", "Failed to parse settings JSON: ${e.message}", e)

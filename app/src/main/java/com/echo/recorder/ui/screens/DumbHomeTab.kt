@@ -284,6 +284,34 @@ fun DumbHomeTab(
             return
         }
 
+        if (com.echo.recorder.util.ReminderHelper.isReminderQuery(query)) {
+            val reminder = com.echo.recorder.util.ReminderHelper.parseReminder(query)
+            viewModel.createTask(
+                title = reminder.title,
+                categoryGroup = "Reminders",
+                priority = com.echo.recorder.data.NoteTask.PRIORITY_HIGH,
+                isLowHangingFruit = false,
+                dueText = reminder.formattedTime,
+                parentId = null,
+                autoCompleteOnSubtasksDone = false
+            )
+            com.echo.recorder.util.ReminderHelper.launchCalendarReminder(
+                context = context,
+                reminder = reminder,
+                targetCalendarApp = userPreferences.selectedCalendarApp
+            )
+            val answer = if (isHindi) {
+                "मैंने ${reminder.formattedTime} पर '${reminder.title}' के लिए कैलेंडर रिमाइंडर खोल दिया है।"
+            } else {
+                "I've opened the calendar reminder for '${reminder.title}' at ${reminder.formattedTime}."
+            }
+            lastAiResponse = answer
+            speakBot(answer)
+            isWaitingForFollowUpQuery = true
+            activeWindowSecondsRemaining = 12
+            return
+        }
+
         val isTimeQuery = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
         val isDateQuery = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
         val isBatteryQuery = qLower.contains("battery") || qLower.contains("बैटरी") || qLower.contains("चार्ज")
@@ -430,7 +458,11 @@ fun DumbHomeTab(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(DarkBackground)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF0F141C), Color(0xFF07090E))
+                    )
+                )
                 .padding(horizontal = 20.dp, vertical = 16.dp)
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -443,10 +475,21 @@ fun DumbHomeTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val modeLabel = when (userPreferences.settingsMode) {
+                        com.echo.recorder.data.SettingsMode.SMART -> if (isHindi) "⚡ स्मार्ट मोड" else "⚡ SMART MODE"
+                        com.echo.recorder.data.SettingsMode.ADVANCED -> if (isHindi) "⚙️ एडवांस्ड मोड" else "⚙️ ADVANCED MODE"
+                        com.echo.recorder.data.SettingsMode.DEVELOPER -> if (isHindi) "🛠️ डेवलपर मोड" else "🛠️ DEV MODE"
+                    }
+                    val modeColor = when (userPreferences.settingsMode) {
+                        com.echo.recorder.data.SettingsMode.SMART -> PrimaryBlue
+                        com.echo.recorder.data.SettingsMode.ADVANCED -> AccentPurple
+                        com.echo.recorder.data.SettingsMode.DEVELOPER -> Color(0xFF10B981)
+                    }
+
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = SurfaceDark,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.25f))
+                        color = Color(0xFF141A24),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, modeColor.copy(alpha = 0.35f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -454,13 +497,13 @@ fun DumbHomeTab(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "Smart Assistant",
-                                tint = PrimaryBlue,
+                                contentDescription = "Assistant Mode",
+                                tint = modeColor,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isHindi) "स्मार्ट वॉइस मोड" else "SMART VOICE MODE",
+                                text = modeLabel,
                                 color = TextPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -709,6 +752,54 @@ fun DumbHomeTab(
                 }
             }
 
+            // GUIDED CONVERSATION PROMPTS (CLEAN PILLS)
+            Spacer(modifier = Modifier.height(14.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (isHindi) "💡 ऐसे पूछें (टैप करें):" else "💡 Quick Prompts (Tap to ask):",
+                    fontSize = 11.sp,
+                    color = TextMuted,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val promptSuggestions = if (isHindi) listOf(
+                        "🔔 मुझे याद दिलाना कल 10 बजे मीटिंग है" to "मुझे याद दिलाना कल 10 बजे मीटिंग है",
+                        "⏰ समय क्या है?" to "समय क्या है?",
+                        "📅 आज क्या तारीख है?" to "आज क्या तारीख है?",
+                        "🔋 बैटरी कितनी है?" to "बैटरी कितनी है?"
+                    ) else listOf(
+                        "🔔 Remind me tomorrow 10am meeting" to "Remind me tomorrow at 10 AM for meeting",
+                        "⏰ What's the time?" to "What is the time?",
+                        "📅 What's the date?" to "What is the date?",
+                        "🔋 Battery level?" to "Battery level?"
+                    )
+
+                    promptSuggestions.forEach { (label, prompt) ->
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color(0xFF141923),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263346)),
+                            modifier = Modifier.clickable { handleQueryText(prompt) }
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Quick Actions Placement Grid
             if (quickActions.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -893,33 +984,35 @@ fun DumbHomeTab(
             }
         }
 
-        // FLOATING ACTION BUTTON & FLOATING CUSTOM BUTTONS (AVAILABLE IN ALL MODES)
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // Standalone Floating Custom Action Buttons
-            floatingActions.forEach { action ->
-                CustomActionButton(action = action, onClick = { executeCustomAction(action) })
-            }
-
-            // Pencil Circular FAB (GoodBot Studio for All Modes)
-            FloatingActionButton(
-                onClick = { showStudioDialog = true },
-                shape = CircleShape,
-                containerColor = PrimaryBlue,
-                contentColor = Color.White,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
-                modifier = Modifier.size(54.dp)
+        // FLOATING ACTION BUTTON & CUSTOM BUTTONS (DEVELOPER MODE ONLY)
+        if (userPreferences.isDeveloperMode) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit GoodBot UI",
-                    modifier = Modifier.size(24.dp)
-                )
+                // Standalone Floating Custom Action Buttons
+                floatingActions.forEach { action ->
+                    CustomActionButton(action = action, onClick = { executeCustomAction(action) })
+                }
+
+                // Pencil Circular FAB (GoodBot Studio for Developer Mode)
+                FloatingActionButton(
+                    onClick = { showStudioDialog = true },
+                    shape = CircleShape,
+                    containerColor = PrimaryBlue,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
+                    modifier = Modifier.size(54.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit GoodBot UI",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
 

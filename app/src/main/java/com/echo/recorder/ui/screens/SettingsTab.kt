@@ -89,6 +89,7 @@ import com.echo.recorder.ui.viewmodel.ModelDownloadStatus
 import java.util.Locale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -271,6 +272,25 @@ fun SettingsTab(
         }
     }
 
+
+    // JSON Settings file export launcher (User selects custom destination path each time)
+    var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    val jsonExportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null && pendingExportJson != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { os ->
+                    os.write(pendingExportJson!!.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "💾 Settings saved to chosen file path!", Toast.LENGTH_LONG).show()
+                showExportDialog = false
+                pendingExportJson = null
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error saving file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // JSON Settings file picker launcher
     val jsonImportPickerLauncher = rememberLauncherForActivityResult(
@@ -586,6 +606,124 @@ fun SettingsTab(
                                                 color = if (isSel) DarkBackground else TextPrimary,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                             )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 📅 Calendar App for "Mujhe Yaad Dilana" Reminders ──────────
+                        val isCalendarConfigVisible = userPreferences.isDeveloperMode ||
+                                (userPreferences.settingsMode == SettingsMode.ADVANCED && userPreferences.devAdvancedVisibleSettings.contains("sec_calendar_config"))
+                        if (isCalendarConfigVisible) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, CardBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (userPreferences.isDeveloperMode) {
+                                                DevModeVisibilityCheckbox(
+                                                    settingKey = "sec_calendar_config",
+                                                    isCurrentlyActive = true,
+                                                    isAdvancedVisible = userPreferences.devAdvancedVisibleSettings.contains("sec_calendar_config"),
+                                                    onToggle = { enable ->
+                                                        viewModel.toggleDevAdvancedVisibleSetting("sec_calendar_config", enable)
+                                                    }
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = Color(0xFF10B981),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = if (isHindi) "📅 कैलेंडर ऐप (मुझे याद दिलाना)" else "📅 Calendar App (Reminders)",
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextPrimary,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+
+                                        val activeCalLabel = when (userPreferences.selectedCalendarApp) {
+                                            UserPreferences.CALENDAR_APP_GOOGLE -> "Google"
+                                            UserPreferences.CALENDAR_APP_SAMSUNG -> "Samsung"
+                                            else -> "Default"
+                                        }
+                                        Text(
+                                            text = activeCalLabel,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF10B981)
+                                        )
+                                    }
+
+                                    Text(
+                                        text = if (isHindi) "\"मुझे याद दिलाना\" बोलने पर चुने गए कैलेंडर ऐप में रिमाइंडर सेट होगा।" else "Voice reminders (\"mujhe yaad dilana\") will be scheduled into this calendar app.",
+                                        fontSize = 10.sp,
+                                        color = TextMuted
+                                    )
+
+                                    val calendarOptions = listOf(
+                                        Triple(UserPreferences.CALENDAR_APP_GOOGLE, "Google Calendar", "com.google.android.calendar"),
+                                        Triple(UserPreferences.CALENDAR_APP_SAMSUNG, "Samsung Calendar", "com.samsung.android.calendar"),
+                                        Triple(UserPreferences.CALENDAR_APP_DEFAULT, "System Default", "Default calendar intent")
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        calendarOptions.forEach { (calKey, label, _) ->
+                                            val isSel = userPreferences.selectedCalendarApp == calKey
+                                            val isOptVisibleInAdv = userPreferences.devAdvancedVisibleSettings.contains("cal_$calKey") || isSel
+                                            if (userPreferences.isDeveloperMode || isOptVisibleInAdv) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = if (isSel) Color(0xFF10B981).copy(alpha = 0.2f) else Color.Transparent,
+                                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF10B981) else CardBorder),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable {
+                                                            viewModel.updateSelectedCalendarApp(calKey)
+                                                            Toast.makeText(context, "Calendar set to: $label", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.Center
+                                                    ) {
+                                                        if (userPreferences.isDeveloperMode) {
+                                                            DevModeVisibilityCheckbox(
+                                                                settingKey = "cal_$calKey",
+                                                                isCurrentlyActive = isSel,
+                                                                isAdvancedVisible = userPreferences.devAdvancedVisibleSettings.contains("cal_$calKey"),
+                                                                onToggle = { enable ->
+                                                                    viewModel.toggleDevAdvancedVisibleSetting("cal_$calKey", enable)
+                                                                }
+                                                            )
+                                                        }
+                                                        Text(
+                                                            text = label,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                            color = if (isSel) Color(0xFF10B981) else TextPrimary,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1652,7 +1790,19 @@ fun SettingsTab(
                             color = TextSecondary
                         )
 
-                        AppThemes.ALL_THEMES.forEach { themeOption ->
+                        val visibleThemes = remember(userPreferences.settingsMode, userPreferences.devAdvancedVisibleSettings, userPreferences.activeTheme) {
+                            when (userPreferences.settingsMode) {
+                                SettingsMode.SMART -> AppThemes.ALL_THEMES.filter {
+                                    it.id in listOf("GRADIENT_BLACK", "MIDNIGHT_BLUE", "DARK", "LIGHT") || it.id == userPreferences.activeTheme
+                                }
+                                SettingsMode.ADVANCED -> AppThemes.ALL_THEMES.filter {
+                                    it.id == userPreferences.activeTheme || userPreferences.devAdvancedVisibleSettings.contains("theme_${it.id}")
+                                }
+                                SettingsMode.DEVELOPER -> AppThemes.ALL_THEMES
+                            }
+                        }
+
+                        visibleThemes.forEach { themeOption ->
                             val isSelected = userPreferences.activeTheme == themeOption.id
 
                             Surface(
@@ -1676,6 +1826,16 @@ fun SettingsTab(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            if (userPreferences.isDeveloperMode) {
+                                                DevModeVisibilityCheckbox(
+                                                    settingKey = "theme_${themeOption.id}",
+                                                    isCurrentlyActive = isSelected,
+                                                    isAdvancedVisible = userPreferences.devAdvancedVisibleSettings.contains("theme_${themeOption.id}"),
+                                                    onToggle = { enable ->
+                                                        viewModel.toggleDevAdvancedVisibleSetting("theme_${themeOption.id}", enable)
+                                                    }
+                                                )
+                                            }
                                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                 Surface(shape = CircleShape, color = themeOption.primaryColor, modifier = Modifier.size(16.dp)) {}
                                                 Surface(shape = CircleShape, color = themeOption.accentColor, modifier = Modifier.size(16.dp)) {}
@@ -2190,7 +2350,19 @@ fun SettingsTab(
                             }
                         }
 
-                        UserPreferences.AVAILABLE_STT_MODELS.forEach { model ->
+                        val visibleSttModels = remember(userPreferences.settingsMode, userPreferences.devAdvancedVisibleSettings, userPreferences.selectedSttModel) {
+                            when (userPreferences.settingsMode) {
+                                SettingsMode.SMART -> UserPreferences.AVAILABLE_STT_MODELS.filter {
+                                    it.id in listOf(UserPreferences.STT_MODEL_GOOGLE_SPEECH, UserPreferences.STT_MODEL_VOSK_HINDI) || it.id == userPreferences.selectedSttModel
+                                }
+                                SettingsMode.ADVANCED -> UserPreferences.AVAILABLE_STT_MODELS.filter {
+                                    it.id == userPreferences.selectedSttModel || userPreferences.devAdvancedVisibleSettings.contains("stt_${it.id}")
+                                }
+                                SettingsMode.DEVELOPER -> UserPreferences.AVAILABLE_STT_MODELS
+                            }
+                        }
+
+                        visibleSttModels.forEach { model ->
                             val isSelected = userPreferences.selectedSttModel == model.id
                             val isDownloaded = UserPreferences.isSttModelRequirementFulfilled(
                                 context = context,
@@ -2232,6 +2404,16 @@ fun SettingsTab(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        if (userPreferences.isDeveloperMode) {
+                                            DevModeVisibilityCheckbox(
+                                                settingKey = "stt_${model.id}",
+                                                isCurrentlyActive = isSelected,
+                                                isAdvancedVisible = userPreferences.devAdvancedVisibleSettings.contains("stt_${model.id}"),
+                                                onToggle = { enable ->
+                                                    viewModel.toggleDevAdvancedVisibleSetting("stt_${model.id}", enable)
+                                                }
+                                            )
+                                        }
                                         Column(modifier = Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(model.name, fontWeight = FontWeight.Bold, color = if (isSelected) PrimaryBlue else TextPrimary, fontSize = 14.sp)
@@ -2426,7 +2608,19 @@ fun SettingsTab(
                             }
                         }
 
-                        UserPreferences.AVAILABLE_AI_MODELS.forEach { model ->
+                        val visibleAiModels = remember(userPreferences.settingsMode, userPreferences.devAdvancedVisibleSettings, userPreferences.selectedAiModel) {
+                            when (userPreferences.settingsMode) {
+                                SettingsMode.SMART -> UserPreferences.AVAILABLE_AI_MODELS.filter {
+                                    it.id in listOf(UserPreferences.AI_MODEL_LOCAL_TINY, UserPreferences.AI_MODEL_LOCAL_LLAMA) || it.id == userPreferences.selectedAiModel
+                                }
+                                SettingsMode.ADVANCED -> UserPreferences.AVAILABLE_AI_MODELS.filter {
+                                    it.id == userPreferences.selectedAiModel || userPreferences.devAdvancedVisibleSettings.contains("ai_${it.id}")
+                                }
+                                SettingsMode.DEVELOPER -> UserPreferences.AVAILABLE_AI_MODELS
+                            }
+                        }
+
+                        visibleAiModels.forEach { model ->
                             val isSelected = userPreferences.selectedAiModel == model.id
                             val isFulfilled = UserPreferences.isAiModelRequirementFulfilled(
                                 context = context,
@@ -2482,6 +2676,16 @@ fun SettingsTab(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        if (userPreferences.isDeveloperMode) {
+                                            DevModeVisibilityCheckbox(
+                                                settingKey = "ai_${model.id}",
+                                                isCurrentlyActive = isSelected,
+                                                isAdvancedVisible = userPreferences.devAdvancedVisibleSettings.contains("ai_${model.id}"),
+                                                onToggle = { enable ->
+                                                    viewModel.toggleDevAdvancedVisibleSetting("ai_${model.id}", enable)
+                                                }
+                                            )
+                                        }
                                         Column(modifier = Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(model.name, fontWeight = FontWeight.Bold, color = if (isSelected) AccentPurple else TextPrimary, fontSize = 14.sp)
@@ -3127,13 +3331,9 @@ fun SettingsTab(
                             val json = viewModel.exportSelectedSettingsToJson(
                                 exportAudio, exportStt, exportAi, exportAppearance, exportStorage
                             )
-                            val file = viewModel.saveSettingsToFile(json)
-                            if (file != null) {
-                                Toast.makeText(context, "💾 Saved to: ${file.name}", Toast.LENGTH_LONG).show()
-                                showExportDialog = false
-                            } else {
-                                Toast.makeText(context, "Could not write file", Toast.LENGTH_SHORT).show()
-                            }
+                            pendingExportJson = json
+                            val defaultName = "echo_settings_backup_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())}.json"
+                            jsonExportFileLauncher.launch(defaultName)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
@@ -4397,5 +4597,58 @@ fun openGoogleVoiceLanguageSettings(context: android.content.Context) {
         ).show()
     }
 }
+
+/**
+ * Developer Mode Meta-Control:
+ * Renders a visibility toggle checkbox for Advanced Mode.
+ * - If [isCurrentlyActive] is true, the checkbox is grayed out/safeguarded.
+ * - Touching only this checkbox toggles inclusion in devAdvancedVisibleSettings without triggering the row's main click.
+ */
+@Composable
+fun DevModeVisibilityCheckbox(
+    settingKey: String,
+    isCurrentlyActive: Boolean,
+    isAdvancedVisible: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val checked = isAdvancedVisible || isCurrentlyActive
+    val checkboxColor = when {
+        isCurrentlyActive -> TextMuted.copy(alpha = 0.45f)
+        checked -> Color(0xFF10B981)
+        else -> TextMuted
+    }
+
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = if (checked) checkboxColor.copy(alpha = 0.12f) else Color.Transparent,
+        border = BorderStroke(1.dp, checkboxColor.copy(alpha = 0.4f)),
+        modifier = modifier
+            .padding(end = 6.dp)
+            .clickable(enabled = !isCurrentlyActive) {
+                onToggle(!isAdvancedVisible)
+            }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = if (checked) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                contentDescription = if (isCurrentlyActive) "Active setting safeguarded" else "Toggle visibility in Advanced Mode",
+                tint = checkboxColor,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = if (isCurrentlyActive) "LOCK" else "ADV",
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = checkboxColor
+            )
+        }
+    }
+}
+
 
 

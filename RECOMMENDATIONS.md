@@ -862,6 +862,55 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+### 2.15 Voice Assistant Redesign, "Mujhe Yaad Dilana" Calendar Reminders, SAF Custom Settings Export, Dev Mode Visibility Controls, and First-Run Onboarding
+
+#### Description & Impact
+1. **Reminder Triggering ("मुझे याद दिलाना" / "Mujhe yaad dilana"):**
+   - Users frequently asked GoodBot to remember tasks or remind them at a particular time (e.g. "कल शाम 5 बजे मुझे याद दिलाना दवा लेने के लिए" or "remind me at 4pm to call doctor").
+   - Previously, these were forwarded to generic AI thinking or failed silently without scheduling an actual system reminder or calendar event.
+2. **Hardcoded Settings Export Destination:**
+   - Settings export previously saved automatically into `notes/` (`echo_settings_backup_...json`) without prompting the user. The user requested that settings must be exportable to any custom directory selected via a file picker dialog on every export.
+3. **Overcrowded UI & "AI Slop" Visual Clutter:**
+   - Feedback from reviewers ("Mr WhiteHat") criticized excessive neon hues, visual clutter, and lack of refined minimalism. Assistant front-ends needed an uncluttered, deep charcoal/black gradient aesthetic (`#0F141C` -> `#07090E`) with calm slate borders and zero neon distraction.
+4. **Settings Complexity vs. Mode Hierarchy:**
+   - Smart Mode should be ultra-clean with only essential daily settings.
+   - Advanced Mode should have only a curated few more settings than Smart Mode.
+   - Developer Mode should have full knobs, plus the meta-ability to control which settings and options (including individual dropdown and model items) appear in Advanced Mode via visibility checkboxes.
+   - Guardrail: Active/selected options must be safeguarded (grayed out) so they cannot be accidentally hidden or broken.
+   - Touch Isolation: Tapping the checkbox toggles Advanced visibility; tapping the row selects the option.
+5. **Missing First-Run Onboarding:**
+   - New users landed directly on unconfigured defaults without selecting language, preferred mode, or offline voice model.
+
+#### Complete Solution Implemented
+1. **Intelligent Reminder & Calendar Intent Engine (`ReminderHelper.kt`, `DumbHomeTab.kt`):**
+   - Added regex detection for reminder intents: `"मुझे याद दिलाना"`, `"याद दिलाना"`, `"याद दिलाओ"`, `"याद रखना"`, `"remind me"`, `"yaad dila"`, `"yaad rakh"`, `"रिमाइंडर"`.
+   - Extracted reminder subject and temporal information (e.g. "शाम 5 बजे", "at 4pm", "कल", "tomorrow", "सुबह 9 बजे").
+   - Integrated with Android `CalendarContract.ACTION_INSERT` / `ACTION_EVENT_EDIT` with configurable calendar targets (`GOOGLE_CALENDAR`, `SAMSUNG_CALENDAR`, `SYSTEM_DEFAULT`).
+   - Automatically records a task in `NoteTask` with `PRIORITY_HIGH` and opens the user's preferred calendar app with pre-filled title, time, and notes.
+   - Speaks immediate Hindi/English audio confirmation: `"मैंने [समय] पर '[विषय]' के लिए कैलेंडर रिमाइंडर खोल दिया है।"`
+2. **SAF Custom Path Settings Export (`SettingsTab.kt`):**
+   - Replaced hardcoded directory export with Android Storage Access Framework (`ActivityResultContracts.CreateDocument("application/json")`).
+   - On tapping "Export JSON File", the system file picker opens, allowing the user to select any storage location (SD card, Google Drive, Downloads, Documents) and name the file.
+   - Streams the serialized `EchoSettingsBackup` directly into `context.contentResolver.openOutputStream(uri)`.
+3. **Developer Mode Meta-Visibility Controls for Advanced Mode (`SettingsTab.kt`):**
+   - Added `devAdvancedVisibleSettings: Set<String>` in `UserPreferences`.
+   - In Developer Mode, rendered isolated visibility toggle checkboxes (`DevModeVisibilityCheckbox`) next to setting sections, options, and model items.
+   - Active/selected options have disabled/grayed-out checkboxes (`isCurrentlyActive = true`), preventing accidental deselecting of in-use settings.
+   - Touching the checkbox toggles Advanced visibility; touching the row selects the option.
+   - Advanced Mode filters settings dynamically against `devAdvancedVisibleSettings`.
+4. **First-Run Onboarding Setup Screen (`MainScreen.kt`):**
+   - Added `hasCompletedOnboarding: Boolean` in `UserPreferences`.
+   - If false, displays an elegant, dark-themed `OnboardingSetupDialog` on app launch:
+     - Step 1: Language selection (Hindi, English, Hinglish).
+     - Step 2: Mode selection (Smart, Advanced, Developer).
+     - Step 3: 1-Tap Offline Speech Recognition pre-download (Vosk Hindi ~45MB) so offline STT functions out of the box.
+     - "Get Started" button commits preferences and transitions to the main experience.
+5. **Charcoal / Gradient Black Aesthetic Across Interface:**
+   - Upgraded backgrounds to sleek vertical gradients (`#0F141C` -> `#07090E`).
+   - Eliminated neon glare, adopting slate borders (`#222F3E`), emerald accents (`#10B981`) for listening, and deep midnight cards (`#141B26`).
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

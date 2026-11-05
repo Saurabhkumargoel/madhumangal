@@ -448,6 +448,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateHasCompletedOnboarding(completed: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateHasCompletedOnboarding(completed)
+        }
+    }
+
+    fun completeOnboarding() {
+        updateHasCompletedOnboarding(true)
+    }
+
+    fun updateSelectedCalendarApp(app: String) {
+        viewModelScope.launch {
+            prefsRepo.updateSelectedCalendarApp(app)
+        }
+    }
+
+    fun updateDevAdvancedVisibleSettings(settings: Set<String>) {
+        viewModelScope.launch {
+            prefsRepo.updateDevAdvancedVisibleSettings(settings)
+        }
+    }
+
+    fun toggleDevAdvancedVisibleSetting(key: String, enable: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.toggleDevAdvancedVisibleSetting(key, enable)
+        }
+    }
+
     fun updateLogFileExtension(ext: String) {
         viewModelScope.launch {
             prefsRepo.updateLogFileExtension(ext)

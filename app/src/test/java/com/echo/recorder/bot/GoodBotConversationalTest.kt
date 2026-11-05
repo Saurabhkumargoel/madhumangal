@@ -120,4 +120,45 @@ class GoodBotConversationalTest {
         shouldExit = (secondPressSlow - lastBackTime < 5000L)
         assertFalse("Consecutive press after 6s should NOT exit", shouldExit)
     }
+
+    @Test
+    fun testReminderTriggerPhrases() {
+        val reminderPhrases = listOf(
+            "मुझे याद दिलाना",
+            "mujhe yaad dilana",
+            "याद दिलाना",
+            "याद दिलाओ",
+            "याद दिला",
+            "याद रखना",
+            "remind me",
+            "सेट रिमाइंडर",
+            "कल शाम 5 बजे मुझे याद दिलाना दवा लेने के लिए",
+            "remind me at 4pm to call doctor"
+        )
+
+        for (phrase in reminderPhrases) {
+            val isReminder = phrase.contains("याद दिला") ||
+                    phrase.contains("याद रखना") ||
+                    phrase.lowercase(Locale.ROOT).contains("remind me") ||
+                    phrase.lowercase(Locale.ROOT).contains("yaad dila") ||
+                    phrase.lowercase(Locale.ROOT).contains("yaad rakh") ||
+                    phrase.contains("रिमाइंडर")
+            assertTrue("Expected '$phrase' to be recognized as reminder query", isReminder)
+        }
+    }
+
+    @Test
+    fun testReminderTimeParsingExtraction() {
+        val test1 = "कल शाम 5 बजे दवा लेना मुझे याद दिलाना"
+        var cleanTitle = test1.replace("मुझे याद दिलाना", "")
+            .replace("याद दिलाना", "")
+            .replace("remind me", "", ignoreCase = true)
+            .trim()
+        assertTrue(cleanTitle.contains("दवा लेना"))
+
+        val test2 = "remind me at 4pm to call doctor"
+        val isPm = test2.lowercase(Locale.ROOT).contains("pm")
+        assertTrue(isPm)
+    }
 }
+

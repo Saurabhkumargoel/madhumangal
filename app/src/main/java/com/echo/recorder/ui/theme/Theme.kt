@@ -178,7 +178,29 @@ object AppThemes {
         onSurface = Color(0xFFF5F5F5)
     )
 
+    val GradientBlack = darkColorScheme(
+        primary = Color(0xFF38BDF8),
+        secondary = Color(0xFF94A3B8),
+        tertiary = Color(0xFF10B981),
+        background = Color(0xFF07090E),
+        surface = Color(0xFF10141D),
+        surfaceVariant = Color(0xFF181F2B),
+        onPrimary = Color(0xFF07090E),
+        onSecondary = Color(0xFFF8FAFC),
+        onBackground = Color(0xFFF8FAFC),
+        onSurface = Color(0xFFF8FAFC)
+    )
+
     val ALL_THEMES = listOf(
+        AppThemeOption(
+            id = "GRADIENT_BLACK",
+            name = "Obsidian Gradient Black",
+            description = "Silky gradient black tones, zero neon, high-contrast slate",
+            primaryColor = Color(0xFF38BDF8),
+            backgroundColor = Color(0xFF07090E),
+            surfaceColor = Color(0xFF10141D),
+            accentColor = Color(0xFF94A3B8)
+        ),
         AppThemeOption(
             id = "LIGHT",
             name = "Light Mode",
@@ -317,6 +339,7 @@ object AppThemes {
         }
 
         val scheme = when (themeId) {
+            "GRADIENT_BLACK" -> GradientBlack
             "AMOLED_HIGH" -> AmoledHigh
             "LIGHT" -> LightMode
             "DARK" -> DarkSlate

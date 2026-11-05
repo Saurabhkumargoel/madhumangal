@@ -64,6 +64,9 @@ class PreferencesRepository(private val context: Context) {
         val BOT_INTERRUPTION_NOISE_GATE_DB = intPreferencesKey("bot_interruption_noise_gate_db")
         val LOG_GROUPING_GAP_MINUTES = intPreferencesKey("log_grouping_gap_minutes")
         val LOG_FILES_PER_PAGE = intPreferencesKey("log_files_per_page")
+        val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
+        val SELECTED_CALENDAR_APP = stringPreferencesKey("selected_calendar_app")
+        val DEV_ADVANCED_VISIBLE_SETTINGS = androidx.datastore.preferences.core.stringSetPreferencesKey("dev_advanced_visible_settings")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -114,7 +117,10 @@ class PreferencesRepository(private val context: Context) {
             lastSeenVersionCode = preferences[PreferencesKeys.LAST_SEEN_VERSION_CODE] ?: 0,
             botInterruptionNoiseGateDb = preferences[PreferencesKeys.BOT_INTERRUPTION_NOISE_GATE_DB] ?: -20,
             logGroupingGapMinutes = preferences[PreferencesKeys.LOG_GROUPING_GAP_MINUTES] ?: 5,
-            logFilesPerPage = preferences[PreferencesKeys.LOG_FILES_PER_PAGE] ?: 10
+            logFilesPerPage = preferences[PreferencesKeys.LOG_FILES_PER_PAGE] ?: 10,
+            hasCompletedOnboarding = preferences[PreferencesKeys.HAS_COMPLETED_ONBOARDING] ?: false,
+            selectedCalendarApp = preferences[PreferencesKeys.SELECTED_CALENDAR_APP] ?: UserPreferences.CALENDAR_APP_GOOGLE,
+            devAdvancedVisibleSettings = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS
         )
     }
 
@@ -429,6 +435,35 @@ class PreferencesRepository(private val context: Context) {
             preferences[PreferencesKeys.BOT_INTERRUPTION_NOISE_GATE_DB] = p.botInterruptionNoiseGateDb
             preferences[PreferencesKeys.LOG_GROUPING_GAP_MINUTES] = p.logGroupingGapMinutes
             preferences[PreferencesKeys.LOG_FILES_PER_PAGE] = p.logFilesPerPage
+            preferences[PreferencesKeys.HAS_COMPLETED_ONBOARDING] = p.hasCompletedOnboarding
+            preferences[PreferencesKeys.SELECTED_CALENDAR_APP] = p.selectedCalendarApp
+            preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] = p.devAdvancedVisibleSettings
+        }
+    }
+
+    suspend fun updateHasCompletedOnboarding(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HAS_COMPLETED_ONBOARDING] = completed
+        }
+    }
+
+    suspend fun updateSelectedCalendarApp(calendarApp: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SELECTED_CALENDAR_APP] = calendarApp
+        }
+    }
+
+    suspend fun updateDevAdvancedVisibleSettings(settings: Set<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] = settings
+        }
+    }
+
+    suspend fun toggleDevAdvancedVisibleSetting(settingKey: String, enable: Boolean) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS
+            val updated = if (enable) current + settingKey else current - settingKey
+            preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] = updated
         }
     }
 

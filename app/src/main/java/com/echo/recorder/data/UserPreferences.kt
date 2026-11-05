@@ -90,11 +90,38 @@ data class UserPreferences(
     val lastSeenVersionCode: Int = 0,
     val botInterruptionNoiseGateDb: Int = -20,
     val logGroupingGapMinutes: Int = 5,
-    val logFilesPerPage: Int = 10
+    val logFilesPerPage: Int = 10,
+    val hasCompletedOnboarding: Boolean = false,
+    val selectedCalendarApp: String = CALENDAR_APP_GOOGLE,
+    val devAdvancedVisibleSettings: Set<String> = DEFAULT_ADVANCED_VISIBLE_SETTINGS
 ) {
     val isDeveloperMode: Boolean get() = settingsMode == SettingsMode.DEVELOPER
     val isAdvancedOrDev: Boolean get() = settingsMode == SettingsMode.ADVANCED || settingsMode == SettingsMode.DEVELOPER
     companion object {
+        const val CALENDAR_APP_GOOGLE = "GOOGLE_CALENDAR"
+        const val CALENDAR_APP_SAMSUNG = "SAMSUNG_CALENDAR"
+        const val CALENDAR_APP_DEFAULT = "SYSTEM_DEFAULT"
+
+        val DEFAULT_ADVANCED_VISIBLE_SETTINGS: Set<String> = setOf(
+            "sec_audio_recording",
+            "sec_speech_models",
+            "sec_themes",
+            "sec_backup_export",
+            "sec_calendar_config",
+            "theme_MIDNIGHT_BLUE",
+            "theme_GRADIENT_BLACK",
+            "theme_AMOLED_BLACK",
+            "theme_DARK",
+            "theme_LIGHT",
+            "stt_google_speech",
+            "stt_vosk_hindi",
+            "ai_local_tiny",
+            "ai_local_llama",
+            "cal_GOOGLE_CALENDAR",
+            "cal_SAMSUNG_CALENDAR",
+            "cal_SYSTEM_DEFAULT"
+        )
+
         const val DEFAULT_SYSTEM_PROMPT = """You are Echo AI, an intelligent personal assistant and task extraction expert.
 Objectives:
 1. Analyze spoken audio transcripts, notes, and user messages in Hindi, Hinglish, and English.
