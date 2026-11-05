@@ -67,9 +67,23 @@ class PreferencesRepository(private val context: Context) {
         val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
         val SELECTED_CALENDAR_APP = stringPreferencesKey("selected_calendar_app")
         val DEV_ADVANCED_VISIBLE_SETTINGS = androidx.datastore.preferences.core.stringSetPreferencesKey("dev_advanced_visible_settings")
+        val HOME_THEME = stringPreferencesKey("home_theme")
+        val DEV_SETTING_TIER_OVERRIDES = stringPreferencesKey("dev_setting_tier_overrides")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
+        val overridesJson = preferences[PreferencesKeys.DEV_SETTING_TIER_OVERRIDES] ?: "{}"
+        val overridesMap = runCatching {
+            val json = org.json.JSONObject(overridesJson)
+            val map = mutableMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                map[k] = json.getString(k)
+            }
+            map.toMap()
+        }.getOrDefault(emptyMap())
+
         UserPreferences(
             settingsMode = preferences[PreferencesKeys.SETTINGS_MODE]?.let { runCatching { SettingsMode.valueOf(it) }.getOrNull() } ?: SettingsMode.SMART,
             bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 15,
@@ -120,7 +134,9 @@ class PreferencesRepository(private val context: Context) {
             logFilesPerPage = preferences[PreferencesKeys.LOG_FILES_PER_PAGE] ?: 10,
             hasCompletedOnboarding = preferences[PreferencesKeys.HAS_COMPLETED_ONBOARDING] ?: false,
             selectedCalendarApp = preferences[PreferencesKeys.SELECTED_CALENDAR_APP] ?: UserPreferences.CALENDAR_APP_GOOGLE,
-            devAdvancedVisibleSettings = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS
+            devAdvancedVisibleSettings = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS,
+            homeTheme = preferences[PreferencesKeys.HOME_THEME] ?: UserPreferences.HOME_THEME_CHARCOAL,
+            devSettingTierOverrides = overridesMap
         )
     }
 
@@ -464,6 +480,21 @@ class PreferencesRepository(private val context: Context) {
             val current = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS
             val updated = if (enable) current + settingKey else current - settingKey
             preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] = updated
+        }
+    }
+
+    suspend fun updateHomeTheme(theme: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HOME_THEME] = theme
+        }
+    }
+
+    suspend fun updateDevSettingTierOverride(settingKey: String, tier: String) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[PreferencesKeys.DEV_SETTING_TIER_OVERRIDES] ?: "{}"
+            val json = runCatching { org.json.JSONObject(currentJson) }.getOrElse { org.json.JSONObject() }
+            json.put(settingKey, tier)
+            preferences[PreferencesKeys.DEV_SETTING_TIER_OVERRIDES] = json.toString()
         }
     }
 

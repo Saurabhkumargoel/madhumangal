@@ -7,6 +7,7 @@ import android.speech.tts.UtteranceProgressListener
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.VolumeOff
@@ -212,11 +214,17 @@ fun DumbHomeTab(
         }
     }
 
-    fun silenceBot() {
-        isExplicitlySilenced = true
+    fun silenceBot(stopListening: Boolean = false) {
         ttsEngine?.stop()
         isBotSpeaking = false
-        isWaitingForFollowUpQuery = false
+        if (stopListening) {
+            isExplicitlySilenced = true
+            isWaitingForFollowUpQuery = false
+        } else {
+            // User voice interruption: keep follow-up window open for user question!
+            isWaitingForFollowUpQuery = true
+            activeWindowSecondsRemaining = 15
+        }
     }
 
     // Interruption Detector with configurable noise gate and speaker feedback protection
@@ -227,7 +235,7 @@ fun DumbHomeTab(
             if (now - ttsStartTime > 1200L) {
                 val noiseGate = userPreferences.botInterruptionNoiseGateDb
                 if (currentDb > noiseGate && currentAmplitude > 0.30f) {
-                    silenceBot()
+                    silenceBot(stopListening = false)
                 }
             }
         }
@@ -241,7 +249,7 @@ fun DumbHomeTab(
         lastAiResponse = answer
         speakBot(answer)
         isWaitingForFollowUpQuery = true
-        activeWindowSecondsRemaining = 12
+        activeWindowSecondsRemaining = 15
     }
 
     fun speakCurrentDate() {
@@ -251,7 +259,19 @@ fun DumbHomeTab(
         lastAiResponse = answer
         speakBot(answer)
         isWaitingForFollowUpQuery = true
-        activeWindowSecondsRemaining = 12
+        activeWindowSecondsRemaining = 15
+    }
+
+    fun speakCurrentTimeAndDate() {
+        val timeSdf = SimpleDateFormat("hh:mm a", Locale.US)
+        val timeStr = timeSdf.format(Date())
+        val dateSdf = SimpleDateFormat("EEEE, d MMMM yyyy", if (isHindi) Locale("hi", "IN") else Locale.US)
+        val dateStr = dateSdf.format(Date())
+        val answer = if (isHindi) "अभी समय $timeStr हुआ है और आज $dateStr है।" else "The current time is $timeStr and today is $dateStr."
+        lastAiResponse = answer
+        speakBot(answer)
+        isWaitingForFollowUpQuery = true
+        activeWindowSecondsRemaining = 15
     }
 
     fun speakBatteryLevel() {
@@ -312,13 +332,14 @@ fun DumbHomeTab(
             return
         }
 
-        val isTimeQuery = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
-        val isDateQuery = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
+        val hasTime = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
+        val hasDate = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
         val isBatteryQuery = qLower.contains("battery") || qLower.contains("बैटरी") || qLower.contains("चार्ज")
 
         when {
-            isTimeQuery -> speakCurrentTime()
-            isDateQuery -> speakCurrentDate()
+            hasTime && hasDate -> speakCurrentTimeAndDate()
+            hasTime -> speakCurrentTime()
+            hasDate -> speakCurrentDate()
             isBatteryQuery -> speakBatteryLevel()
             else -> {
                 detectedQueryText = query
@@ -390,6 +411,9 @@ fun DumbHomeTab(
         if (trimmed.isNotBlank() && isDifferentUtterance) {
             val match = botKeywordRegex.find(trimmed)
             if (match != null) {
+                if (isBotSpeaking) {
+                    silenceBot(stopListening = false)
+                }
                 val queryAfterKeyword = trimmed.substring(match.range.last + 1).trim()
                 lastProcessedTranscript = trimmed
                 lastProcessedTime = now
@@ -403,13 +427,24 @@ fun DumbHomeTab(
                     lastAiResponse = ack
                     speakBot(ack)
                 }
-            } else if (isWaitingForFollowUpQuery && !isBotSpeaking && trimmed.length >= 2) {
-                // Filter out single short noise hallucinations when alone
-                val isNoiseArtifact = trimmed in listOf("और", "बाद", "बात", "दो", "घोर", "था", "थी", "है", "or", "and")
-                if (!isNoiseArtifact) {
-                    lastProcessedTranscript = trimmed
-                    lastProcessedTime = now
-                    handleQueryText(trimmed)
+            } else {
+                val qLower = trimmed.lowercase(Locale.ROOT)
+                val hasTime = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
+                val hasDate = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
+                val isReminder = com.echo.recorder.util.ReminderHelper.isReminderQuery(trimmed)
+                val isBattery = qLower.contains("battery") || qLower.contains("बैटरी") || qLower.contains("चार्ज")
+                val isDirectUtility = hasTime || hasDate || isReminder || isBattery
+
+                if ((isDirectUtility || isWaitingForFollowUpQuery) && trimmed.length >= 2) {
+                    val isNoiseArtifact = trimmed in listOf("और", "बाद", "बात", "दो", "घोर", "था", "थी", "है", "or", "and")
+                    if (!isNoiseArtifact) {
+                        if (isBotSpeaking) {
+                            silenceBot(stopListening = false)
+                        }
+                        lastProcessedTranscript = trimmed
+                        lastProcessedTime = now
+                        handleQueryText(trimmed)
+                    }
                 }
             }
         }
@@ -459,11 +494,14 @@ fun DumbHomeTab(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF0F141C), Color(0xFF07090E))
-                    )
+                    when (userPreferences.homeTheme) {
+                        com.echo.recorder.data.UserPreferences.HOME_THEME_MIDNIGHT -> Brush.verticalGradient(listOf(Color(0xFF0A1224), Color(0xFF040814)))
+                        com.echo.recorder.data.UserPreferences.HOME_THEME_EMERALD -> Brush.verticalGradient(listOf(Color(0xFF071B14), Color(0xFF030D08)))
+                        com.echo.recorder.data.UserPreferences.HOME_THEME_CARBON -> Brush.verticalGradient(listOf(Color(0xFF14151A), Color(0xFF090A0C)))
+                        else -> Brush.verticalGradient(listOf(Color(0xFF0F141C), Color(0xFF07090E)))
+                    }
                 )
-                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
@@ -709,45 +747,57 @@ fun DumbHomeTab(
                 textAlign = TextAlign.Center
             )
 
-            // Waveform / Audio Level Bar when Recording
+            // DYNAMIC ANIMATED SOUNDWAVE VISUALIZER & MIC STATS
             if (isRecording) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                AnimatedSoundwaveBars(
+                    isRecording = isRecording,
+                    amplitude = currentAmplitude,
+                    isSpeechDetected = isSpeechDetected,
+                    accentColor = activeOrbColor
+                )
+                Text(
+                    text = "${currentDb} dB • " + if (isSpeechDetected) "Speech Active" else "Quiet",
+                    color = if (isSpeechDetected) Color(0xFF10B981) else TextMuted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            // PROMINENT BIG START / STOP RECORDING BUTTON
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onToggleRecording,
+                shape = RoundedCornerShape(26.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRecording) Color(0xFFDC2626) else PrimaryBlue
+                ),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .height(48.dp)
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Hearing,
+                        imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
                         contentDescription = null,
-                        tint = if (isSpeechDetected) PrimaryBlue else TextMuted,
-                        modifier = Modifier.size(16.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(140.dp)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(SurfaceDark)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize(fraction = (currentAmplitude * 2.5f).coerceIn(0.05f, 1f))
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(PrimaryBlue, AccentPurple)
-                                    )
-                                )
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "${currentDb} dB",
-                        color = TextMuted,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
+                        text = if (isRecording) {
+                            if (isHindi) "सुनना बंद करें • STOP" else "STOP LISTENING"
+                        } else {
+                            if (isHindi) "सुनना शुरू करें • START" else "START LISTENING"
+                        },
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
                     )
                 }
             }
@@ -1148,5 +1198,60 @@ private fun getCustomIcon(type: BotActionType): ImageVector {
         BotActionType.TOGGLE_RECORD -> Icons.Default.RadioButtonChecked
         BotActionType.ASK_AI_PROMPT -> Icons.Default.Psychology
         BotActionType.CLEAR_TRANSCRIPT -> Icons.Default.Clear
+    }
+}
+
+@Composable
+fun AnimatedSoundwaveBars(
+    isRecording: Boolean,
+    amplitude: Float,
+    isSpeechDetected: Boolean,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveAnim")
+    val wavePhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.283f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "wavePhase"
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(38.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val barCount = 18
+        for (i in 0 until barCount) {
+            val offset = i.toFloat() / barCount * 6.283f
+            val baseSin = kotlin.math.abs(kotlin.math.sin(wavePhase + offset))
+            val dynamicHeight = if (isRecording) {
+                val ampFactor = (amplitude * 3.5f).coerceIn(0.18f, 1f)
+                (6.dp + (28.dp * baseSin * ampFactor))
+            } else {
+                4.dp
+            }
+
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 2.dp)
+                    .width(3.5.dp)
+                    .height(dynamicHeight)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        if (isRecording) {
+                            if (isSpeechDetected) accentColor else accentColor.copy(alpha = 0.55f)
+                        } else {
+                            Color(0xFF263345)
+                        }
+                    )
+            )
+        }
     }
 }

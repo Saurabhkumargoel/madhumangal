@@ -911,6 +911,46 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+## 🎙️ Mistake #14: Non-Granular Dev Tier Overrides, Flat Home Screen & Setup Model Dependencies
+
+### Applicable Sections: Specific + Generic
+
+#### Root Cause Analysis
+1. **Coarse-Grained Visibility Toggles:**
+   - Visibility control in Developer Mode was previously a binary boolean (`devAdvancedVisibleSettings`), preventing developers from downgrading deep options to `SMART` or restricting them strictly to `DEVELOPER`.
+2. **Dull Static Home Tab & Space Waste:**
+   - Reviewer and user noted that when recording started, the home screen looked flat and dull with a static 6dp bar and oversized padding (20dp/16dp) wasting vertical screen real estate.
+   - Home tab lacked theme selection in Dev Mode, and start/stop button was small and unobtrusive.
+3. **Onboarding Setup Screen Model Selection:**
+   - First-run setup previously defaulted only to Vosk Hindi checkbox, hiding Google Speech Recognizer, English Vosk, and Gemini Cloud STT along with their explicit system dependencies.
+
+#### Complete Solution Implemented
+1. **Granular Tier Control (`devSettingTierOverrides`, `DevModeTierSelector`):**
+   - Added `devSettingTierOverrides: Map<String, String>` in `UserPreferences`.
+   - Replaced simple binary checkboxes with compact 3-option granular tier chips `[Smt] [Adv] [Dev]` on every section and sub-option.
+   - Developers can now assign any setting or sub-option directly to Smart, Advanced, or Developer tier.
+   - Active options remain guarded and locked against accidental concealment.
+2. **Dynamic Animated Soundwave Visualizer & Vibrant Home Screen (`DumbHomeTab.kt`):**
+   - Implemented `AnimatedSoundwaveBars`: 18 dynamic sinusoidal animated bars driven by microphone amplitude, phase loop (`tween(1200)`), and real-time speech presence.
+   - Added a prominent, high-contrast Start/Stop Recording button (height 48dp, rounded radius 26dp) with dynamic icons (`Mic` / `Stop`) and dual Hindi/English labels.
+   - Added Developer Home Theme selector with 4 sleek OLED gradients:
+     - Obsidian Charcoal (`#0F141C` -> `#07090E`)
+     - Midnight Deep Blue (`#0A1224` -> `#040814`)
+     - Stealth Emerald (`#071B14` -> `#030D08`)
+     - Cyber Carbon (`#14151A` -> `#090A0C`)
+   - Reduced padding and margins to dense, compact 12dp/8dp layout.
+3. **Multi-Model Setup Wizard with Explicit Dependencies (`MainScreen.kt`):**
+   - Upgraded `OnboardingSetupDialog` with explicit radio selection for all major STT engines:
+     - Google Speech Recognizer (Hybrid Cloud + On-device, depends on Google app)
+     - Vosk Hindi Offline (~45 MB, auto-download on setup)
+     - Vosk English Offline (~40 MB, auto-download on setup)
+     - Gemini Cloud AI (Server-side multimodal, depends on API key)
+4. **Autonomous Self-Micromanagement Protocol (`agrules/core/dev_loop.md`):**
+   - Updated master directives requiring mandatory automated test cases for every single step and edge case.
+   - Added granular tests in `GoodBotConversationalTest.kt` verifying tier visibility logic, combined queries, and themes.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

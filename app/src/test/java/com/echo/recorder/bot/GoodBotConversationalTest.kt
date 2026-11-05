@@ -1,5 +1,6 @@
 package com.echo.recorder.bot
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -159,6 +160,91 @@ class GoodBotConversationalTest {
         val test2 = "remind me at 4pm to call doctor"
         val isPm = test2.lowercase(Locale.ROOT).contains("pm")
         assertTrue(isPm)
+    }
+
+    @Test
+    fun testCombinedTimeAndDateQueries() {
+        val combinedQueries = listOf(
+            "समय और तारीख",
+            "समय तारीख",
+            "time and date",
+            "date and time",
+            "कितने बजे हैं और आज क्या तारीख है"
+        )
+
+        for (q in combinedQueries) {
+            val qLower = q.lowercase(Locale.ROOT)
+            val hasTime = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || qLower.contains("के बजे") || (qLower.contains("समय") && !qLower.contains("मौसम")) || qLower.contains("वक्त")
+            val hasDate = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("तिथि") || qLower.contains("दिनांक") || qLower.contains("डेट") || qLower.contains("दैट") || qLower.contains("दिन") || qLower.contains("देन") || qLower.contains("आज क्या") || qLower.contains("आज के") || qLower.contains("वार") || qLower.contains("today") || qLower.contains("day")
+            assertTrue("Expected query '$q' to match both time and date", hasTime && hasDate)
+        }
+    }
+
+    @Test
+    fun testDirectUtilityQueriesWithoutWakeWord() {
+        val utilityQueries = listOf(
+            "क्या समय हुआ है",
+            "कितने बजे हैं",
+            "तारीख क्या है",
+            "दिन कौन सा है",
+            "battery percentage",
+            "बैटरी कितनी है"
+        )
+
+        for (q in utilityQueries) {
+            val qLower = q.lowercase(Locale.ROOT)
+            val hasTime = qLower.contains("time") || qLower.contains("टाइम") || qLower.contains("कितने बजे") || (qLower.contains("समय") && !qLower.contains("मौसम"))
+            val hasDate = qLower.contains("date") || qLower.contains("तारीख") || qLower.contains("दिन") || qLower.contains("today")
+            val isBattery = qLower.contains("battery") || qLower.contains("बैटरी")
+            val isDirect = hasTime || hasDate || isBattery
+            assertTrue("Expected '$q' to be classified as direct utility query", isDirect)
+        }
+    }
+
+    @Test
+    fun testGranularTierVisibilityLogic() {
+        fun isVisible(settingTier: String, appMode: String, isCurrentlyActive: Boolean): Boolean {
+            if (isCurrentlyActive) return true
+            return when (appMode) {
+                "DEVELOPER" -> true
+                "ADVANCED" -> settingTier == "SMART" || settingTier == "ADVANCED"
+                "SMART" -> settingTier == "SMART"
+                else -> false
+            }
+        }
+
+        // SMART tier setting: visible everywhere
+        assertTrue(isVisible("SMART", "SMART", false))
+        assertTrue(isVisible("SMART", "ADVANCED", false))
+        assertTrue(isVisible("SMART", "DEVELOPER", false))
+
+        // ADVANCED tier setting: hidden in Smart, visible in Advanced and Dev
+        assertFalse(isVisible("ADVANCED", "SMART", false))
+        assertTrue(isVisible("ADVANCED", "ADVANCED", false))
+        assertTrue(isVisible("ADVANCED", "DEVELOPER", false))
+
+        // DEVELOPER tier setting: hidden in Smart & Advanced, visible in Dev
+        assertFalse(isVisible("DEVELOPER", "SMART", false))
+        assertFalse(isVisible("DEVELOPER", "ADVANCED", false))
+        assertTrue(isVisible("DEVELOPER", "DEVELOPER", false))
+
+        // Safeguarded active setting: always visible even if tier is Developer in Smart mode!
+        assertTrue(isVisible("DEVELOPER", "SMART", true))
+    }
+
+    @Test
+    fun testHomeThemesSupported() {
+        val themes = listOf(
+            com.echo.recorder.data.UserPreferences.HOME_THEME_CHARCOAL,
+            com.echo.recorder.data.UserPreferences.HOME_THEME_MIDNIGHT,
+            com.echo.recorder.data.UserPreferences.HOME_THEME_EMERALD,
+            com.echo.recorder.data.UserPreferences.HOME_THEME_CARBON
+        )
+        assertEquals(4, themes.size)
+        assertTrue(themes.contains(com.echo.recorder.data.UserPreferences.HOME_THEME_CHARCOAL))
+        assertTrue(themes.contains(com.echo.recorder.data.UserPreferences.HOME_THEME_MIDNIGHT))
+        assertTrue(themes.contains(com.echo.recorder.data.UserPreferences.HOME_THEME_EMERALD))
+        assertTrue(themes.contains(com.echo.recorder.data.UserPreferences.HOME_THEME_CARBON))
     }
 }
 

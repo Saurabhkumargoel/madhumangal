@@ -476,6 +476,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateHomeTheme(theme: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHomeTheme(theme)
+        }
+    }
+
+    fun updateDevSettingTierOverride(key: String, tier: String) {
+        viewModelScope.launch {
+            prefsRepo.updateDevSettingTierOverride(key, tier)
+        }
+    }
+
     fun updateLogFileExtension(ext: String) {
         viewModelScope.launch {
             prefsRepo.updateLogFileExtension(ext)

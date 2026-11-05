@@ -17,6 +17,20 @@ object ReleaseNotesRegistry {
 
     val releases: List<ReleaseEntry> = listOf(
         ReleaseEntry(
+            versionCode = 202611051,
+            versionName = "0.0.2026.11.05",
+            releaseDate = "November 5, 2026",
+            summary = "'मुझे याद दिलाना' Calendar Reminders, SAF Custom Settings Export, Granular Tier Filtering (Dev/Adv/Smart), Dynamic Home Animations, and Onboarding Setup Wizard.",
+            highlights = listOf(
+                ReleaseHighlight("NEW", "📅 'मुझे याद दिलाना' Voice Reminders: Speak 'कल शाम 5 बजे मुझे याद दिलाना' or 'remind me at 4pm' to automatically extract title/time and launch your calendar with prefilled reminder details."),
+                ReleaseHighlight("NEW", "📁 SAF Custom Path Settings Export: Prompts to select folder and filename on every export via Android Storage Access Framework."),
+                ReleaseHighlight("NEW", "🎛️ Granular Dev/Adv/Smart Visibility: Devs can configure each setting and sub-option to be visible in Smart, Advanced, or Developer mode."),
+                ReleaseHighlight("NEW", "🚀 First-Run Onboarding Setup Wizard: Prompts for language, mode, and voice model selection on initial startup."),
+                ReleaseHighlight("FIX", "🗣️ Conversational Interruption Window: Interruption silences speech without closing the listening window so follow-up queries work seamlessly."),
+                ReleaseHighlight("IMPROVEMENT", "🎨 Rich Home Aesthetics: Charcoal gradient themes, pulsing audio waves, larger recording button, and space-optimized padding.")
+            )
+        ),
+        ReleaseEntry(
             versionCode = 202610202,
             versionName = "0.0.2026.10.20.1",
             releaseDate = "October 20, 2026",

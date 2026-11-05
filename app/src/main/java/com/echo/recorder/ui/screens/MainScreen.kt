@@ -22,6 +22,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -837,11 +839,14 @@ fun MainScreen(
         if (!userPreferences.hasCompletedOnboarding) {
             OnboardingSetupDialog(
                 isHindi = isHindi,
-                onComplete = { selectedLang, selectedMode, shouldDownloadOfflineModel ->
+                onComplete = { selectedLang, selectedMode, sttModel ->
                     viewModel.updateAppLanguage(selectedLang)
                     viewModel.updateSettingsMode(selectedMode)
-                    if (shouldDownloadOfflineModel) {
+                    viewModel.updateSttModel(sttModel)
+                    if (sttModel == UserPreferences.STT_MODEL_VOSK_HINDI) {
                         viewModel.startOrResumeModelDownload(UserPreferences.STT_MODEL_VOSK_HINDI)
+                    } else if (sttModel == UserPreferences.STT_MODEL_VOSK_EN_IN) {
+                        viewModel.startOrResumeModelDownload(UserPreferences.STT_MODEL_VOSK_EN_IN)
                     }
                     viewModel.completeOnboarding()
                 }
@@ -853,11 +858,11 @@ fun MainScreen(
 @Composable
 fun OnboardingSetupDialog(
     isHindi: Boolean,
-    onComplete: (lang: String, mode: SettingsMode, downloadOfflineModel: Boolean) -> Unit
+    onComplete: (lang: String, mode: SettingsMode, selectedSttModel: String) -> Unit
 ) {
     var selectedLang by remember { mutableStateOf(if (isHindi) "hi" else "en") }
     var selectedMode by remember { mutableStateOf(SettingsMode.SMART) }
-    var downloadOfflineModel by remember { mutableStateOf(true) }
+    var selectedSttModel by remember { mutableStateOf(UserPreferences.STT_MODEL_GOOGLE_SPEECH) }
 
     Dialog(onDismissRequest = { /* Modal: complete setup to proceed */ }) {
         Surface(
@@ -875,30 +880,31 @@ fun OnboardingSetupDialog(
                             listOf(Color(0xFF141B26), Color(0xFF090D13))
                         )
                     )
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Header
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF38BDF8).copy(alpha = 0.15f),
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
                                 tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
                             text = if (selectedLang == "hi") "गुड एको सेटअप" else "Good Echo Setup",
-                            fontSize = 17.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFF1F5F9)
                         )
@@ -938,7 +944,7 @@ fun OnboardingSetupDialog(
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
-                                    modifier = Modifier.padding(vertical = 8.dp)
+                                    modifier = Modifier.padding(vertical = 7.dp)
                                 ) {
                                     Text(
                                         text = label,
@@ -963,7 +969,7 @@ fun OnboardingSetupDialog(
                     listOf(
                         Triple(SettingsMode.SMART, "Smart", if (selectedLang == "hi") "सरल, साफ और तेज़ इंटरफ़ेस" else "Clean, minimalist, distraction-free"),
                         Triple(SettingsMode.ADVANCED, "Advanced", if (selectedLang == "hi") "ज़रूरी अतिरिक्त नियंत्रण और सेटिंग्स" else "Curated essential extra controls"),
-                        Triple(SettingsMode.DEVELOPER, "Developer", if (selectedLang == "hi") "सभी मॉडल्स, लॉग्स और विज़िबिलिटी नियंत्रण" else "Complete knobs, models & visibility controls")
+                        Triple(SettingsMode.DEVELOPER, "Developer", if (selectedLang == "hi") "पूर्ण नियंत्रण और सेटिंग्स विज़िबिलिटी" else "Complete knobs, models & visibility controls")
                     ).forEach { (mode, title, desc) ->
                         val isSel = selectedMode == mode
                         Surface(
@@ -975,7 +981,7 @@ fun OnboardingSetupDialog(
                                 .clickable { selectedMode = mode }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -1005,55 +1011,88 @@ fun OnboardingSetupDialog(
                     }
                 }
 
-                // 3. Offline Voice Pack Option
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1E293B).copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { downloadOfflineModel = !downloadOfflineModel }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = downloadOfflineModel,
-                            onCheckedChange = { downloadOfflineModel = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = Color(0xFF38BDF8),
-                                uncheckedColor = Color(0xFF64748B)
-                            )
+                // 3. Speech Recognition Engine Selection with Dependencies
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = if (selectedLang == "hi") "3. वॉइस मॉडल चुनें / Select Speech Model" else "3. Speech Recognition Model",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFCBD5E1)
+                    )
+
+                    listOf(
+                        Triple(
+                            UserPreferences.STT_MODEL_GOOGLE_SPEECH,
+                            "Google Speech Recognizer",
+                            if (selectedLang == "hi") "हाइब्रिड (क्लाउड + ऑन-डिवाइस) • निर्भरता: Google ऐप / Voice Typing" else "Hybrid (Cloud + Offline) • Dependency: Google App installed"
+                        ),
+                        Triple(
+                            UserPreferences.STT_MODEL_VOSK_HINDI,
+                            "Vosk Hindi Offline (~45 MB)",
+                            if (selectedLang == "hi") "100% ऑफ़लाइन हिन्दी/हिंग्लिश • निर्भरता: 45MB डाउनलोड (सेटअप पर अपने आप शुरू होगा)" else "100% Offline Hindi • Dependency: 45MB auto-download on setup"
+                        ),
+                        Triple(
+                            UserPreferences.STT_MODEL_VOSK_EN_IN,
+                            "Vosk English Offline (~40 MB)",
+                            if (selectedLang == "hi") "100% ऑफ़लाइन अंग्रेज़ी • निर्भरता: 40MB डाउनलोड" else "100% Offline English • Dependency: 40MB auto-download"
+                        ),
+                        Triple(
+                            UserPreferences.STT_MODEL_CLOUD_GEMINI,
+                            "Gemini Cloud AI",
+                            if (selectedLang == "hi") "उच्च सटीकता सर्वर एआई • निर्भरता: इंटरनेट + जेमिनी एपीआई की" else "Server-side multimodal • Dependency: Internet & API Key"
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text(
-                                text = if (selectedLang == "hi") "हिन्दी ऑफ़लाइन वॉयस पैक (~45MB) डाउनलोड करें" else "Pre-download Hindi Vosk Speech Pack (~45MB)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFF1F5F9)
-                            )
-                            Text(
-                                text = if (selectedLang == "hi") "बिना इंटरनेट के तुरंत वॉइस पहचान के लिए" else "Enables zero-latency 100% offline speech recognition",
-                                fontSize = 10.sp,
-                                color = Color(0xFF94A3B8)
-                            )
+                    ).forEach { (modelKey, title, dep) ->
+                        val isSel = selectedSttModel == modelKey
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSel) Color(0xFF38BDF8).copy(alpha = 0.15f) else Color(0xFF1E293B).copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, if (isSel) Color(0xFF38BDF8) else Color(0xFF334155)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedSttModel = modelKey }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = title,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSel) Color(0xFF38BDF8) else Color(0xFFE2E8F0)
+                                    )
+                                    Text(
+                                        text = dep,
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                                RadioButton(
+                                    selected = isSel,
+                                    onClick = { selectedSttModel = modelKey },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color(0xFF38BDF8),
+                                        unselectedColor = Color(0xFF64748B)
+                                    )
+                                )
+                            }
                         }
                     }
                 }
 
                 // Confirm Button
                 Button(
-                    onClick = { onComplete(selectedLang, selectedMode, downloadOfflineModel) },
+                    onClick = { onComplete(selectedLang, selectedMode, selectedSttModel) },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(42.dp)
+                        .height(44.dp)
                 ) {
                     Text(
-                        text = if (selectedLang == "hi") "🚀 शुरू करें (Get Started)" else "🚀 Get Started",
+                        text = if (selectedLang == "hi") "🚀 सेटअप पूरा करें (Get Started)" else "🚀 Get Started",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF0F172A)

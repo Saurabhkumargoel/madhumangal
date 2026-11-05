@@ -1790,6 +1790,58 @@ fun SettingsTab(
                             color = TextSecondary
                         )
 
+                        // HOME SCREEN THEME SELECTOR
+                        Text(
+                            text = if (isHindi) "🏠 होम स्क्रीन थीम (GoodBot Tab Theme)" else "🏠 Home Screen Theme (GoodBot Tab)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                Triple(UserPreferences.HOME_THEME_CHARCOAL, "Obsidian", Color(0xFF0F141C)),
+                                Triple(UserPreferences.HOME_THEME_MIDNIGHT, "Midnight", Color(0xFF0A1224)),
+                                Triple(UserPreferences.HOME_THEME_EMERALD, "Emerald", Color(0xFF071B14)),
+                                Triple(UserPreferences.HOME_THEME_CARBON, "Carbon", Color(0xFF14151A))
+                            ).forEach { (tKey, tLabel, tColor) ->
+                                val isCur = userPreferences.homeTheme == tKey
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isCur) PrimaryBlue.copy(alpha = 0.2f) else SurfaceDark,
+                                    border = BorderStroke(1.dp, if (isCur) PrimaryBlue else CardBorder),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            viewModel.updateHomeTheme(tKey)
+                                            Toast.makeText(context, "Home Theme: $tLabel", Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(vertical = 6.dp)
+                                    ) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = tColor,
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                                            modifier = Modifier.size(16.dp)
+                                        ) {}
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = tLabel,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isCur) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isCur) PrimaryBlue else TextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+
                         val visibleThemes = remember(userPreferences.settingsMode, userPreferences.devAdvancedVisibleSettings, userPreferences.activeTheme) {
                             when (userPreferences.settingsMode) {
                                 SettingsMode.SMART -> AppThemes.ALL_THEMES.filter {
@@ -4600,9 +4652,9 @@ fun openGoogleVoiceLanguageSettings(context: android.content.Context) {
 
 /**
  * Developer Mode Meta-Control:
- * Renders a visibility toggle checkbox for Advanced Mode.
- * - If [isCurrentlyActive] is true, the checkbox is grayed out/safeguarded.
- * - Touching only this checkbox toggles inclusion in devAdvancedVisibleSettings without triggering the row's main click.
+ * Renders granular tier selection chips [Smt] [Adv] [Dev] for any setting or sub-option.
+ * - If [isCurrentlyActive] is true, the active tier chip is safeguarded.
+ * - Touching only this selector toggles tier inclusion without triggering the row's main click.
  */
 @Composable
 fun DevModeVisibilityCheckbox(
@@ -4612,40 +4664,57 @@ fun DevModeVisibilityCheckbox(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val checked = isAdvancedVisible || isCurrentlyActive
-    val checkboxColor = when {
-        isCurrentlyActive -> TextMuted.copy(alpha = 0.45f)
-        checked -> Color(0xFF10B981)
-        else -> TextMuted
-    }
-
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = if (checked) checkboxColor.copy(alpha = 0.12f) else Color.Transparent,
-        border = BorderStroke(1.dp, checkboxColor.copy(alpha = 0.4f)),
+    val currentTier = if (isAdvancedVisible) "ADVANCED" else "DEVELOPER"
+    DevModeTierSelector(
+        settingKey = settingKey,
+        currentTier = currentTier,
+        isCurrentlyActive = isCurrentlyActive,
+        onTierSelected = { selectedTier ->
+            onToggle(selectedTier == "ADVANCED" || selectedTier == "SMART")
+        },
         modifier = modifier
-            .padding(end = 6.dp)
-            .clickable(enabled = !isCurrentlyActive) {
-                onToggle(!isAdvancedVisible)
-            }
+    )
+}
+
+@Composable
+fun DevModeTierSelector(
+    settingKey: String,
+    currentTier: String,
+    isCurrentlyActive: Boolean,
+    onTierSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.padding(end = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-        ) {
-            Icon(
-                imageVector = if (checked) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                contentDescription = if (isCurrentlyActive) "Active setting safeguarded" else "Toggle visibility in Advanced Mode",
-                tint = checkboxColor,
-                modifier = Modifier.size(13.dp)
-            )
-            Spacer(modifier = Modifier.width(3.dp))
-            Text(
-                text = if (isCurrentlyActive) "LOCK" else "ADV",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                color = checkboxColor
-            )
+        listOf("SMART" to "Smt", "ADVANCED" to "Adv", "DEVELOPER" to "Dev").forEach { (tierKey, label) ->
+            val isSelected = currentTier == tierKey || (isCurrentlyActive && tierKey == currentTier)
+            val chipColor = when (tierKey) {
+                "SMART" -> PrimaryBlue
+                "ADVANCED" -> AccentPurple
+                else -> Color(0xFF10B981)
+            }
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isSelected) chipColor.copy(alpha = 0.22f) else Color(0xFF141B26),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (isSelected) chipColor else Color(0xFF263345)
+                ),
+                modifier = Modifier.clickable(enabled = !isCurrentlyActive || isSelected) {
+                    onTierSelected(tierKey)
+                }
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 8.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) chipColor else if (isCurrentlyActive) TextMuted.copy(alpha = 0.4f) else TextMuted,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
         }
     }
 }

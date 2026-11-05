@@ -492,14 +492,27 @@ fun LogsTab(
 
             OutlinedButton(
                 onClick = {
-                    val allSessionsText = AppLogger.getAllSessionLogsText(context)
-                    val sendIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, allSessionsText)
-                        type = "text/plain"
+                    try {
+                        val allSessionsText = AppLogger.getAllSessionLogsText(context)
+                        val cacheFile = File(context.cacheDir, "all_sessions_export.txt")
+                        cacheFile.writeText(allSessionsText)
+                        val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            cacheFile
+                        )
+                        val sendIntent = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_STREAM, contentUri)
+                            putExtra(Intent.EXTRA_SUBJECT, "GoodEcho All Session Logs")
+                            type = "text/plain"
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val shareIntent = Intent.createChooser(sendIntent, "Global Export: All Session Logs")
+                        context.startActivity(shareIntent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                    val shareIntent = Intent.createChooser(sendIntent, "Global Export: All Session Logs")
-                    context.startActivity(shareIntent)
                 },
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),

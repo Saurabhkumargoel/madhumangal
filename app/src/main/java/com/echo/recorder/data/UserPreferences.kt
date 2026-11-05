@@ -93,11 +93,36 @@ data class UserPreferences(
     val logFilesPerPage: Int = 10,
     val hasCompletedOnboarding: Boolean = false,
     val selectedCalendarApp: String = CALENDAR_APP_GOOGLE,
-    val devAdvancedVisibleSettings: Set<String> = DEFAULT_ADVANCED_VISIBLE_SETTINGS
+    val devAdvancedVisibleSettings: Set<String> = DEFAULT_ADVANCED_VISIBLE_SETTINGS,
+    val homeTheme: String = HOME_THEME_CHARCOAL,
+    val devSettingTierOverrides: Map<String, String> = emptyMap()
 ) {
     val isDeveloperMode: Boolean get() = settingsMode == SettingsMode.DEVELOPER
     val isAdvancedOrDev: Boolean get() = settingsMode == SettingsMode.ADVANCED || settingsMode == SettingsMode.DEVELOPER
+
+    fun getEffectiveTier(settingKey: String, defaultTier: String = "DEVELOPER"): String {
+        devSettingTierOverrides[settingKey]?.let { return it }
+        if (devAdvancedVisibleSettings.contains(settingKey)) {
+            return "ADVANCED"
+        }
+        return defaultTier
+    }
+
+    fun isSettingVisible(settingKey: String, defaultTier: String = "DEVELOPER"): Boolean {
+        val tier = getEffectiveTier(settingKey, defaultTier)
+        return when (settingsMode) {
+            SettingsMode.DEVELOPER -> true
+            SettingsMode.ADVANCED -> tier == "SMART" || tier == "ADVANCED"
+            SettingsMode.SMART -> tier == "SMART"
+        }
+    }
+
     companion object {
+        const val HOME_THEME_CHARCOAL = "CHARCOAL_OBSIDIAN"
+        const val HOME_THEME_MIDNIGHT = "MIDNIGHT_BLUE"
+        const val HOME_THEME_EMERALD = "EMERALD_STEALTH"
+        const val HOME_THEME_CARBON = "CARBON_CYBER"
+
         const val CALENDAR_APP_GOOGLE = "GOOGLE_CALENDAR"
         const val CALENDAR_APP_SAMSUNG = "SAMSUNG_CALENDAR"
         const val CALENDAR_APP_DEFAULT = "SYSTEM_DEFAULT"
