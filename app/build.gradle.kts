@@ -12,7 +12,7 @@ import java.util.Locale
 val buildTimestamp = SimpleDateFormat("yyyy.MM.dd.HHmm", Locale.US).format(Date())
 
 android {
-    namespace = "com.echo.recorder"
+    namespace = "com.madhumangal"
     compileSdk = 34
 
     defaultConfig {

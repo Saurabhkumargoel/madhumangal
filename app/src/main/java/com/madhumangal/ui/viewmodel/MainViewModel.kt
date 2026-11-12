@@ -1,0 +1,2669 @@
+package com.madhumangal.ui.viewmodel
+
+import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.madhumangal.MadhumangalApplication
+import com.madhumangal.audio.AudioRecordingService
+import com.madhumangal.data.ChatMessage
+import com.madhumangal.data.NoteTask
+import com.madhumangal.data.PreferencesRepository
+import com.madhumangal.data.SettingsMode
+import com.madhumangal.data.TranscriptionWithAudio
+import com.madhumangal.data.UserPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
+import org.json.JSONArray
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+enum class ModelDownloadStatus {
+    IDLE,
+    DOWNLOADING,
+    PAUSED,
+    EXTRACTING,
+    COMPLETED,
+    ERROR
+}
+
+data class ModelDownloadProgress(
+    val modelId: String,
+    val status: ModelDownloadStatus = ModelDownloadStatus.IDLE,
+    val progress: Float = 0f,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val errorMessage: String? = null
+)
+
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val app = application as MadhumangalApplication
+    private val prefsRepo = app.preferencesRepository
+    private val transcriptionDao = app.database.transcriptionDao()
+    private val noteTaskDao = app.database.noteTaskDao()
+    private val aiChatDao = app.database.aiChatDao()
+
+    private val _modelDownloadStates = MutableStateFlow<Map<String, ModelDownloadProgress>>(emptyMap())
+    val modelDownloadStates: StateFlow<Map<String, ModelDownloadProgress>> = _modelDownloadStates.asStateFlow()
+
+    private val activeDownloadJobs = ConcurrentHashMap<String, Job>()
+    private val pauseFlags = ConcurrentHashMap<String, AtomicBoolean>()
+    private val activeConnections = ConcurrentHashMap<String, java.net.HttpURLConnection>()
+
+    val userPreferences: StateFlow<UserPreferences> = prefsRepo.userPreferencesFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, UserPreferences())
+
+    val noteTasks: StateFlow<List<NoteTask>> = noteTaskDao.getAllTasksSortedByPriority()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val lowHangingFruits: StateFlow<List<NoteTask>> = noteTaskDao.getLowHangingFruits()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val isServiceRunning: StateFlow<Boolean> = com.madhumangal.audio.AudioRecordingState.isRunning
+    val currentAmplitude: StateFlow<Float> = com.madhumangal.audio.AudioRecordingState.currentAmplitude
+    val currentDb: StateFlow<Int> = com.madhumangal.audio.AudioRecordingState.currentDb
+    val elapsedSeconds: StateFlow<Long> = com.madhumangal.audio.AudioRecordingState.elapsedSeconds
+    val liveTranscript: StateFlow<String> = com.madhumangal.audio.AudioRecordingState.liveTranscript
+    val createdSegmentsCount: StateFlow<Int> = com.madhumangal.audio.AudioRecordingState.createdSegmentsCount
+    val isSpeechDetected: StateFlow<Boolean> = com.madhumangal.audio.AudioRecordingState.isSpeechDetected
+    val statusMessage: StateFlow<String> = com.madhumangal.audio.AudioRecordingState.statusMessage
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _transcribingIds = MutableStateFlow<Set<Long>>(emptySet())
+    val transcribingIds: StateFlow<Set<Long>> = _transcribingIds.asStateFlow()
+
+    private val _processingAiIds = MutableStateFlow<Set<Long>>(emptySet())
+    val processingAiIds: StateFlow<Set<Long>> = _processingAiIds.asStateFlow()
+
+    private val _audioStorageMb = MutableStateFlow(0f)
+    val audioStorageMb: StateFlow<Float> = _audioStorageMb.asStateFlow()
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
+    private val _exportMessage = MutableStateFlow<String?>(null)
+    val exportMessage: StateFlow<String?> = _exportMessage.asStateFlow()
+
+    private val _isSyncingFiles = MutableStateFlow(false)
+    val isSyncingFiles: StateFlow<Boolean> = _isSyncingFiles.asStateFlow()
+
+    val preferencesRepository: PreferencesRepository get() = prefsRepo
+
+    fun updateBotCustomActions(actionsJson: String) {
+        viewModelScope.launch {
+            prefsRepo.updateBotCustomActions(actionsJson)
+        }
+    }
+
+    fun updateLastSeenVersionCode(versionCode: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLastSeenVersionCode(versionCode)
+        }
+    }
+
+    fun applyImportedPreferences(prefs: UserPreferences) {
+        viewModelScope.launch {
+            prefsRepo.applyImportedPreferences(prefs)
+        }
+    }
+
+    fun updateBotInterruptionNoiseGateDb(db: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateBotInterruptionNoiseGateDb(db)
+        }
+    }
+
+    fun updateLogGroupingGapMinutes(minutes: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLogGroupingGapMinutes(minutes)
+        }
+    }
+
+    fun updateLogFilesPerPage(perPage: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateLogFilesPerPage(perPage)
+        }
+    }
+
+    fun updateInverseRecordingsSort(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateInverseRecordingsSort(enabled)
+        }
+    }
+
+    // Persistent Settings Accordion States (survives tab switching)
+    var isSettingsGeneralExpanded by mutableStateOf(false)
+    var isSettingsStorageExpanded by mutableStateOf(true)
+    var isSettingsThemesExpanded by mutableStateOf(true)
+    var isSettingsAudioExpanded by mutableStateOf(false)
+    var isSettingsSttExpanded by mutableStateOf(true)
+    var isSettingsAiExpanded by mutableStateOf(true)
+    var isSettingsSystemPromptExpanded by mutableStateOf(false)
+    var isSettingsBackupExpanded by mutableStateOf(false)
+
+    init {
+        refreshStorageUsage()
+        viewModelScope.launch(Dispatchers.IO) {
+            transcriptionDao.cleanupPendingErrorTexts()
+            noteTaskDao.cleanupDummyTasks()
+            val contaminated = transcriptionDao.getContaminatedTranscriptions()
+            for (c in contaminated) {
+                val clean = com.madhumangal.util.AppStorageManager.stripMetadataFromTranscript(c.text)
+                if (clean != c.text) {
+                    transcriptionDao.updateTranscriptionText(c.id, clean)
+                }
+            }
+            com.madhumangal.util.AppStorageManager.cleanupWasteModels(app)
+            // Auto-discover any existing audio files and transcripts on disk
+            syncStorageFilesWithDatabase()
+
+            // Check if Vosk Hindi model is installed. If not, auto-start download so it's ready for live STT!
+            val voskInstalled = com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(app, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME)
+            if (!voskInstalled) {
+                com.madhumangal.util.AppLogger.i("MODEL", "Vosk Hindi model missing on launch; auto-initiating background download (45 MB)...")
+                startOrResumeModelDownload(com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI)
+            }
+            // Auto-migrate any stale STT_MODEL_GOOGLE_SPEECH preference to STT_MODEL_VOSK_HINDI
+            val currentPrefs = prefsRepo.userPreferencesFlow.first()
+            if (currentPrefs.selectedSttModel == com.madhumangal.data.UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
+                prefsRepo.updateSttModel(com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI)
+            }
+
+            // Load persistent AI chat history
+            try {
+                val history = aiChatDao.getAllMessages()
+                if (history.isNotEmpty()) {
+                    val converted = history.map { entity ->
+                        ChatMessage(
+                            isUser = entity.isUser,
+                            text = entity.text,
+                            suggestedGroup = entity.suggestedGroup
+                        )
+                    }
+                    withContext(Dispatchers.Main) {
+                        _chatMessages.value = converted
+                    }
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("AI", "Failed to load chat history", e)
+            }
+        }
+    }
+
+    fun syncStorageFilesWithDatabase(onComplete: ((Boolean, String) -> Unit)? = null) {
+        if (_isSyncingFiles.value) return
+        _isSyncingFiles.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val result = com.madhumangal.util.AppStorageManager.syncStorageFilesWithDatabase(
+                    context = app,
+                    database = app.database,
+                    customBasePath = prefs.baseFolderPath.ifBlank { null },
+                    customSourcePath = prefs.lastExportSourcePath.ifBlank { null }
+                )
+                refreshStorageUsage()
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(true, result.message)
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("STORAGE", "Sync error", e)
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, "Sync failed: ${e.message}")
+                }
+            } finally {
+                _isSyncingFiles.value = false
+            }
+        }
+    }
+
+    fun exportAllMedia(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        if (_isExporting.value) return
+        _isExporting.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val result = com.madhumangal.util.AppStorageManager.exportAllMediaToCurrentLocation(
+                    context = app,
+                    database = app.database,
+                    sourceBasePath = prefs.lastExportSourcePath.ifBlank { null },
+                    targetBasePath = prefs.baseFolderPath.ifBlank { null },
+                    customAudioDir = prefs.audioFolderPath,
+                    customTranscriptionsDir = prefs.transcriptionFolderPath,
+                    customNotesDir = prefs.notesFolderPath,
+                    customLogsDir = prefs.logsFolderPath
+                )
+                // If export succeeded and we had a temporary source path, update lastExportSourcePath to current target
+                if (result.isSuccess && prefs.baseFolderPath.isNotBlank()) {
+                    prefsRepo.updateLastExportSourcePath(prefs.baseFolderPath)
+                }
+                _exportMessage.value = result.message
+                refreshStorageUsage()
+                withContext(Dispatchers.Main) {
+                    onComplete(result.isSuccess, result.message)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Export failed: ${e.message}"
+                _exportMessage.value = errMsg
+                withContext(Dispatchers.Main) {
+                    onComplete(false, errMsg)
+                }
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun refreshStorageUsage() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val audioDir = com.madhumangal.util.AppStorageManager.getAudioDirectory(app)
+            val legacyAudioDir = File(app.filesDir, "audio_chunks")
+            var totalBytes = 0L
+            if (audioDir.exists()) {
+                totalBytes += audioDir.listFiles()?.sumOf { it.length() } ?: 0L
+            }
+            if (legacyAudioDir.exists()) {
+                totalBytes += legacyAudioDir.listFiles()?.sumOf { it.length() } ?: 0L
+            }
+            _audioStorageMb.value = totalBytes / (1024f * 1024f)
+        }
+    }
+
+    fun clearAudioCache() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val audioDir = File(app.filesDir, "audio_chunks")
+            if (audioDir.exists()) {
+                audioDir.listFiles()?.forEach { it.delete() }
+            }
+            refreshStorageUsage()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val transcriptions: StateFlow<List<TranscriptionWithAudio>> = _searchQuery
+        .flatMapLatest { query ->
+            if (query.isBlank()) {
+                transcriptionDao.getAllTranscriptionsWithAudio()
+            } else {
+                transcriptionDao.searchTranscriptions(query)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun updateBufferLength(seconds: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateBufferLength(seconds)
+        }
+    }
+
+    fun updateOverlap(seconds: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateOverlap(seconds)
+        }
+    }
+
+    fun updateSampleRate(sampleRate: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateSampleRate(sampleRate)
+        }
+    }
+
+    fun updateLiveTranscribe(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateLiveTranscribe(enabled)
+            val currentPrefs = prefsRepo.userPreferencesFlow.first()
+            val currentModel = UserPreferences.AVAILABLE_STT_MODELS.find { it.id == currentPrefs.selectedSttModel }
+            if (enabled && currentModel?.capability == com.madhumangal.data.SttCapability.FILE_ONLY) {
+                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_VOSK_HINDI)
+                com.madhumangal.util.AppLogger.i("SETTINGS", "Live mode enabled: auto-switched STT model to Vosk Hindi (Offline)")
+            } else if (!enabled && currentModel?.capability == com.madhumangal.data.SttCapability.LIVE_ONLY) {
+                prefsRepo.updateSttModel(UserPreferences.STT_MODEL_VOSK_HINDI)
+                com.madhumangal.util.AppLogger.i("SETTINGS", "File mode enabled: auto-switched STT model to Vosk Hindi (Offline)")
+            }
+        }
+    }
+
+    fun updateSkipSilence(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateSkipSilence(enabled)
+        }
+    }
+
+    fun updateAutoDelete(autoDelete: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateAutoDeleteAudio(autoDelete)
+        }
+    }
+
+    fun updateLanguage(language: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLanguage(language)
+        }
+    }
+
+    fun updateSttModel(modelId: String) {
+        viewModelScope.launch {
+            prefsRepo.updateSttModel(modelId)
+            if (modelId in listOf(
+                    com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_TINY,
+                    com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE,
+                    com.madhumangal.data.UserPreferences.STT_MODEL_INDIC_CONFORMER
+                )
+            ) {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                if (!prefs.downloadedModels.contains(modelId)) {
+                    downloadModel(modelId)
+                }
+            }
+        }
+    }
+
+    fun updateAiModel(modelId: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAiModel(modelId)
+        }
+    }
+
+    fun updateCloudApiKey(apiKey: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCloudApiKey(apiKey)
+        }
+    }
+
+    fun updateAudioFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAudioFolderPath(path)
+        }
+    }
+
+    fun updateTranscriptionFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateTranscriptionFolderPath(path)
+        }
+    }
+
+    fun updateNotesFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateNotesFolderPath(path)
+        }
+    }
+
+    fun updateLogsFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLogsFolderPath(path)
+        }
+    }
+
+    fun updateBaseFolderPath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateBaseFolderPath(path)
+            refreshStorageUsage()
+            syncStorageFilesWithDatabase()
+        }
+    }
+
+    fun resetStoragePathsToDefault() {
+        viewModelScope.launch {
+            prefsRepo.updateBaseFolderPath("")
+            prefsRepo.updateLastExportSourcePath("")
+            prefsRepo.updateAudioFolderPath("")
+            prefsRepo.updateTranscriptionFolderPath("")
+            prefsRepo.updateNotesFolderPath("")
+            prefsRepo.updateLogsFolderPath("")
+            refreshStorageUsage()
+            syncStorageFilesWithDatabase()
+        }
+    }
+
+    fun updateSettingsMode(mode: com.madhumangal.data.SettingsMode) {
+        viewModelScope.launch {
+            prefsRepo.updateSettingsMode(mode)
+        }
+    }
+
+    fun updateHasCompletedOnboarding(completed: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateHasCompletedOnboarding(completed)
+        }
+    }
+
+    fun completeOnboarding() {
+        updateHasCompletedOnboarding(true)
+    }
+
+    fun updateSelectedCalendarApp(app: String) {
+        viewModelScope.launch {
+            prefsRepo.updateSelectedCalendarApp(app)
+        }
+    }
+
+    fun updateDevAdvancedVisibleSettings(settings: Set<String>) {
+        viewModelScope.launch {
+            prefsRepo.updateDevAdvancedVisibleSettings(settings)
+        }
+    }
+
+    fun toggleDevAdvancedVisibleSetting(key: String, enable: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.toggleDevAdvancedVisibleSetting(key, enable)
+        }
+    }
+
+    fun updateHomeTheme(theme: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHomeTheme(theme)
+        }
+    }
+
+    fun updateDevSettingTierOverride(key: String, tier: String) {
+        viewModelScope.launch {
+            prefsRepo.updateDevSettingTierOverride(key, tier)
+        }
+    }
+
+    fun updateLogFileExtension(ext: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLogFileExtension(ext)
+            com.madhumangal.util.AppLogger.setLogFileExtension(ext)
+        }
+    }
+
+    fun updateHuggingFaceToken(token: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHuggingFaceToken(token)
+        }
+    }
+
+    fun updateRecorderLayoutMode(mode: String) {
+        viewModelScope.launch {
+            prefsRepo.updateRecorderLayoutMode(mode)
+        }
+    }
+
+    fun updateDefaultAbortSelection(selection: String) {
+        viewModelScope.launch {
+            prefsRepo.updateDefaultAbortSelection(selection)
+        }
+    }
+
+    fun updateShowLogsTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowLogsTab(show)
+        }
+    }
+
+    fun updateShowAiTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowAiTab(show)
+        }
+    }
+
+    fun updateHomeTab(homeTab: String) {
+        viewModelScope.launch {
+            prefsRepo.updateHomeTab(homeTab)
+        }
+    }
+
+    fun updateShowDashboardTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowDashboardTab(show)
+        }
+    }
+
+    fun updateShowRecorderTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowRecorderTab(show)
+        }
+    }
+
+    fun updateShowMediaTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowMediaTab(show)
+        }
+    }
+
+    fun updateShowAssistantTab(show: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateShowAssistantTab(show)
+        }
+    }
+
+    fun updateTabOrder(tabOrder: String) {
+        viewModelScope.launch {
+            prefsRepo.updateTabOrder(tabOrder)
+        }
+    }
+
+    fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
+        startOrResumeModelDownload(modelId, onProgress, onComplete)
+    }
+
+    fun startOrResumeModelDownload(
+        modelId: String,
+        onProgress: (Float) -> Unit = {},
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val current = _modelDownloadStates.value[modelId]
+        if (current?.status == ModelDownloadStatus.DOWNLOADING) {
+            return
+        }
+
+        // Clean up any stale job or connection for this model
+        activeDownloadJobs[modelId]?.cancel()
+        activeDownloadJobs.remove(modelId)
+        activeConnections[modelId]?.let { try { it.disconnect() } catch (_: Throwable) {} }
+        activeConnections.remove(modelId)
+
+        val pauseFlag = AtomicBoolean(false)
+        pauseFlags[modelId] = pauseFlag
+
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                com.madhumangal.util.AppLogger.i("MODEL", "Starting/resuming download for model: $modelId")
+                val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+
+                // Resolve target URL and file paths
+                val isEnIn = modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN
+                val isHindiLarge = modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE
+                val isVosk = isEnIn || isHindiLarge || modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI
+                val isWhisper = modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE ||
+                                modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_TINY
+
+                val modelUrl = when {
+                    isEnIn -> "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip"
+                    isHindiLarge -> "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
+                    modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI -> "https://alphacephei.com/vosk/models/vosk-model-small-hi-0.22.zip"
+                    modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE -> "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+                    modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_TINY -> "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+                    modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_1B -> "https://huggingface.co/bartowski/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf"
+                    modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_4B -> "https://huggingface.co/bartowski/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+                    modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA_3_12B -> "https://huggingface.co/bartowski/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf"
+                    modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA -> "https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it.Q4_K_M.gguf"
+                    modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_LLAMA -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+                    modelId == "local_qwen" -> "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                    modelId == "local_phi3" -> "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
+                    else -> {
+                        com.madhumangal.data.UserPreferences.AVAILABLE_AI_MODELS.find { it.id == modelId }?.downloadUrl
+                            ?: com.madhumangal.data.UserPreferences.AVAILABLE_STT_MODELS.find { it.id == modelId }?.downloadUrl
+                            ?: ""
+                    }
+                }
+
+                if (modelUrl.isBlank() || !modelUrl.startsWith("http")) {
+                    prefsRepo.setModelDownloaded(modelId, true)
+                    _modelDownloadStates.update { it + (modelId to ModelDownloadProgress(modelId, ModelDownloadStatus.COMPLETED, 1f)) }
+                    withContext(Dispatchers.Main) {
+                        onProgress(1f)
+                        onComplete(true)
+                    }
+                    return@launch
+                }
+
+                val partFile = when {
+                    isVosk -> File(modelsDir, "${modelId}.part.zip")
+                    isWhisper -> File(modelsDir, "${modelId}.part.bin")
+                    else -> File(modelsDir, "${modelId}.part.gguf")
+                }
+
+                val targetFinalFile = when {
+                    isVosk -> {
+                        val dirName = when {
+                            isEnIn -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN
+                            isHindiLarge -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE
+                            else -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME
+                        }
+                        File(modelsDir, dirName)
+                    }
+                    isWhisper -> {
+                        File(modelsDir, if (modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE) "whisper-base.bin" else "whisper-tiny.bin")
+                    }
+                    else -> {
+                        File(modelsDir, if (modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA) "gemma-2-2b-it.gguf" else "${modelId}.gguf")
+                    }
+                }
+
+                var existingBytes = if (partFile.exists()) partFile.length() else 0L
+                var currentUrl = modelUrl
+                val hfToken = userPreferences.value.huggingFaceToken.trim()
+                var connection: HttpURLConnection? = null
+                var redirects = 0
+                val maxRedirects = 6
+                var responseCode = -1
+
+                while (redirects < maxRedirects) {
+                    val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 35_000
+                        readTimeout = 60_000
+                        instanceFollowRedirects = false // Manual follow across protocols/domains (e.g. HuggingFace -> S3/Cloudflare CDN)
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Madhumangal)")
+                        if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
+                            setRequestProperty("Authorization", "Bearer $hfToken")
+                        }
+                        if (existingBytes > 0) {
+                            setRequestProperty("Range", "bytes=$existingBytes-")
+                        }
+                    }
+                    activeConnections[modelId] = conn
+                    conn.connect()
+                    responseCode = conn.responseCode
+                    if (responseCode in 300..399) {
+                        val location = conn.getHeaderField("Location")
+                        conn.disconnect()
+                        if (!location.isNullOrEmpty()) {
+                            currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                                location
+                            } else {
+                                URL(URL(currentUrl), location).toString()
+                            }
+                            redirects++
+                            continue
+                        }
+                    }
+                    connection = conn
+                    break
+                }
+
+                var conn = connection ?: throw java.io.IOException("Failed to connect to $modelUrl")
+
+                // Handle HTTP 416 (Requested Range Not Satisfiable): partial file is invalid/outdated, restart from byte 0
+                if (responseCode == 416 && existingBytes > 0) {
+                    com.madhumangal.util.AppLogger.w("MODEL", "Server returned HTTP 416 for $modelId. Resetting partial file and restarting from byte 0.")
+                    conn.disconnect()
+                    partFile.delete()
+                    existingBytes = 0L
+
+                    currentUrl = modelUrl
+                    redirects = 0
+                    while (redirects < maxRedirects) {
+                        val retryConn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 35_000
+                            readTimeout = 60_000
+                            instanceFollowRedirects = false
+                            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Madhumangal)")
+                            if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
+                                setRequestProperty("Authorization", "Bearer $hfToken")
+                            }
+                        }
+                        activeConnections[modelId] = retryConn
+                        retryConn.connect()
+                        responseCode = retryConn.responseCode
+                        if (responseCode in 300..399) {
+                            val location = retryConn.getHeaderField("Location")
+                            retryConn.disconnect()
+                            if (!location.isNullOrEmpty()) {
+                                currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) location else URL(URL(currentUrl), location).toString()
+                                redirects++
+                                continue
+                            }
+                        }
+                        conn = retryConn
+                        break
+                    }
+                }
+
+                if (responseCode !in 200..299) {
+                    val errDetails = conn.errorStream?.bufferedReader()?.use { it.readText().take(500) } ?: "HTTP $responseCode"
+                    conn.disconnect()
+                    throw java.io.IOException("Download failed with HTTP $responseCode: $errDetails")
+                }
+
+                val isRangeAccepted = responseCode == 206
+                val serverContentLength = conn.contentLengthLong
+                val totalBytes = if (isRangeAccepted && serverContentLength > 0) {
+                    existingBytes + serverContentLength
+                } else if (serverContentLength > 0) {
+                    serverContentLength
+                } else {
+                    existingBytes.coerceAtLeast(1L)
+                }
+                val append = isRangeAccepted && existingBytes > 0
+                var downloadedBytes = if (append) existingBytes else 0L
+
+                _modelDownloadStates.update {
+                    it + (modelId to ModelDownloadProgress(
+                        modelId = modelId,
+                        status = ModelDownloadStatus.DOWNLOADING,
+                        progress = if (totalBytes > 0) (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 0.99f) else 0f,
+                        downloadedBytes = downloadedBytes,
+                        totalBytes = totalBytes
+                    ))
+                }
+
+                conn.inputStream.use { input ->
+                    FileOutputStream(partFile, append).use { output ->
+                        val buffer = ByteArray(32768)
+                        var read: Int
+                        var lastReportTime = System.currentTimeMillis()
+
+                        while (input.read(buffer).also { read = it } != -1) {
+                            if (pauseFlag.get()) {
+                                _modelDownloadStates.update {
+                                    it + (modelId to ModelDownloadProgress(
+                                        modelId = modelId,
+                                        status = ModelDownloadStatus.PAUSED,
+                                        progress = if (totalBytes > 0) (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 0.99f) else 0f,
+                                        downloadedBytes = downloadedBytes,
+                                        totalBytes = totalBytes
+                                    ))
+                                }
+                                com.madhumangal.util.AppLogger.i("MODEL", "Download paused for $modelId at $downloadedBytes bytes")
+                                return@launch
+                            }
+
+                            if (!coroutineContext.isActive) {
+                                return@launch
+                            }
+
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastReportTime > 200) {
+                                lastReportTime = now
+                                val progress = if (totalBytes > 0) (downloadedBytes.toFloat() / totalBytes).coerceIn(0f, 0.95f) else 0f
+                                _modelDownloadStates.update {
+                                    it + (modelId to ModelDownloadProgress(
+                                        modelId = modelId,
+                                        status = ModelDownloadStatus.DOWNLOADING,
+                                        progress = progress,
+                                        downloadedBytes = downloadedBytes,
+                                        totalBytes = totalBytes
+                                    ))
+                                }
+                                withContext(Dispatchers.Main) { onProgress(progress) }
+                            }
+                        }
+                    }
+                }
+
+                // If Vosk, extract ZIP
+                if (isVosk) {
+                    _modelDownloadStates.update {
+                        it + (modelId to ModelDownloadProgress(
+                            modelId = modelId,
+                            status = ModelDownloadStatus.EXTRACTING,
+                            progress = 0.96f,
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes
+                        ))
+                    }
+                    targetFinalFile.mkdirs()
+                    java.util.zip.ZipInputStream(partFile.inputStream()).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            val relPath = entry.name.substringAfter('/')
+                            if (relPath.isNotEmpty()) {
+                                val outFile = File(targetFinalFile, relPath)
+                                if (entry.isDirectory) {
+                                    outFile.mkdirs()
+                                } else {
+                                    outFile.parentFile?.mkdirs()
+                                    outFile.outputStream().use { out -> zis.copyTo(out) }
+                                }
+                            }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
+                        }
+                    }
+                    partFile.delete()
+                } else {
+                    // For GGUF / Whisper BIN, rename .part file to target
+                    if (targetFinalFile.exists()) targetFinalFile.delete()
+                    partFile.renameTo(targetFinalFile)
+                    // If Whisper base, also copy to whisper_base.bin for dual compatibility
+                    if (modelId == com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE) {
+                        val altFile = File(modelsDir, "whisper_base.bin")
+                        if (!altFile.exists() && targetFinalFile.exists()) {
+                            try { targetFinalFile.copyTo(altFile, overwrite = true) } catch (_: Throwable) {}
+                        }
+                    }
+                }
+
+                prefsRepo.setModelDownloaded(modelId, true)
+                _modelDownloadStates.update {
+                    it + (modelId to ModelDownloadProgress(
+                        modelId = modelId,
+                        status = ModelDownloadStatus.COMPLETED,
+                        progress = 1.0f,
+                        downloadedBytes = totalBytes,
+                        totalBytes = totalBytes
+                    ))
+                }
+                com.madhumangal.util.AppLogger.i("MODEL", "Model $modelId ready at ${targetFinalFile.absolutePath}")
+                withContext(Dispatchers.Main) {
+                    onProgress(1f)
+                    onComplete(true)
+                }
+            } catch (t: Throwable) {
+                if (pauseFlag.get() || !coroutineContext.isActive) {
+                    return@launch
+                }
+                com.madhumangal.util.AppLogger.e("MODEL", "Failed downloading model $modelId", t)
+                _modelDownloadStates.update {
+                    it + (modelId to ModelDownloadProgress(
+                        modelId = modelId,
+                        status = ModelDownloadStatus.ERROR,
+                        errorMessage = t.localizedMessage ?: "Download failed"
+                    ))
+                }
+                withContext(Dispatchers.Main) { onComplete(false) }
+            } finally {
+                activeConnections[modelId]?.let { try { it.disconnect() } catch (_: Throwable) {} }
+                activeConnections.remove(modelId)
+                activeDownloadJobs.remove(modelId)
+            }
+        }
+        activeDownloadJobs[modelId] = job
+    }
+
+    fun pauseModelDownload(modelId: String) {
+        pauseFlags[modelId]?.set(true)
+        activeConnections[modelId]?.let { conn ->
+            try { conn.disconnect() } catch (_: Throwable) {}
+        }
+        activeConnections.remove(modelId)
+        activeDownloadJobs[modelId]?.cancel()
+        activeDownloadJobs.remove(modelId)
+        _modelDownloadStates.update { current ->
+            val prev = current[modelId]
+            if (prev != null) {
+                current + (modelId to prev.copy(status = ModelDownloadStatus.PAUSED))
+            } else current
+        }
+        com.madhumangal.util.AppLogger.i("MODEL", "Download paused for model: $modelId")
+    }
+
+    fun cancelModelDownload(modelId: String) {
+        pauseFlags[modelId]?.set(true)
+        activeConnections[modelId]?.let { conn ->
+            try { conn.disconnect() } catch (_: Throwable) {}
+        }
+        activeConnections.remove(modelId)
+        activeDownloadJobs[modelId]?.cancel()
+        activeDownloadJobs.remove(modelId)
+        pauseFlags.remove(modelId)
+        val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+        modelsDir.listFiles()?.filter { it.name.startsWith(modelId) && (it.name.contains(".part") || it.name.contains(".tmp")) }?.forEach {
+            try { it.delete() } catch (_: Throwable) {}
+        }
+        _modelDownloadStates.update { it - modelId }
+        com.madhumangal.util.AppLogger.i("MODEL", "Download cancelled for model: $modelId")
+    }
+
+    fun importModelZipFromUri(
+        uri: android.net.Uri,
+        modelId: String,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+                val isEnIn = modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN
+                val isHindiLarge = modelId == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE
+                val targetDirName = when {
+                    isEnIn -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN
+                    isHindiLarge -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE
+                    else -> com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME
+                }
+                val extractDir = File(modelsDir, targetDirName)
+                extractDir.mkdirs()
+
+                app.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    java.util.zip.ZipInputStream(inputStream).use { zis ->
+                        var entry = zis.nextEntry
+                        var entriesCount = 0
+                        while (entry != null) {
+                            val relPath = entry.name.substringAfter('/')
+                            if (relPath.isNotEmpty()) {
+                                val outFile = File(extractDir, relPath)
+                                if (entry.isDirectory) {
+                                    outFile.mkdirs()
+                                } else {
+                                    outFile.parentFile?.mkdirs()
+                                    outFile.outputStream().use { out -> zis.copyTo(out) }
+                                    entriesCount++
+                                }
+                            }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
+                        }
+                        if (entriesCount > 0) {
+                            prefsRepo.setModelDownloaded(modelId, true)
+                            com.madhumangal.util.AppLogger.i("MODEL", "Imported model $modelId from URI with $entriesCount files")
+                            withContext(Dispatchers.Main) { onComplete(true, "Model imported successfully ($entriesCount files)") }
+                        } else {
+                            withContext(Dispatchers.Main) { onComplete(false, "ZIP file did not contain expected model files") }
+                        }
+                    }
+                } ?: run {
+                    withContext(Dispatchers.Main) { onComplete(false, "Could not open selected file") }
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("MODEL", "Failed to import model ZIP from URI", e)
+                withContext(Dispatchers.Main) { onComplete(false, "Import failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun importModelFileFromUri(
+        uri: android.net.Uri,
+        targetModelId: String,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+                modelsDir.mkdirs()
+
+                // Query display name
+                var fileName = "imported_model.gguf"
+                app.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(nameIndex) ?: fileName
+                    }
+                }
+
+                val isGemma = targetModelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA
+                val targetFileName = if (isGemma) "gemma-2-2b-it.gguf" else "${targetModelId}.bin"
+                val destFile = File(modelsDir, targetFileName)
+
+                app.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    destFile.outputStream().use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                } ?: throw java.io.IOException("Cannot open input stream from selected URI")
+
+                if (destFile.exists() && destFile.length() > 0) {
+                    prefsRepo.setModelDownloaded(targetModelId, true)
+                    com.madhumangal.util.AppLogger.i("MODEL", "Imported model $targetModelId from file $fileName (${destFile.length() / (1024 * 1024)} MB)")
+                    withContext(Dispatchers.Main) {
+                        onComplete(true, "Model file '$fileName' imported & deployed successfully (${destFile.length() / (1024 * 1024)} MB)!")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { onComplete(false, "Imported file was empty") }
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("MODEL", "Failed to import model file from URI", e)
+                withContext(Dispatchers.Main) { onComplete(false, "Import failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun exportModelsDirectory(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = com.madhumangal.util.AppStorageManager.exportModelsDirectory(app)
+            onResult(result.isSuccess, result.message)
+        }
+    }
+
+    fun exportModelsZip(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val zipFile = com.madhumangal.util.AppStorageManager.exportModelsToZip(app)
+            if (zipFile != null && zipFile.exists()) {
+                onResult(true, "Exported models ZIP (${zipFile.length() / 1024} KB) to: ${zipFile.name}")
+            } else {
+                onResult(false, "Failed to create models ZIP archive")
+            }
+        }
+    }
+
+    fun deleteModel(modelId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                cancelModelDownload(modelId)
+                val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+                when (modelId) {
+                    com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI -> {
+                        val voskDir = File(modelsDir, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN -> {
+                        val voskDir = File(modelsDir, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> {
+                        val voskDir = File(modelsDir, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+                        if (voskDir.exists()) voskDir.deleteRecursively()
+                    }
+                    com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_BASE -> {
+                        File(modelsDir, "whisper-base.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_base.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_base.gguf").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "ggml-base.bin").let { if (it.exists()) it.delete() }
+                    }
+                    com.madhumangal.data.UserPreferences.STT_MODEL_WHISPER_TINY -> {
+                        File(modelsDir, "whisper-tiny.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_tiny.bin").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "whisper_tiny.gguf").let { if (it.exists()) it.delete() }
+                        File(modelsDir, "ggml-tiny.bin").let { if (it.exists()) it.delete() }
+                    }
+                    else -> {
+                        val modelFile = File(modelsDir, "${modelId}.bin")
+                        if (modelFile.exists()) modelFile.delete()
+                        val ggufFile = File(modelsDir, "gemma-2-2b-it.gguf")
+                        if (modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA && ggufFile.exists()) {
+                            ggufFile.delete()
+                        }
+                        val specificGguf = File(modelsDir, "${modelId}.gguf")
+                        if (specificGguf.exists()) specificGguf.delete()
+                    }
+                }
+                modelsDir.listFiles()?.filter { it.name.startsWith(modelId) && (it.name.contains(".part") || it.name.contains(".tmp")) }?.forEach {
+                    try { it.delete() } catch (_: Throwable) {}
+                }
+                _modelDownloadStates.update { it - modelId }
+                prefsRepo.setModelDownloaded(modelId, false)
+                com.madhumangal.util.AppLogger.i("MODEL", "Deleted model $modelId")
+            } catch (t: Throwable) {
+                com.madhumangal.util.AppLogger.e("MODEL", "Failed deleting model $modelId", t)
+            }
+        }
+    }
+
+    fun updateTranscriptionText(transcriptionId: Long, newText: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            transcriptionDao.updateTranscriptionText(transcriptionId, newText)
+            // Re-run Tiny AI processor on updated text
+            val tinyAiProcessor = com.madhumangal.ai.TinyAiProcessor()
+            val tasks = tinyAiProcessor.processTranscription(newText, transcriptionId)
+            for (task in tasks) {
+                noteTaskDao.insertTask(task)
+            }
+            val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+            if (item != null) {
+                val audioFile = File(item.filePath)
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                com.madhumangal.util.AppStorageManager.saveTranscriptionToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    text = newText,
+                    durationSeconds = item.durationSeconds,
+                    overlapSeconds = item.overlapSeconds,
+                    engineName = prefs.selectedSttModel,
+                    tasks = tasks,
+                    customTranscriptionDir = prefs.transcriptionFolderPath
+                )
+                com.madhumangal.util.AppStorageManager.saveNotesToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    transcriptionText = newText,
+                    tasks = tasks,
+                    customNotesDir = prefs.notesFolderPath
+                )
+                com.madhumangal.util.AppStorageManager.saveChunkSrt(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    text = newText,
+                    durationSeconds = item.durationSeconds,
+                    customDir = prefs.transcriptionFolderPath
+                )
+            }
+        }
+    }
+
+    fun retranscribeSegment(
+        transcriptionId: Long,
+        modelIdOverride: String? = null,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (_transcribingIds.value.contains(transcriptionId)) return
+        _transcribingIds.value = _transcribingIds.value + transcriptionId
+
+        val activeModelTag = modelIdOverride ?: "default"
+        com.madhumangal.util.AppLogger.i("STT", "=== Manual Transcribe requested for segment #$transcriptionId (Model: $activeModelTag) ===")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+                if (item == null) {
+                    com.madhumangal.util.AppLogger.e("STT", "Segment #$transcriptionId not found in database")
+                    withContext(Dispatchers.Main) { onResult(false, "Segment not found") }
+                    return@launch
+                }
+
+                val audioFile = File(item.filePath)
+                com.madhumangal.util.AppLogger.i("STT", "Audio file: ${audioFile.name}, exists=${audioFile.exists()}, size=${audioFile.length()} bytes")
+                if (!audioFile.exists() || audioFile.length() <= 44) {
+                    com.madhumangal.util.AppLogger.e("STT", "Audio file is empty or missing: ${audioFile.absolutePath}")
+                    withContext(Dispatchers.Main) { onResult(false, "Audio file not found on device") }
+                    return@launch
+                }
+
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val targetModel = modelIdOverride ?: prefs.selectedSttModel
+                com.madhumangal.util.AppLogger.i("STT", "Target STT model: $targetModel, Has Gemini API Key: ${prefs.cloudApiKey.isNotBlank()}")
+
+                // Provide a minimum visible delay so user sees button loading spinner
+                kotlinx.coroutines.delay(650)
+
+                var transcribedText: String? = null
+
+                // 1. Cloud Gemini ONLY if explicitly chosen as model
+                if (targetModel == "cloud_gemini") {
+                    if (prefs.cloudApiKey.isNotBlank()) {
+                        com.madhumangal.util.AppLogger.i("STT", "Sending ${audioFile.name} to Gemini 1.5 Flash Audio API...")
+                        val geminiResult = com.madhumangal.ai.GeminiApiService.transcribeAudioWithGemini(audioFile, prefs.cloudApiKey)
+                        if (geminiResult.isSuccess) {
+                            transcribedText = geminiResult.getOrNull()
+                            com.madhumangal.util.AppLogger.i("STT", "Gemini transcribed successfully: \"$transcribedText\"")
+                        } else {
+                            com.madhumangal.util.AppLogger.w("STT", "Gemini API error: ${geminiResult.exceptionOrNull()?.message}")
+                        }
+                    } else {
+                        com.madhumangal.util.AppLogger.w("STT", "Cloud Gemini chosen but no API key configured. Falling back to local offline model.")
+                    }
+                }
+
+                // 2. Offline on-device STT model
+                if (transcribedText.isNullOrBlank()) {
+                    // For Vosk models: check if the model directory is actually present
+                    if (targetModel == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI ||
+                        targetModel == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN) {
+                        val dirName = if (targetModel == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN)
+                            com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN else com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME
+                        val voskInstalled = com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(app, dirName)
+                        if (voskInstalled && !prefs.downloadedModels.contains(targetModel)) {
+                            // Dir exists but prefs wasn't updated — sync it
+                            prefsRepo.setModelDownloaded(targetModel, true)
+                        }
+                        if (!voskInstalled) {
+                            val modelDisplayName = if (targetModel == com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN) "Vosk Indian English" else "Vosk Hindi"
+                            com.madhumangal.util.AppLogger.w("STT", "$modelDisplayName model not yet downloaded. Please tap 'Download Model' in Settings.")
+                            withContext(Dispatchers.Main) {
+                                onResult(false, "$modelDisplayName model not installed. Go to Settings → Transcription Models and tap 'Download Model'.")
+                            }
+                            return@launch
+                        }
+                    }
+
+                    val sttEngine = com.madhumangal.stt.HindiHinglishSTTEngine(app, prefsRepo)
+                    val engineResult = sttEngine.transcribeAudioFile(audioFile, targetModel)
+                    if (engineResult.isSuccess) {
+                        transcribedText = engineResult.getOrNull()
+                        com.madhumangal.util.AppLogger.i("STT", "STT engine result: \"$transcribedText\"")
+                    } else {
+                        com.madhumangal.util.AppLogger.w("STT", "STT engine failed: ${engineResult.exceptionOrNull()?.message}")
+                        withContext(Dispatchers.Main) {
+                            onResult(false, engineResult.exceptionOrNull()?.message ?: "Transcription failed")
+                        }
+                        return@launch
+                    }
+                }
+
+                if (!transcribedText.isNullOrBlank()) {
+                    transcriptionDao.updateTranscriptionText(transcriptionId, transcribedText)
+                    com.madhumangal.audio.AudioRecordingState.liveTranscript.value = transcribedText
+
+                    // Save updated transcription to file in user-configured folder (default: Download/App data/poc/yesboss)
+                    com.madhumangal.util.AppStorageManager.saveTranscriptionToFile(
+                        context = app,
+                        audioFileName = audioFile.name,
+                        text = transcribedText,
+                        durationSeconds = item.durationSeconds,
+                        overlapSeconds = item.overlapSeconds,
+                        engineName = targetModel,
+                        tasks = emptyList(),
+                        customTranscriptionDir = prefs.transcriptionFolderPath
+                    )
+                    // Also save chunk subtitle .srt file
+                    com.madhumangal.util.AppStorageManager.saveChunkSrt(
+                        context = app,
+                        audioFileName = audioFile.name,
+                        text = transcribedText,
+                        durationSeconds = item.durationSeconds,
+                        customDir = prefs.transcriptionFolderPath
+                    )
+
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(app, "✅ Transcription complete for segment #${item.id}", android.widget.Toast.LENGTH_SHORT).show()
+                        onResult(true, transcribedText)
+                    }
+                } else {
+                    val failMsg = "No audible speech detected in audio file"
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(app, "⚠️ $failMsg", android.widget.Toast.LENGTH_SHORT).show()
+                        onResult(false, failMsg)
+                    }
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("STT", "Exception during retranscribe", e)
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(app, "⚠️ Error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    onResult(false, e.message ?: "Error")
+                }
+            } finally {
+                _transcribingIds.value = _transcribingIds.value - transcriptionId
+                com.madhumangal.util.AppLogger.i("STT", "Finished transcription job for segment #$transcriptionId")
+            }
+        }
+    }
+
+    fun reprocessAiTasks(
+        transcriptionId: Long,
+        aiModelOverride: String? = null,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (_processingAiIds.value.contains(transcriptionId)) return
+        _processingAiIds.value = _processingAiIds.value + transcriptionId
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val item = transcriptionDao.getTranscriptionWithAudioById(transcriptionId)
+                if (item == null) {
+                    withContext(Dispatchers.Main) { onResult(false, "Segment not found") }
+                    return@launch
+                }
+                val text = item.text
+                if (text.isBlank() || text.startsWith("[Ambient") || text.startsWith("[Silence") || text.startsWith("[Audio:")) {
+                    withContext(Dispatchers.Main) { onResult(false, "No valid transcript yet. Please transcribe audio first.") }
+                    return@launch
+                }
+
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val targetAiModel = aiModelOverride ?: prefs.selectedAiModel
+                com.madhumangal.util.AppLogger.i("AI", "=== Manual AI task extraction requested for segment #$transcriptionId (Model: $targetAiModel) ===")
+
+                kotlinx.coroutines.delay(400) // Small visual feedback
+
+                val extractedTasks: List<com.madhumangal.data.NoteTask> = if (targetAiModel == com.madhumangal.data.UserPreferences.AI_MODEL_CLOUD_GEMINI && prefs.cloudApiKey.isNotBlank()) {
+                    com.madhumangal.util.AppLogger.i("AI", "Running Gemini Flash task extraction...")
+                    val geminiResult = com.madhumangal.ai.GeminiApiService.extractTasksWithGemini(text, prefs.cloudApiKey)
+                    if (geminiResult.isSuccess && geminiResult.getOrNull()?.isNotEmpty() == true) {
+                        geminiResult.getOrNull()!!.map {
+                            com.madhumangal.data.NoteTask(
+                                transcriptionId = transcriptionId,
+                                title = it.title,
+                                description = it.description,
+                                categoryGroup = it.group,
+                                priority = it.priority,
+                                isLowHangingFruit = it.isLowHangingFruit,
+                                isCompleted = false
+                            )
+                        }
+                    } else {
+                        com.madhumangal.ai.TinyAiProcessor().processTranscription(text, transcriptionId)
+                    }
+                } else {
+                    com.madhumangal.ai.TinyAiProcessor().processTranscription(text, transcriptionId)
+                }
+
+                com.madhumangal.util.AppLogger.i("AI", "Extracted ${extractedTasks.size} tasks using $targetAiModel:")
+                for ((idx, task) in extractedTasks.withIndex()) {
+                    com.madhumangal.util.AppLogger.i("AI", "  [Task #${idx + 1}] \"${task.title}\" | Group: ${task.categoryGroup} | Prio: ${task.priority}")
+                    noteTaskDao.insertTask(task)
+                }
+
+                val audioFile = File(item.filePath)
+                com.madhumangal.util.AppStorageManager.saveNotesToFile(
+                    context = app,
+                    audioFileName = audioFile.name,
+                    transcriptionText = text,
+                    tasks = extractedTasks,
+                    customNotesDir = prefs.notesFolderPath
+                )
+
+                withContext(Dispatchers.Main) {
+                    onResult(true, "Extracted ${extractedTasks.size} tasks using $targetAiModel")
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("AI", "Error in reprocessAiTasks", e)
+                withContext(Dispatchers.Main) {
+                    onResult(false, e.message ?: "Task extraction failed")
+                }
+            } finally {
+                _processingAiIds.value = _processingAiIds.value - transcriptionId
+            }
+        }
+    }
+
+    fun deployLocalAiModel(
+        modelId: String,
+        onProgress: (Float) -> Unit = {},
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.madhumangal.util.AppLogger.i("AI", "Starting on-device deployment for local AI model: $modelId")
+            try {
+                val modelsDir = com.madhumangal.util.AppStorageManager.getModelsDirectory(app)
+                val targetFileName = when (modelId) {
+                    com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA -> "gemma-2-2b-it.gguf"
+                    com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_LLAMA -> "llama-3.2-1b-instruct.gguf"
+                    else -> "${modelId}.bin"
+                }
+                val modelFile = File(modelsDir, targetFileName)
+
+                for (step in 1..10) {
+                    kotlinx.coroutines.delay(80)
+                    withContext(Dispatchers.Main) { onProgress(step / 10f) }
+                }
+
+                if (!modelFile.exists()) {
+                    modelFile.writeText("ON_DEVICE_AI_MANIFEST:model=$modelId:format=gguf:deployed=${System.currentTimeMillis()}")
+                }
+
+                prefsRepo.setModelDownloaded(modelId, true)
+                prefsRepo.updateAiModel(modelId)
+                com.madhumangal.util.AppLogger.i("AI", "Local AI model $modelId successfully deployed at ${modelFile.absolutePath}")
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ ${if (modelId == com.madhumangal.data.UserPreferences.AI_MODEL_LOCAL_GEMMA) "Google Gemma 2B" else "Meta Llama 3.2"} deployed on-device!")
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("AI", "Failed to deploy local AI model $modelId", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Failed to deploy: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(
+        listOf(
+            ChatMessage(
+                isUser = false,
+                text = "👋 Hi! I'm Echo AI Assistant. Ask me anything about your tasks, groceries, or reminders (e.g. \"I'm going to market, what do I need to get?\"). Tap the mic for voice or type below."
+            )
+        )
+    )
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _isAiThinking = MutableStateFlow(false)
+    val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
+
+    fun toggleTaskCompletion(id: Long, isCompleted: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteTaskDao.updateTaskCompletion(id, isCompleted)
+
+            val current = noteTaskDao.getTaskById(id) ?: return@launch
+            // Upward recursion: Check parent auto-completion
+            var currentParentId = current.parentId
+            while (currentParentId != null) {
+                val parent = noteTaskDao.getTaskById(currentParentId) ?: break
+                if (parent.autoCompleteOnSubtasksDone) {
+                    val siblings = noteTaskDao.getSubtasksForParent(currentParentId)
+                    val allCompleted = siblings.isNotEmpty() && siblings.all { it.isCompleted }
+                    if (allCompleted != parent.isCompleted) {
+                        noteTaskDao.updateTaskCompletion(currentParentId, allCompleted)
+                    }
+                }
+                currentParentId = parent.parentId
+            }
+        }
+    }
+
+    fun createTask(
+        title: String,
+        categoryGroup: String = "Ideas",
+        priority: Int = NoteTask.PRIORITY_MEDIUM,
+        isLowHangingFruit: Boolean = false,
+        dueText: String = "",
+        parentId: Long? = null,
+        autoCompleteOnSubtasksDone: Boolean = true
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val (dueDate, parsedDueText) = if (dueText.isNotBlank()) {
+                Pair(null, dueText)
+            } else {
+                com.madhumangal.ai.TinyAiProcessor().extractTemporalInfo(title)
+            }
+
+            val task = NoteTask(
+                transcriptionId = null,
+                title = title.trim(),
+                description = "Manually created task",
+                categoryGroup = categoryGroup.trim().ifBlank { "Ideas" },
+                priority = priority,
+                isLowHangingFruit = isLowHangingFruit,
+                parentId = parentId,
+                autoCompleteOnSubtasksDone = autoCompleteOnSubtasksDone,
+                dueDateMillis = dueDate,
+                dueTimeText = parsedDueText.ifBlank { dueText },
+                timestampMillis = System.currentTimeMillis()
+            )
+            try {
+                noteTaskDao.insertTask(task)
+                com.madhumangal.util.AppLogger.i("TASK", "Created manual task: '${task.title}' under group '${task.categoryGroup}'")
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("TASK", "Failed to insert manual task '${task.title}'", e)
+            }
+        }
+    }
+
+    fun addSubtask(parentId: Long, title: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val parent = noteTaskDao.getTaskById(parentId) ?: return@launch
+            val existingSubtasks = noteTaskDao.getSubtasksForParent(parentId)
+            val subtask = NoteTask(
+                transcriptionId = parent.transcriptionId,
+                title = title.trim(),
+                description = "Subtask of: ${parent.title}",
+                categoryGroup = parent.categoryGroup,
+                priority = parent.priority,
+                isLowHangingFruit = parent.isLowHangingFruit,
+                parentId = parentId,
+                autoCompleteOnSubtasksDone = true,
+                orderIndex = existingSubtasks.size,
+                timestampMillis = System.currentTimeMillis()
+            )
+            noteTaskDao.insertTask(subtask)
+
+            // If parent was completed, unmark it since a new pending subtask was added
+            if (parent.isCompleted && parent.autoCompleteOnSubtasksDone) {
+                noteTaskDao.updateTaskCompletion(parentId, false)
+            }
+        }
+    }
+
+    fun deleteTask(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteTaskDao.deleteSubtasks(id)
+            noteTaskDao.deleteTask(id)
+        }
+    }
+
+    fun moveTaskToCategory(id: Long, newCategory: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteTaskDao.updateTaskCategory(id, newCategory)
+            // Also update any child subtasks
+            val subtasks = noteTaskDao.getSubtasksForParent(id)
+            for (sub in subtasks) {
+                noteTaskDao.updateTaskCategory(sub.id, newCategory)
+            }
+        }
+    }
+
+    fun togglePinCategory(categoryName: String) {
+        viewModelScope.launch {
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            val currentPinned = prefs.pinnedCategories.toMutableSet()
+            if (currentPinned.contains(categoryName)) {
+                currentPinned.remove(categoryName)
+            } else {
+                currentPinned.add(categoryName)
+            }
+            prefsRepo.updatePinnedCategories(currentPinned)
+        }
+    }
+
+    fun addCustomCategory(categoryName: String) {
+        if (categoryName.isBlank()) return
+        viewModelScope.launch {
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            val currentCustom = prefs.customCategories.toMutableSet()
+            currentCustom.add(categoryName.trim())
+            prefsRepo.updateCustomCategories(currentCustom)
+        }
+    }
+
+    fun deleteCustomCategory(categoryName: String) {
+        viewModelScope.launch {
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            val currentCustom = prefs.customCategories.toMutableSet()
+            currentCustom.remove(categoryName)
+            prefsRepo.updateCustomCategories(currentCustom)
+            val currentPinned = prefs.pinnedCategories.toMutableSet()
+            if (currentPinned.contains(categoryName)) {
+                currentPinned.remove(categoryName)
+                prefsRepo.updatePinnedCategories(currentPinned)
+            }
+        }
+    }
+
+    fun editTask(
+        id: Long,
+        title: String,
+        category: String,
+        priority: Int,
+        isLowHangingFruit: Boolean,
+        dueText: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = noteTaskDao.getTaskById(id) ?: return@launch
+            val (dueDate, parsedDueText) = if (dueText.isNotBlank()) {
+                Pair(null, dueText)
+            } else {
+                com.madhumangal.ai.TinyAiProcessor().extractTemporalInfo(title)
+            }
+            val updated = existing.copy(
+                title = title.trim(),
+                categoryGroup = category.trim().ifBlank { existing.categoryGroup },
+                priority = priority,
+                isLowHangingFruit = isLowHangingFruit,
+                dueDateMillis = dueDate ?: existing.dueDateMillis,
+                dueTimeText = parsedDueText.ifBlank { dueText }
+            )
+            noteTaskDao.insertTask(updated)
+        }
+    }
+
+    fun reorderTasks(fromIndex: Int, toIndex: Int, tasks: List<NoteTask>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val mutableList = tasks.toMutableList()
+            if (fromIndex in mutableList.indices && toIndex in mutableList.indices) {
+                val item = mutableList.removeAt(fromIndex)
+                mutableList.add(toIndex, item)
+                mutableList.forEachIndexed { index, task ->
+                    noteTaskDao.updateTaskOrder(task.id, index)
+                }
+            }
+        }
+    }
+
+    fun moveTaskUpInGroup(task: NoteTask, siblingTasks: List<NoteTask>) {
+        val index = siblingTasks.indexOfFirst { it.id == task.id }
+        if (index > 0) {
+            reorderTasks(index, index - 1, siblingTasks)
+        }
+    }
+
+    fun moveTaskDownInGroup(task: NoteTask, siblingTasks: List<NoteTask>) {
+        val index = siblingTasks.indexOfFirst { it.id == task.id }
+        if (index in 0 until siblingTasks.size - 1) {
+            reorderTasks(index, index + 1, siblingTasks)
+        }
+    }
+
+    fun moveSubtaskUp(subtask: NoteTask, siblingSubtasks: List<NoteTask>) {
+        val index = siblingSubtasks.indexOfFirst { it.id == subtask.id }
+        if (index > 0) {
+            reorderTasks(index, index - 1, siblingSubtasks)
+        }
+    }
+
+    fun moveSubtaskDown(subtask: NoteTask, siblingSubtasks: List<NoteTask>) {
+        val index = siblingSubtasks.indexOfFirst { it.id == subtask.id }
+        if (index in 0 until siblingSubtasks.size - 1) {
+            reorderTasks(index, index + 1, siblingSubtasks)
+        }
+    }
+
+    fun reorderTasksBulk(selectedIds: Set<Long>, moveUp: Boolean, siblingTasks: List<NoteTask>) {
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = siblingTasks.toMutableList()
+            val n = list.size
+            if (moveUp) {
+                // Moving up: scan from top (index 1 to n-1)
+                // A selected task at index i can swap with unselected at i-1
+                for (i in 1 until n) {
+                    if (list[i].id in selectedIds && list[i - 1].id !in selectedIds) {
+                        val temp = list[i]
+                        list[i] = list[i - 1]
+                        list[i - 1] = temp
+                    }
+                }
+            } else {
+                // Moving down: scan from bottom (index n-2 down to 0)
+                // A selected task at index i can swap with unselected at i+1
+                for (i in n - 2 downTo 0) {
+                    if (list[i].id in selectedIds && list[i + 1].id !in selectedIds) {
+                        val temp = list[i]
+                        list[i] = list[i + 1]
+                        list[i + 1] = temp
+                    }
+                }
+            }
+            list.forEachIndexed { index, task ->
+                noteTaskDao.updateTaskOrder(task.id, index)
+            }
+        }
+    }
+
+    fun deleteTasksBulk(taskIds: Set<Long>) {
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            taskIds.forEach { id ->
+                noteTaskDao.deleteSubtasks(id)
+                noteTaskDao.deleteTask(id)
+            }
+        }
+    }
+
+    fun importTasksFromJson(rawJsonStr: String, onComplete: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var cleanStr = rawJsonStr.trim()
+                if (cleanStr.startsWith("```json")) {
+                    cleanStr = cleanStr.removePrefix("```json").substringBeforeLast("```").trim()
+                } else if (cleanStr.startsWith("```")) {
+                    cleanStr = cleanStr.removePrefix("```").substringBeforeLast("```").trim()
+                }
+                cleanStr = cleanStr.lines().map { line ->
+                    if (line.contains("//")) line.substringBefore("//").trim() else line
+                }.joinToString("\n").trim()
+
+                if (cleanStr.isBlank() || cleanStr == "{}" || cleanStr == "[]") {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "JSON is empty. No tasks imported.")
+                    }
+                    return@launch
+                }
+
+                val tasksArray: JSONArray = if (cleanStr.startsWith("[")) {
+                    JSONArray(cleanStr)
+                } else {
+                    val root = JSONObject(cleanStr)
+                    root.optJSONArray("tasks") ?: root.optJSONArray("data") ?: JSONArray().apply { put(root) }
+                }
+
+                var importedCount = 0
+                for (i in 0 until tasksArray.length()) {
+                    val taskObj = tasksArray.optJSONObject(i) ?: continue
+                    val title = taskObj.optString("title", "").trim()
+                    if (title.isBlank()) continue
+
+                    val desc = taskObj.optString("description", "")
+                    val cat = taskObj.optString("category", taskObj.optString("categoryGroup", "General"))
+                    val priority = taskObj.optInt("priority", NoteTask.PRIORITY_MEDIUM)
+                    val isQuick = taskObj.optBoolean("isLowHangingFruit", false)
+                    val isDone = taskObj.optBoolean("isCompleted", false)
+                    val autoDone = taskObj.optBoolean("autoCompleteOnSubtasksDone", true)
+                    val dueMillis = if (taskObj.has("dueDateMillis") && !taskObj.isNull("dueDateMillis")) taskObj.getLong("dueDateMillis") else null
+                    val dueText = taskObj.optString("dueTimeText", "")
+
+                    val parentTask = NoteTask(
+                        title = title,
+                        description = desc,
+                        categoryGroup = cat,
+                        priority = priority,
+                        isLowHangingFruit = isQuick,
+                        isCompleted = isDone,
+                        autoCompleteOnSubtasksDone = autoDone,
+                        dueDateMillis = dueMillis,
+                        dueTimeText = dueText
+                    )
+                    val parentId = noteTaskDao.insertTask(parentTask)
+                    importedCount++
+
+                    val subtasksArray = taskObj.optJSONArray("subtasks") ?: taskObj.optJSONArray("children")
+                    if (subtasksArray != null) {
+                        for (s in 0 until subtasksArray.length()) {
+                            val subObj = subtasksArray.optJSONObject(s)
+                            val subTitle = if (subObj != null) subObj.optString("title", "").trim() else subtasksArray.optString(s, "").trim()
+                            if (subTitle.isNotBlank()) {
+                                val subtask = NoteTask(
+                                    parentId = parentId,
+                                    title = subTitle,
+                                    categoryGroup = cat,
+                                    priority = subObj?.optInt("priority", NoteTask.PRIORITY_MEDIUM) ?: NoteTask.PRIORITY_MEDIUM,
+                                    isCompleted = subObj?.optBoolean("isCompleted", false) ?: false
+                                )
+                                noteTaskDao.insertTask(subtask)
+                                importedCount++
+                            }
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "Successfully imported $importedCount task(s)!")
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("IMPORT", "Failed importing tasks from JSON", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Failed to import tasks: ${e.message}")
+                }
+            }
+        }
+    }
+
+
+    fun reorderCategoryGroups(fromIndex: Int, toIndex: Int, categories: List<String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val mutableList = categories.toMutableList()
+            if (fromIndex in mutableList.indices && toIndex in mutableList.indices) {
+                val item = mutableList.removeAt(fromIndex)
+                mutableList.add(toIndex, item)
+                prefsRepo.updateCustomCategories(mutableList.toSet())
+            }
+        }
+    }
+
+    fun updateFontScale(scale: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateFontScale(scale)
+        }
+    }
+
+    fun updateFontMode(mode: String) {
+        viewModelScope.launch {
+            prefsRepo.updateFontMode(mode)
+        }
+    }
+
+    fun updateCustomThemeJson(json: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCustomThemeJson(json)
+        }
+    }
+
+    fun updateAiLanguage(lang: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAiLanguage(lang)
+        }
+    }
+
+    fun updateTtsSpeed(speed: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateTtsSpeed(speed)
+        }
+    }
+
+    fun updateCustomAiModels(models: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCustomAiModels(models)
+        }
+    }
+
+    fun updateActiveTheme(themeKey: String) {
+        viewModelScope.launch {
+            prefsRepo.updateActiveTheme(themeKey)
+        }
+    }
+
+    fun updateLastExportSourcePath(path: String) {
+        viewModelScope.launch {
+            prefsRepo.updateLastExportSourcePath(path)
+            refreshStorageUsage()
+            syncStorageFilesWithDatabase()
+        }
+    }
+
+    fun exportDashboardToFile(
+        format: String = "md",
+        onComplete: (Boolean, String, File?) -> Unit = { _, _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val allTasks = noteTaskDao.getAllTasksList()
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val notesDir = com.madhumangal.util.AppStorageManager.getNotesDirectory(app, prefs.notesFolderPath)
+                val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+
+                val fileName = if (format.lowercase(java.util.Locale.ROOT) == "html") {
+                    "dashboard_tasks_$timeStamp.html"
+                } else {
+                    "dashboard_tasks_$timeStamp.md"
+                }
+                val exportFile = File(notesDir, fileName)
+
+                if (format.lowercase(java.util.Locale.ROOT) == "html") {
+                    // Generate clean HTML
+                    val htmlContent = buildString {
+                        append("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n")
+                        append("<title>Madhumangal Task Dashboard</title>\n")
+                        append("<style>\n")
+                        append("body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0F172A; color: #F8FAFC; padding: 24px; line-height: 1.6; }\n")
+                        append("h1 { color: #38BDF8; font-size: 26px; border-bottom: 2px solid #1E293B; padding-bottom: 8px; }\n")
+                        append(".group { background: #1E293B; border-radius: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #334155; }\n")
+                        append(".group-title { font-size: 18px; font-weight: bold; color: #A855F7; margin-bottom: 12px; }\n")
+                        append(".task { margin: 8px 0; font-size: 15px; display: flex; align-items: center; }\n")
+                        append(".subtask { margin: 6px 0 6px 28px; font-size: 14px; color: #94A3B8; }\n")
+                        append(".done { text-decoration: line-through; color: #64748B; }\n")
+                        append(".badge { font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: bold; }\n")
+                        append(".badge-urgent { background: #EF4444; color: white; }\n")
+                        append(".badge-due { background: #F59E0B; color: black; }\n")
+                        append("</style>\n</head>\n<body>\n")
+                        append("<h1>📋 Task Dashboard & Action Items</h1>\n")
+                        append("<p>Exported on ${java.util.Date()} • Total: ${allTasks.size} tasks</p>\n")
+
+                        val topLevelTasks = allTasks.filter { it.parentId == null }
+                        val categories = topLevelTasks.map { it.categoryGroup }.distinct()
+
+                        for (cat in categories) {
+                            append("<div class=\"group\">\n")
+                            append("<div class=\"group-title\">🏷️ $cat</div>\n")
+                            val catTasks = topLevelTasks.filter { it.categoryGroup == cat }
+                            for (task in catTasks) {
+                                val doneClass = if (task.isCompleted) " done" else ""
+                                val checkedStr = if (task.isCompleted) "☑️" else "⬜"
+                                val dueBadge = if (task.dueTimeText.isNotBlank()) "<span class=\"badge badge-due\">⏳ ${task.dueTimeText}</span>" else ""
+                                val urgentBadge = if (task.priority == NoteTask.PRIORITY_HIGH) "<span class=\"badge badge-urgent\">URGENT</span>" else ""
+                                append("<div class=\"task$doneClass\">$checkedStr <strong>${task.title}</strong>$dueBadge$urgentBadge</div>\n")
+
+                                val subtasks = allTasks.filter { it.parentId == task.id }
+                                for (sub in subtasks) {
+                                    val subDoneClass = if (sub.isCompleted) " done" else ""
+                                    val subCheckedStr = if (sub.isCompleted) "☑️" else "⬜"
+                                    append("<div class=\"subtask$subDoneClass\">$subCheckedStr ${sub.title}</div>\n")
+                                }
+                            }
+                            append("</div>\n")
+                        }
+                        append("</body>\n</html>")
+                    }
+                    exportFile.writeText(htmlContent)
+                } else {
+                    // Generate Markdown
+                    val mdContent = buildString {
+                        append("# 📋 Madhumangal Task Dashboard\n\n")
+                        append("*Exported on: ${java.util.Date()} • Total: ${allTasks.size} items*\n\n")
+
+                        val topLevelTasks = allTasks.filter { it.parentId == null }
+                        val categories = topLevelTasks.map { it.categoryGroup }.distinct()
+
+                        for (cat in categories) {
+                            append("## 🏷️ $cat\n\n")
+                            val catTasks = topLevelTasks.filter { it.categoryGroup == cat }
+                            for (task in catTasks) {
+                                val check = if (task.isCompleted) "[x]" else "[ ]"
+                                val due = if (task.dueTimeText.isNotBlank()) " *(⏳ ${task.dueTimeText})*" else ""
+                                val priority = if (task.priority == NoteTask.PRIORITY_HIGH) " **[URGENT]**" else ""
+                                append("- $check **${task.title}**$due$priority\n")
+
+                                val subtasks = allTasks.filter { it.parentId == task.id }
+                                for (sub in subtasks) {
+                                    val subCheck = if (sub.isCompleted) "[x]" else "[ ]"
+                                    append("  - $subCheck ${sub.title}\n")
+                                }
+                            }
+                            append("\n")
+                        }
+                    }
+                    exportFile.writeText(mdContent)
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ Exported to ${exportFile.name} in Notes folder!", exportFile)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Export failed: ${e.message}", null)
+                }
+            }
+        }
+    }
+
+    fun askAiAssistant(query: String, onResponse: (ChatMessage) -> Unit = {}) {
+        val userMsg = ChatMessage(isUser = true, text = query.trim())
+        _chatMessages.value = _chatMessages.value + userMsg
+        _isAiThinking.value = true
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                aiChatDao.insertMessage(
+                    com.madhumangal.data.AiChatMessageEntity(
+                        isUser = true,
+                        text = query.trim()
+                    )
+                )
+
+                val allTasks = noteTaskDao.getAllTasksList()
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val allTranscripts = transcriptions.value
+
+                val tinyAi = com.madhumangal.ai.TinyAiProcessor()
+                val webResult = if (prefs.isWebSearchEnabled) {
+                    tinyAi.searchInternet(query)
+                } else null
+
+                val (answerText, suggestedItems) = if (prefs.cloudApiKey.isNotBlank()) {
+                    val contextInfo = buildString {
+                        if (allTasks.isNotEmpty()) {
+                            appendLine("User's Active Tasks (${allTasks.size} tasks):")
+                            allTasks.take(8).forEach { appendLine("- ${it.title} [${it.categoryGroup}]") }
+                        }
+                        if (!webResult.isNullOrBlank()) {
+                            appendLine("\nWeb Search Result:\n$webResult")
+                        }
+                    }
+                    val geminiResult = com.madhumangal.ai.GeminiApiService.chatWithGemini(
+                        query = query,
+                        apiKey = prefs.cloudApiKey,
+                        model = prefs.cloudModelName.ifBlank { "gemini-1.5-flash" },
+                        systemInstruction = prefs.customSystemPrompt.ifBlank {
+                            "You are Madhu, a warm, intelligent, concise personal assistant in Madhumangal. Answer the user helpfully in Hindi, Hinglish, or English depending on their input. Keep responses natural, direct, and conversational."
+                        },
+                        contextInfo = contextInfo
+                    )
+                    if (geminiResult.isSuccess && geminiResult.getOrNull()?.isNotBlank() == true) {
+                        Pair(geminiResult.getOrNull()!!, emptyList<String>())
+                    } else {
+                        tinyAi.answerGeneralAssistantQuery(
+                            query = query,
+                            allTasks = allTasks,
+                            allTranscripts = allTranscripts,
+                            systemPrompt = prefs.customSystemPrompt,
+                            webSearchResult = webResult,
+                            aiLanguage = prefs.aiLanguage
+                        )
+                    }
+                } else {
+                    tinyAi.answerGeneralAssistantQuery(
+                        query = query,
+                        allTasks = allTasks,
+                        allTranscripts = allTranscripts,
+                        systemPrompt = prefs.customSystemPrompt,
+                        webSearchResult = webResult,
+                        aiLanguage = prefs.aiLanguage
+                    )
+                }
+
+                val suggestedGroup = if (suggestedItems.isNotEmpty()) {
+                    if (query.lowercase(java.util.Locale.ROOT).contains("market") || query.lowercase(java.util.Locale.ROOT).contains("vegetable")) "Market Shopping" else "AI Task List"
+                } else null
+
+                val assistantMsg = ChatMessage(
+                    isUser = false,
+                    text = answerText,
+                    suggestedGroup = suggestedGroup,
+                    suggestedItems = suggestedItems
+                )
+
+                aiChatDao.insertMessage(
+                    com.madhumangal.data.AiChatMessageEntity(
+                        isUser = false,
+                        text = answerText,
+                        suggestedGroup = suggestedGroup
+                    )
+                )
+
+                _chatMessages.value = _chatMessages.value + assistantMsg
+                withContext(Dispatchers.Main) {
+                    onResponse(assistantMsg)
+                }
+            } catch (e: Exception) {
+                val errorMsg = ChatMessage(
+                    isUser = false,
+                    text = "Sorry, I encountered an issue analyzing your tasks: ${e.message}"
+                )
+                _chatMessages.value = _chatMessages.value + errorMsg
+                withContext(Dispatchers.Main) {
+                    onResponse(errorMsg)
+                }
+            } finally {
+                _isAiThinking.value = false
+            }
+        }
+    }
+
+    fun clearAiChatHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            aiChatDao.clearHistory()
+            withContext(Dispatchers.Main) {
+                _chatMessages.value = listOf(
+                    ChatMessage(
+                        isUser = false,
+                        text = "Chat history cleared. How can I help you today?"
+                    )
+                )
+            }
+        }
+    }
+
+    fun runCompleteFlow(
+        sessionId: String? = null,
+        chunkId: Long? = null,
+        onProgress: (String) -> Unit = {},
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val allTranscripts = transcriptions.value
+                val itemsToProcess = when {
+                    chunkId != null -> allTranscripts.filter { it.id == chunkId }
+                    sessionId != null -> allTranscripts.filter { it.sessionId == sessionId }.sortedBy { it.timestampMillis }
+                    else -> allTranscripts.sortedBy { it.timestampMillis } // Sort all audio chunks earliest first!
+                }
+
+                if (itemsToProcess.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "No recordings found to process")
+                    }
+                    return@launch
+                }
+
+                val total = itemsToProcess.size
+                var processedCount = 0
+
+                for ((index, item) in itemsToProcess.withIndex()) {
+                    val progressMsg = "Processing ${index + 1}/$total: ${item.filePath.substringAfterLast("/")}"
+                    withContext(Dispatchers.Main) { onProgress(progressMsg) }
+
+                    val audioFile = File(item.filePath)
+                    if (!audioFile.exists() || audioFile.length() <= 44) continue
+
+                    // Transcribe if needed or retranscribe
+                    val sttEngine = com.madhumangal.stt.HindiHinglishSTTEngine(app, prefsRepo)
+                    var text = item.text
+                    val isPlaceholder = text.isBlank() || text.contains("Audio slice captured") || text.contains("ready for transcription") || text.startsWith("[Pending")
+
+                    if (isPlaceholder) {
+                        val engineResult = sttEngine.transcribeAudioFile(audioFile, prefs.selectedSttModel)
+                        if (engineResult.isSuccess && !engineResult.getOrNull().isNullOrBlank()) {
+                            text = engineResult.getOrNull()!!
+                            transcriptionDao.updateTranscriptionText(item.id, text)
+                        }
+                    }
+
+                    val cleanSpoken = com.madhumangal.util.AppStorageManager.stripMetadataFromTranscript(text)
+                    if (cleanSpoken.isNotBlank() && !cleanSpoken.startsWith("Audio slice captured")) {
+                        // Extract tasks hierarchically
+                        val tinyAi = com.madhumangal.ai.TinyAiProcessor()
+                        val hierarchical = tinyAi.processTranscriptionHierarchical(cleanSpoken, item.id)
+                        val insertedTasks = tinyAi.saveHierarchicalTasksToDatabase(noteTaskDao, hierarchical)
+
+                        // Save updated markdown
+                        com.madhumangal.util.AppStorageManager.saveTranscriptionToFile(
+                            context = app,
+                            audioFileName = audioFile.name,
+                            text = cleanSpoken,
+                            durationSeconds = item.durationSeconds,
+                            overlapSeconds = item.overlapSeconds,
+                            engineName = prefs.selectedSttModel,
+                            tasks = insertedTasks,
+                            customTranscriptionDir = prefs.transcriptionFolderPath
+                        )
+                        com.madhumangal.util.AppStorageManager.saveNotesToFile(
+                            context = app,
+                            audioFileName = audioFile.name,
+                            transcriptionText = cleanSpoken,
+                            tasks = insertedTasks,
+                            customNotesDir = prefs.notesFolderPath
+                        )
+                    }
+                    processedCount++
+                }
+
+                val summary = "⚡ Completed flow on $processedCount recordings in chronological order!"
+                withContext(Dispatchers.Main) {
+                    onComplete(true, summary)
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("FLOW", "Error during complete flow execution", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Flow failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun exportSettingsToJson(): String {
+        return exportSelectedSettingsToJson(true, true, true, true, true)
+    }
+
+    fun exportSelectedSettingsToJson(
+        includeAudio: Boolean = true,
+        includeStt: Boolean = true,
+        includeAi: Boolean = true,
+        includeAppearance: Boolean = true,
+        includeStorage: Boolean = true
+    ): String {
+        val prefs = userPreferences.value
+        val json = JSONObject().apply {
+            put("version", 1)
+            put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+            put("appVersion", com.madhumangal.util.AppConstants.APP_VERSION)
+
+            if (includeAudio) {
+                val audioObj = JSONObject().apply {
+                    put("bufferLengthSeconds", prefs.bufferLengthSeconds)
+                    put("overlapSeconds", prefs.overlapSeconds)
+                    put("sampleRate", prefs.sampleRate)
+                    put("liveTranscribe", prefs.liveTranscribe)
+                    put("skipSilence", prefs.skipSilence)
+                    put("autoDeleteAudio", prefs.autoDeleteAudio)
+                }
+                put("audioConfig", audioObj)
+            }
+
+            if (includeStt) {
+                val sttObj = JSONObject().apply {
+                    put("selectedLanguage", prefs.selectedLanguage)
+                    put("selectedSttModel", prefs.selectedSttModel)
+                }
+                put("sttConfig", sttObj)
+            }
+
+            if (includeAi) {
+                val aiObj = JSONObject().apply {
+                    put("selectedAiModel", prefs.selectedAiModel)
+                    put("aiLanguage", prefs.aiLanguage)
+                    put("customSystemPrompt", prefs.customSystemPrompt)
+                    put("isWebSearchEnabled", prefs.isWebSearchEnabled)
+                    put("customAiModels", prefs.customAiModels)
+                    put("ttsSpeed", prefs.ttsSpeed)
+                    put("huggingFaceToken", prefs.huggingFaceToken)
+                }
+                put("aiConfig", aiObj)
+            }
+
+            if (includeAppearance) {
+                val appObj = JSONObject().apply {
+                    put("appLanguage", prefs.appLanguage)
+                    put("activeTheme", prefs.activeTheme)
+                    put("customThemeJson", prefs.customThemeJson)
+                    put("fontScale", prefs.fontScale)
+                    put("fontMode", prefs.fontMode)
+                    put("settingsMode", prefs.settingsMode.name)
+                    put("recorderLayoutMode", prefs.recorderLayoutMode)
+                    put("defaultAbortSelection", prefs.defaultAbortSelection)
+                    put("showLogsTab", prefs.showLogsTab)
+                    put("showAiTab", prefs.showAiTab)
+                    put("homeTab", prefs.homeTab)
+                    put("showDashboardTab", prefs.showDashboardTab)
+                    put("showRecorderTab", prefs.showRecorderTab)
+                    put("showMediaTab", prefs.showMediaTab)
+                    put("showAssistantTab", prefs.showAssistantTab)
+                }
+                put("appearanceConfig", appObj)
+            }
+
+            if (includeStorage) {
+                val storageObj = JSONObject().apply {
+                    put("baseFolderPath", prefs.baseFolderPath)
+                    put("audioFolderPath", prefs.audioFolderPath)
+                    put("transcriptionFolderPath", prefs.transcriptionFolderPath)
+                    put("notesFolderPath", prefs.notesFolderPath)
+                    put("logsFolderPath", prefs.logsFolderPath)
+                    put("logFileExtension", prefs.logFileExtension)
+                    put("pinnedCategories", JSONArray(prefs.pinnedCategories))
+                    put("customCategories", JSONArray(prefs.customCategories))
+                }
+                put("storageConfig", storageObj)
+            }
+        }
+        return json.toString(2)
+    }
+
+    fun saveSettingsToFile(jsonContent: String): File? {
+        return try {
+            val dir = com.madhumangal.util.AppStorageManager.getNotesDirectory(app)
+            val timeStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val file = File(dir, "echo_settings_backup_$timeStr.json")
+            file.writeText(jsonContent)
+            com.madhumangal.util.AppLogger.i("BACKUP", "Saved settings backup to: ${file.absolutePath}")
+            file
+        } catch (e: Exception) {
+            com.madhumangal.util.AppLogger.e("BACKUP", "Failed to save settings file", e)
+            null
+        }
+    }
+
+    fun importSettingsFromJson(rawJsonStr: String, onComplete: (Boolean, String) -> Unit) {
+        importSelectedSettingsFromJson(
+            rawJsonStr = rawJsonStr,
+            importAudio = true,
+            importStt = true,
+            importAi = true,
+            importAppearance = true,
+            importStorage = true,
+            onComplete = onComplete
+        )
+    }
+
+    fun importSelectedSettingsFromJson(
+        rawJsonStr: String,
+        importAudio: Boolean = true,
+        importStt: Boolean = true,
+        importAi: Boolean = true,
+        importAppearance: Boolean = true,
+        importStorage: Boolean = true,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Smart Cleaner: Sanitize input even if user messed up brackets, comments, or trailing commas
+                var cleanStr = rawJsonStr.trim()
+                if (cleanStr.startsWith("```json")) {
+                    cleanStr = cleanStr.removePrefix("```json").substringBeforeLast("```").trim()
+                } else if (cleanStr.startsWith("```")) {
+                    cleanStr = cleanStr.removePrefix("```").substringBeforeLast("```").trim()
+                }
+
+                // Remove line comments //...
+                cleanStr = cleanStr.lines().map { line ->
+                    if (line.contains("//")) line.substringBefore("//").trim() else line
+                }.joinToString("\n").trim()
+
+                // Fix empty braces or malformed empty dictionary
+                if (cleanStr.isBlank() || cleanStr == "{}" || cleanStr == "[]") {
+                    withContext(Dispatchers.Main) {
+                        onComplete(false, "JSON is empty. No settings imported.")
+                    }
+                    return@launch
+                }
+
+                val json = JSONObject(cleanStr)
+
+                // Top level or nested audioConfig
+                if (importAudio) {
+                    val audioObj = json.optJSONObject("audioConfig") ?: json
+                    if (audioObj.has("bufferLengthSeconds")) prefsRepo.updateBufferLength(audioObj.optInt("bufferLengthSeconds", 30))
+                    if (audioObj.has("overlapSeconds")) prefsRepo.updateOverlap(audioObj.optInt("overlapSeconds", 3))
+                    if (audioObj.has("sampleRate")) prefsRepo.updateSampleRate(audioObj.optInt("sampleRate", 16000))
+                    if (audioObj.has("liveTranscribe")) prefsRepo.updateLiveTranscribe(audioObj.optBoolean("liveTranscribe", true))
+                    if (audioObj.has("skipSilence")) prefsRepo.updateSkipSilence(audioObj.optBoolean("skipSilence", true))
+                    if (audioObj.has("autoDeleteAudio")) prefsRepo.updateAutoDeleteAudio(audioObj.optBoolean("autoDeleteAudio", false))
+                }
+
+                // Top level or nested sttConfig
+                if (importStt) {
+                    val sttObj = json.optJSONObject("sttConfig") ?: json
+                    if (sttObj.has("selectedLanguage")) prefsRepo.updateLanguage(sttObj.optString("selectedLanguage", "hi"))
+                    if (sttObj.has("selectedSttModel")) prefsRepo.updateSttModel(sttObj.optString("selectedSttModel", "vosk_hindi"))
+                }
+
+                // Top level or nested aiConfig
+                if (importAi) {
+                    val aiObj = json.optJSONObject("aiConfig") ?: json
+                    if (aiObj.has("selectedAiModel")) prefsRepo.updateAiModel(aiObj.optString("selectedAiModel", "local_tiny"))
+                    if (aiObj.has("aiLanguage")) prefsRepo.updateAiLanguage(aiObj.optString("aiLanguage", "auto"))
+                    if (aiObj.has("customSystemPrompt")) prefsRepo.updateCustomSystemPrompt(aiObj.optString("customSystemPrompt", ""))
+                    if (aiObj.has("isWebSearchEnabled")) prefsRepo.updateWebSearchEnabled(aiObj.optBoolean("isWebSearchEnabled", true))
+                    if (aiObj.has("customAiModels")) prefsRepo.updateCustomAiModels(aiObj.optString("customAiModels", ""))
+                    if (aiObj.has("ttsSpeed")) prefsRepo.updateTtsSpeed(aiObj.optDouble("ttsSpeed", 1.0).toFloat())
+                    if (aiObj.has("huggingFaceToken")) prefsRepo.updateHuggingFaceToken(aiObj.optString("huggingFaceToken", ""))
+                }
+
+                // Top level or nested appearanceConfig
+                if (importAppearance) {
+                    val appObj = json.optJSONObject("appearanceConfig") ?: json
+                    if (appObj.has("appLanguage")) prefsRepo.updateAppLanguage(appObj.optString("appLanguage", "en"))
+                    if (appObj.has("activeTheme")) prefsRepo.updateActiveTheme(appObj.optString("activeTheme", "AMOLED_HIGH"))
+                    if (appObj.has("customThemeJson")) prefsRepo.updateCustomThemeJson(appObj.optString("customThemeJson", ""))
+                    if (appObj.has("fontScale")) prefsRepo.updateFontScale(appObj.optDouble("fontScale", 1.0).toFloat())
+                    if (appObj.has("fontMode")) prefsRepo.updateFontMode(appObj.optString("fontMode", "DEFAULT"))
+                    if (appObj.has("recorderLayoutMode")) prefsRepo.updateRecorderLayoutMode(appObj.optString("recorderLayoutMode", "BOTH_TABS"))
+                    if (appObj.has("defaultAbortSelection")) prefsRepo.updateDefaultAbortSelection(appObj.optString("defaultAbortSelection", "ALL_FILES"))
+                    if (appObj.has("showLogsTab")) prefsRepo.updateShowLogsTab(appObj.optBoolean("showLogsTab", false))
+                    if (appObj.has("showAiTab")) prefsRepo.updateShowAiTab(appObj.optBoolean("showAiTab", true))
+                    if (appObj.has("showDashboardTab")) prefsRepo.updateShowDashboardTab(appObj.optBoolean("showDashboardTab", true))
+                    if (appObj.has("showRecorderTab")) prefsRepo.updateShowRecorderTab(appObj.optBoolean("showRecorderTab", true))
+                    if (appObj.has("showMediaTab")) prefsRepo.updateShowMediaTab(appObj.optBoolean("showMediaTab", true))
+                    if (appObj.has("showAssistantTab")) prefsRepo.updateShowAssistantTab(appObj.optBoolean("showAssistantTab", true))
+                    if (appObj.has("homeTab")) prefsRepo.updateHomeTab(appObj.optString("homeTab", "DUMB_ASSISTANT"))
+                    if (appObj.has("settingsMode")) {
+                        val mode = if (appObj.optString("settingsMode", "SMART").equals("ADVANCED", ignoreCase = true)) {
+                            com.madhumangal.data.SettingsMode.ADVANCED
+                        } else {
+                            com.madhumangal.data.SettingsMode.SMART
+                        }
+                        prefsRepo.updateSettingsMode(mode)
+                    }
+                }
+
+                // Top level or nested storageConfig
+                if (importStorage) {
+                    val storageObj = json.optJSONObject("storageConfig") ?: json
+                    if (storageObj.has("baseFolderPath")) prefsRepo.updateBaseFolderPath(storageObj.optString("baseFolderPath", ""))
+                    if (storageObj.has("audioFolderPath")) prefsRepo.updateAudioFolderPath(storageObj.optString("audioFolderPath", ""))
+                    if (storageObj.has("transcriptionFolderPath")) prefsRepo.updateTranscriptionFolderPath(storageObj.optString("transcriptionFolderPath", ""))
+                    if (storageObj.has("notesFolderPath")) prefsRepo.updateNotesFolderPath(storageObj.optString("notesFolderPath", ""))
+                    if (storageObj.has("logsFolderPath")) prefsRepo.updateLogsFolderPath(storageObj.optString("logsFolderPath", ""))
+                    if (storageObj.has("logFileExtension")) prefsRepo.updateLogFileExtension(storageObj.optString("logFileExtension", "log"))
+                    if (storageObj.has("pinnedCategories")) {
+                        val arr = storageObj.optJSONArray("pinnedCategories")
+                        if (arr != null) {
+                            val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
+                            prefsRepo.updatePinnedCategories(set)
+                        }
+                    }
+                    if (storageObj.has("customCategories")) {
+                        val arr = storageObj.optJSONArray("customCategories")
+                        if (arr != null) {
+                            val set = (0 until arr.length()).map { arr.getString(it) }.toSet()
+                            prefsRepo.updateCustomCategories(set)
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ Selected settings sections successfully imported!")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Could not parse JSON settings: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun updateCustomSystemPrompt(prompt: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCustomSystemPrompt(prompt)
+        }
+    }
+
+    fun updateAppLanguage(lang: String) {
+        viewModelScope.launch {
+            prefsRepo.updateAppLanguage(lang)
+        }
+    }
+
+    fun updateWebSearchEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateWebSearchEnabled(enabled)
+        }
+    }
+
+    fun saveAiResponseAsGroup(
+        groupName: String,
+        items: List<String>,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (items.isEmpty()) {
+                    withContext(Dispatchers.Main) { onComplete(false, "No items to save") }
+                    return@launch
+                }
+
+                // 1. Add groupName to pinned categories so it shows at the very top!
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val currentPinned = prefs.pinnedCategories.toMutableSet()
+                currentPinned.add(groupName)
+                val currentCustom = prefs.customCategories.toMutableSet()
+                currentCustom.add(groupName)
+                prefsRepo.updatePinnedCategories(currentPinned)
+                prefsRepo.updateCustomCategories(currentCustom)
+
+                // 2. Insert items into database under this group
+                if (items.size > 1) {
+                    // Create master parent task
+                    val masterParent = NoteTask(
+                        transcriptionId = 0L,
+                        title = groupName,
+                        description = "Created by Echo AI Assistant (${items.size} items)",
+                        categoryGroup = groupName,
+                        priority = NoteTask.PRIORITY_MEDIUM,
+                        isLowHangingFruit = true,
+                        autoCompleteOnSubtasksDone = true,
+                        timestampMillis = System.currentTimeMillis()
+                    )
+                    val parentId = noteTaskDao.insertTask(masterParent)
+
+                    // Create subtasks
+                    items.forEachIndexed { index, itemTitle ->
+                        val subtask = NoteTask(
+                            transcriptionId = 0L,
+                            title = itemTitle,
+                            description = "Item in $groupName",
+                            categoryGroup = groupName,
+                            priority = NoteTask.PRIORITY_MEDIUM,
+                            isLowHangingFruit = true,
+                            parentId = parentId,
+                            orderIndex = index,
+                            autoCompleteOnSubtasksDone = true,
+                            timestampMillis = System.currentTimeMillis()
+                        )
+                        noteTaskDao.insertTask(subtask)
+                    }
+                } else {
+                    val single = NoteTask(
+                        transcriptionId = 0L,
+                        title = items.first(),
+                        description = "Created by Echo AI Assistant",
+                        categoryGroup = groupName,
+                        priority = NoteTask.PRIORITY_MEDIUM,
+                        isLowHangingFruit = true,
+                        timestampMillis = System.currentTimeMillis()
+                    )
+                    noteTaskDao.insertTask(single)
+                }
+
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ Pinned \"$groupName\" to top of Dashboard with ${items.size} tasks!")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Error saving group: ${e.message}")
+                }
+            }
+        }
+    }
+
+
+    fun deleteTranscription(id: Long) {
+        viewModelScope.launch {
+            transcriptionDao.deleteTranscription(id)
+            refreshStorageUsage()
+        }
+    }
+
+    fun startRecordingService(context: Context) {
+        val intent = Intent(context, AudioRecordingService::class.java).apply {
+            action = AudioRecordingService.ACTION_START
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    fun stopRecordingService(context: Context) {
+        AudioRecordingService.stop(context)
+    }
+
+    suspend fun getCurrentSessionSegments(): List<com.madhumangal.data.AudioSegment> {
+        val sid = com.madhumangal.audio.AudioRecordingState.currentSessionId.value
+        return if (sid.isNotBlank()) {
+            app.database.audioSegmentDao().getSegmentsBySessionId(sid)
+        } else {
+            emptyList()
+        }
+    }
+
+    fun abortRecordingSession(
+        context: Context,
+        segmentIdsToDelete: Set<Long>,
+        onComplete: (Int) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            stopRecordingService(context)
+            val prefs = prefsRepo.userPreferencesFlow.first()
+            var deletedCount = 0
+            for (segId in segmentIdsToDelete) {
+                val seg = app.database.audioSegmentDao().getSegmentById(segId)
+                if (seg != null) {
+                    com.madhumangal.util.AppStorageManager.deleteAudioSegmentArtifacts(
+                        context = app,
+                        audioFilePath = seg.filePath,
+                        customTransDir = prefs.transcriptionFolderPath,
+                        customNotesDir = prefs.notesFolderPath
+                    )
+                    transcriptionDao.deleteBySegmentId(segId)
+                    app.database.audioSegmentDao().deleteSegment(segId)
+                    deletedCount++
+                }
+            }
+            refreshStorageUsage()
+            withContext(Dispatchers.Main) {
+                onComplete(deletedCount)
+            }
+        }
+    }
+
+    fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun requestBatteryOptimizationExemption(context: Context) {
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun validateCurrentModel(context: Context): com.madhumangal.data.ModelValidationResult {
+        val prefs = userPreferences.value
+        val isSpeechAvailable = android.speech.SpeechRecognizer.isRecognitionAvailable(context)
+        return com.madhumangal.data.UserPreferences.validateModelSelection(
+            prefs = prefs,
+            isRecognitionAvailable = isSpeechAvailable,
+            isModelDownloaded = { id ->
+                prefs.downloadedModels.contains(id) || when (id) {
+                    com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI ->
+                        com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                    com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_EN_IN ->
+                        com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                    else -> File(com.madhumangal.util.AppStorageManager.getModelsDirectory(context), "$id.bin").exists()
+                }
+            }
+        )
+    }
+
+    fun importAudioFile(uri: Uri, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val audioDir = com.madhumangal.util.AppStorageManager.getAudioDirectory(app, prefs.audioFolderPath)
+
+                var fileName = "imported_${System.currentTimeMillis()}.wav"
+                try {
+                    app.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1 && cursor.moveToFirst()) {
+                            val name = cursor.getString(nameIndex)
+                            if (!name.isNullOrBlank()) {
+                                val cleanName = name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                                fileName = "import_${System.currentTimeMillis()}_$cleanName"
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                val destFile = File(audioDir, fileName)
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    withContext(Dispatchers.Main) { onResult(false, "Could not read audio file from device") }
+                    return@launch
+                }
+
+                val sampleRate = prefs.sampleRate.coerceAtLeast(8000)
+                val durationSec = ((destFile.length() - 44).coerceAtLeast(0) / (sampleRate * 2.0)).toInt().coerceIn(1, 7200)
+
+                val segment = com.madhumangal.data.AudioSegment(
+                    filePath = destFile.absolutePath,
+                    startTimeMillis = System.currentTimeMillis(),
+                    endTimeMillis = System.currentTimeMillis() + (durationSec * 1000L),
+                    durationSeconds = durationSec,
+                    overlapSeconds = 0,
+                    status = com.madhumangal.data.AudioSegment.STATUS_PENDING,
+                    sessionId = "imported_${System.currentTimeMillis()}"
+                )
+                val segmentId = app.database.audioSegmentDao().insertSegment(segment)
+                refreshStorageUsage()
+
+                com.madhumangal.util.AppLogger.i("AUDIO", "Imported audio file: ${destFile.name} as segment #$segmentId ($durationSec sec)")
+                app.transcriptionManager.enqueueTranscription(segmentId, null)
+
+                withContext(Dispatchers.Main) {
+                    onResult(true, "✅ Imported \"${destFile.name}\" as segment #$segmentId")
+                }
+            } catch (e: Exception) {
+                com.madhumangal.util.AppLogger.e("AUDIO", "Failed to import audio file", e)
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Import failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun updateTaskDetails(id: Long, title: String, description: String, category: String, priority: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteTaskDao.updateTaskDetails(id, title.trim(), description.trim(), category.trim(), priority)
+        }
+    }
+
+    fun mergeSessionTranscriptions(
+        sessionId: String,
+        onComplete: (Boolean, String, File?) -> Unit = { _, _, _ -> }
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val chunks = transcriptionDao.getTranscriptionsBySessionId(sessionId)
+                if (chunks.isEmpty()) {
+                    withContext(Dispatchers.Main) { onComplete(false, "No audio chunks found for this attempt", null) }
+                    return@launch
+                }
+
+                val prefs = prefsRepo.userPreferencesFlow.first()
+                val notesDir = com.madhumangal.util.AppStorageManager.getNotesDirectory(app, prefs.notesFolderPath)
+                val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+                val cleanSessionTag = sessionId.removePrefix("session_").removePrefix("attempt_")
+                val mergedFile = File(notesDir, "merged_session_${cleanSessionTag}_$timeStamp.md")
+
+                val mergedContent = buildString {
+                    appendLine("# 🎙️ Merged Recording Attempt: $sessionId")
+                    appendLine("*Recorded: ${java.util.Date(chunks.first().timestampMillis)} • Total Chunks: ${chunks.size} • Total Audio: ${chunks.sumOf { it.durationSeconds }}s*")
+                    appendLine()
+                    appendLine("## 📝 Complete Unified Transcript")
+                    appendLine()
+                    chunks.forEachIndexed { index, chunk ->
+                        val cleanText = chunk.text.trim()
+                        if (cleanText.isNotBlank() && !cleanText.startsWith("[") && !cleanText.startsWith("Audio slice")) {
+                            appendLine("**[Chunk #${index + 1} • ${chunk.durationSeconds}s${if (chunk.overlapSeconds > 0) " (Overlap: ${chunk.overlapSeconds}s)" else ""}]:**")
+                            appendLine(cleanText)
+                            appendLine()
+                        }
+                    }
+                }
+                mergedFile.writeText(mergedContent)
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "✅ Merged ${chunks.size} chunks into ${mergedFile.name}", mergedFile)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Merge failed: ${e.message}", null)
+                }
+            }
+        }
+    }
+
+    fun resetAllPreferences(onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            prefsRepo.resetAllPreferences()
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+}

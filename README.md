@@ -49,7 +49,7 @@
 ## 🏛️ Architecture & Tech Stack
 
 ```text
-com.echo.recorder
+com.madhumangal
 ├── ai/                     # Gemini API client & on-device TinyAi reasoning
 ├── audio/                  # AudioRecordingService, PCM resampler, WAV writer
 ├── data/                   # Room database, Entities, DAOs, UserPreferences
