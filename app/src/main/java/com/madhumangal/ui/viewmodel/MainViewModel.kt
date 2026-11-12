@@ -193,11 +193,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 com.madhumangal.util.AppLogger.i("MODEL", "Vosk Hindi model missing on launch; auto-initiating background download (45 MB)...")
                 startOrResumeModelDownload(com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI)
             }
-            // Auto-migrate any stale STT_MODEL_GOOGLE_SPEECH preference to STT_MODEL_VOSK_HINDI
-            val currentPrefs = prefsRepo.userPreferencesFlow.first()
-            if (currentPrefs.selectedSttModel == com.madhumangal.data.UserPreferences.STT_MODEL_GOOGLE_SPEECH) {
-                prefsRepo.updateSttModel(com.madhumangal.data.UserPreferences.STT_MODEL_VOSK_HINDI)
-            }
 
             // Load persistent AI chat history
             try {
@@ -840,6 +835,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     partFile.delete()
+
+                    val validDir = com.madhumangal.stt.VoskSTTEngine.findValidModelDir(targetFinalFile)
+                    if (validDir == null) {
+                        targetFinalFile.deleteRecursively()
+                        throw java.io.IOException("Extracted Vosk model is invalid or missing required files (am, conf, graph).")
+                    }
                 } else {
                     // For GGUF / Whisper BIN, rename .part file to target
                     if (targetFinalFile.exists()) targetFinalFile.delete()

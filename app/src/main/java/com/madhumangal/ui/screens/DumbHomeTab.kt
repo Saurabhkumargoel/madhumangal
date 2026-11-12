@@ -189,7 +189,7 @@ fun DumbHomeTab(
                 // Multi-Turn: Keep listening for follow-up questions after answering unless user explicitly silenced
                 if (!isExplicitlySilenced) {
                     isWaitingForFollowUpQuery = true
-                    activeWindowSecondsRemaining = 12
+                    activeWindowSecondsRemaining = 15
                 }
             }
 
@@ -296,6 +296,11 @@ fun DumbHomeTab(
     fun handleQueryText(query: String) {
         val qLower = query.lowercase(Locale.ROOT).trim()
 
+        // Clear active live speech buffer so the consumed query does not linger or retrigger
+        com.madhumangal.audio.AudioRecordingState.liveTranscript.value = ""
+        lastProcessedTranscript = query
+        lastProcessedTime = System.currentTimeMillis()
+
         // Check if user is asking to silence/dismiss the bot
         val isDismissQuery = qLower in listOf("bye", "stop", "quiet", "बाय", "अलविदा", "बस", "चुप", "शांत", "थैंक यू", "धन्यवाद", "थैंक्स") ||
                 qLower.startsWith("अलविदा") || qLower.startsWith("bye") || qLower.startsWith("बस करो")
@@ -332,7 +337,7 @@ fun DumbHomeTab(
             lastAiResponse = answer
             speakBot(answer)
             isWaitingForFollowUpQuery = true
-            activeWindowSecondsRemaining = 12
+            activeWindowSecondsRemaining = 15
             return
         }
 
@@ -353,7 +358,7 @@ fun DumbHomeTab(
                     lastAiResponse = response.text
                     speakBot(response.text)
                     isWaitingForFollowUpQuery = true
-                    activeWindowSecondsRemaining = 12
+                    activeWindowSecondsRemaining = 15
                 }
             }
         }
@@ -388,17 +393,18 @@ fun DumbHomeTab(
         Regex("(?i)(madhu\\s*bot|madhu|मधु\\s*बॉट|मधु|मधुमंगल|हे\\s*मधु|hey\\s*madhu|hello\\s*madhu|madhumangal|good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*भौत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद|गॉड\\s*बाद|गॉड\\s*बात|गार्ड\\s*बात|गत\\s*बात|गत\\s*डॉट|रोड\\s*बाद|घर\\s*बैठे|घोर\\s*बाद|घोर\\s*बॉट|दैट\\s*दे)")
     }
 
-    // Active Conversational Window Countdown (15s default, 12s on follow-up)
-    LaunchedEffect(isWaitingForFollowUpQuery) {
-        if (isWaitingForFollowUpQuery) {
+    // Active Conversational Window Countdown (15s default)
+    // Only counts down when bot is NOT speaking so the user has the full window AFTER bot speech completes
+    LaunchedEffect(isWaitingForFollowUpQuery, isBotSpeaking) {
+        if (isWaitingForFollowUpQuery && !isBotSpeaking) {
             if (activeWindowSecondsRemaining <= 0) {
                 activeWindowSecondsRemaining = 15
             }
-            while (activeWindowSecondsRemaining > 0 && isWaitingForFollowUpQuery) {
+            while (activeWindowSecondsRemaining > 0 && isWaitingForFollowUpQuery && !isBotSpeaking) {
                 delay(1000)
                 activeWindowSecondsRemaining--
             }
-            if (activeWindowSecondsRemaining <= 0) {
+            if (activeWindowSecondsRemaining <= 0 && !isBotSpeaking) {
                 isWaitingForFollowUpQuery = false
             }
         }

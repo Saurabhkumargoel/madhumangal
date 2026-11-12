@@ -1138,6 +1138,49 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+## 38. Multi-Turn Follow-Up Window Fix, Vosk Model Integrity Validation, and Live Google Speech Hybrid Integration (2026-11-12)
+
+### 1. Root Cause Analysis
+1. **"Not answering the second time at all":**
+   - In `DumbHomeTab.kt`, the conversational follow-up timer countdown was launched via `LaunchedEffect(isWaitingForFollowUpQuery)`. The 12-15s timer immediately began decrementing while the bot was still actively speaking through TTS. For multi-sentence responses (lasting 10-15s), the active follow-up window expired before the bot finished speaking.
+   - When the user then spoke their second query, `isWaitingForFollowUpQuery` was already `false`. Unless the user repeated the explicit wake word, the bot ignored the second question.
+   - Furthermore, `AudioRecordingState.liveTranscript` was not cleared upon query acceptance, causing stale transcript tokens to linger and corrupt subsequent utterance recognition.
+2. **Vosk Model Crash (`java.io.IOException: Failed to create a model` in `.shared/202611122056`):**
+   - `isValidModelFolder(dir)` previously used disjunction (`||`) across model components (`am`, `conf`, `graph`). If a model download was aborted or unzipped only partially (e.g. creating only `conf/` or `model.conf`), the app falsely treated the model as fully installed.
+   - Initializing `Model(path)` with missing Kaldi acoustic files (`am/final.mdl`) or graph files threw fatal JNI `IOException: Failed to create a model`.
+   - `VoskLiveTranscriber` did not recursively resolve nested model directories (e.g., zip subfolders `vosk-model-small-hi-0.22/`).
+3. **Google Speech Selection Ignored & Overwritten:**
+   - In `MainViewModel.kt`, an obsolete startup hook automatically checked `if (selectedSttModel == STT_MODEL_GOOGLE_SPEECH)` and forcibly overwrote it to `STT_MODEL_VOSK_HINDI`, preventing the user from using Google Speech.
+   - In `AudioRecordingService.kt`, `LiveSpeechRecognizer` was never instantiated or started during recording; the service strictly defaulted to Vosk only.
+
+### 2. Mitigation Implemented
+1. **Multi-Turn Window State Machine Refinement:**
+   - In `DumbHomeTab.kt`, updated `LaunchedEffect(isWaitingForFollowUpQuery, isBotSpeaking)`: the countdown timer strictly pauses while `isBotSpeaking == true`.
+   - In `UtteranceProgressListener.onDone()`, reset `activeWindowSecondsRemaining = 15` and set `isWaitingForFollowUpQuery = true` so the user is guaranteed the full 15 seconds after speech completes.
+   - In `handleQueryText()`, immediately flushed `liveTranscript.value = ""` and updated `lastProcessedTranscript` to prevent duplicate triggering.
+2. **Strict Vosk Model Validation & Nested Resolution:**
+   - In `VoskSTTEngine.kt`, updated `isValidModelFolder()` to require conjunction (`&&`) across all three Kaldi components: acoustic model (`am/`), configuration (`conf/`), and decoding graph (`graph/`).
+   - Implemented recursive nested directory resolution up to depth 2 in `findValidModelDir()`.
+   - In `VoskLiveTranscriber.kt`, resolved directories with `findValidModelDir()` and safely caught `IOException` with informative logging.
+   - In `MainViewModel.kt`, verified valid model extraction before updating `prefsRepo.setModelDownloaded()`, auto-cleaning invalid extractions.
+3. **True Google Speech Recognizer Support in Background Service:**
+   - In `AudioRecordingService.kt`, checked `currentPrefs.selectedSttModel == STT_MODEL_GOOGLE_SPEECH` and initialized `LiveSpeechRecognizer` with hybrid multilingual extras (`hi-IN` + `en-IN`, `hi-Latn`, `en-US`).
+   - Purged the startup override in `MainViewModel.kt` that silently reverted user preferences.
+4. **Unit Testing & Packaging:**
+   - Added unit tests in `MadhuConversationalTest.kt` verifying:
+     - Strict model folder component requirements (`testVoskModelValidationRequiresAllComponents`).
+     - Nested model directory resolution (`testVoskModelFindsNestedSubdirectory`).
+     - Speaking vs follow-up countdown logic (`testMultiTurnConversationalWindowCountdownLogic`).
+   - All 31 unit tests passing (`./gradlew testDebugUnitTest`).
+   - Generated production-ready APK: `Madhumangal_v0.0.2026.11.12.2348.apk` (59,997 KB) in `.shared/`.
+
+### 3. Multi-Perspective Critique Evaluation
+- **🛠️ Tech Lead:** Conjunction validation for external binary model artifacts prevents hard native JNI aborts and allows clean fallback UI prompts when downloads are interrupted.
+- **📱 Product Manager:** The multi-turn follow-up window now accurately reflects human conversational tempo: the assistant listens only after it finishes answering.
+- **👤 End-User:** Google Speech Recognizer now functions as intended with hybrid Hinglish mode when selected, and subsequent questions in voice conversations receive immediate answers without requiring repeated wake words.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

@@ -43,25 +43,36 @@ class VoskSTTEngine(
          * Recursively searches for the actual Vosk model directory containing model files (am, conf, graph).
          * Handles both flat extraction and nested zip extraction (e.g., vosk_hindi/vosk-model-small-hi-0.22/).
          */
-        fun findValidModelDir(baseDir: File): File? {
-            if (!baseDir.exists() || !baseDir.isDirectory) return null
+        fun findValidModelDir(baseDir: File?): File? {
+            if (baseDir == null || !baseDir.exists() || !baseDir.isDirectory) return null
             if (isValidModelFolder(baseDir)) return baseDir
             val subdirs = baseDir.listFiles() ?: return null
             for (sub in subdirs) {
-                if (sub.isDirectory && isValidModelFolder(sub)) {
-                    return sub
+                if (sub.isDirectory) {
+                    if (isValidModelFolder(sub)) return sub
+                    val nested = sub.listFiles() ?: continue
+                    for (nest in nested) {
+                        if (nest.isDirectory && isValidModelFolder(nest)) return nest
+                    }
                 }
             }
             return null
         }
 
-        private fun isValidModelFolder(dir: File): Boolean {
+        fun isValidModelFolder(dir: File?): Boolean {
+            if (dir == null || !dir.exists() || !dir.isDirectory) return false
             val am = File(dir, "am")
             val conf = File(dir, "conf")
-            val modelConf = File(dir, "model.conf")
-            val mfccConf = File(dir, "mfcc.conf")
             val graph = File(dir, "graph")
-            return (am.exists() && am.isDirectory) || (conf.exists() && conf.isDirectory) || modelConf.exists() || mfccConf.exists() || (graph.exists() && graph.isDirectory)
+
+            val hasAm = (am.exists() && am.isDirectory && (am.listFiles()?.isNotEmpty() == true)) ||
+                    File(dir, "final.mdl").exists() || File(dir, "model").exists()
+            val hasConf = (conf.exists() && conf.isDirectory && (File(conf, "model.conf").exists() || File(conf, "mfcc.conf").exists())) ||
+                    File(dir, "model.conf").exists() || File(dir, "mfcc.conf").exists()
+            val hasGraph = (graph.exists() && graph.isDirectory && (graph.listFiles()?.isNotEmpty() == true)) ||
+                    File(dir, "HCLG.fst").exists() || File(dir, "HCLr.fst").exists() || File(dir, "Gr.fst").exists()
+
+            return hasAm && hasConf && hasGraph
         }
     }
 
