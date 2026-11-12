@@ -441,5 +441,38 @@ class MadhuConversationalTest {
         }
         assertEquals(14, windowSecondsRemaining)
     }
+
+    @Test
+    fun testCustomBotNameAndAcousticAliasesMatching() {
+        val customBotName = "Echo"
+        val customWakeAliases = setOf("एकको", "ऐको", "एक्को", "इको")
+        val baseVariants = mutableListOf("madhu", "मधु", Regex.escape(customBotName), "hey\\s*${Regex.escape(customBotName)}")
+        customWakeAliases.forEach { baseVariants.add(Regex.escape(it)) }
+        val dynamicRegex = Regex("(?i)(" + baseVariants.joinToString("|") + ")")
+
+        assertTrue(dynamicRegex.containsMatchIn("Echo what is the time"))
+        assertTrue(dynamicRegex.containsMatchIn("hey echo how are you"))
+        assertTrue(dynamicRegex.containsMatchIn("एकको तारीख बताओ"))
+        assertTrue(dynamicRegex.containsMatchIn("मधु समय बताओ"))
+    }
+
+    @Test
+    fun testDefaultBufferLengthAndOverlapSettings() {
+        val prefs = com.madhumangal.data.UserPreferences()
+        assertEquals(1800, prefs.bufferLengthSeconds)
+        assertEquals(10, prefs.overlapSeconds)
+        assertTrue(prefs.inverseRecordingsSort)
+        assertEquals("DETAILED", prefs.mediaViewMode)
+        assertEquals(2.5f, prefs.orbScaleMultiplier, 0.01f)
+    }
+
+    @Test
+    fun testReleaseNotesRegistryDynamicLatestVersion() {
+        val allReleases = com.madhumangal.ui.releasenotes.ReleaseNotesRegistry.getAllReleases()
+        assertTrue(allReleases.isNotEmpty())
+        val latest = allReleases.first()
+        assertTrue(latest.versionName.isNotBlank())
+        assertTrue(latest.highlights.isNotEmpty())
+    }
 }
 

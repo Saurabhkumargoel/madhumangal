@@ -18,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,6 +72,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
@@ -116,6 +120,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -312,6 +317,7 @@ fun SettingsTab(
 
     val isAdvanced = userPreferences.isAdvancedOrDev
     var showWhatsNewDialog by remember { mutableStateOf(false) }
+    var showVoiceTrainingDialog by remember { mutableStateOf(false) }
     var isGeneralExpanded by viewModel::isSettingsGeneralExpanded
     var showApiKey by remember { mutableStateOf(false) }
     var showHfToken by remember { mutableStateOf(false) }
@@ -2298,6 +2304,79 @@ fun SettingsTab(
             item(key = "content_stt") {
                 SettingsSectionCard {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // ── 🎙️ Custom Bot Name & Voice Acoustic Training Studio ──────
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Psychology, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (isHindi) "कस्टम बॉट नाम व वॉयस ट्रेनिंग" else "Custom Bot Name & Voice Training",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = TextPrimary
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = AccentPurple.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "${userPreferences.customWakeAliases.size} acoustic names",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = AccentPurple,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = if (isHindi)
+                                        "बॉट का नाम बदलें (डिफ़ॉल्ट: Madhu) और वॉयस मॉडल स्टूडियो से अपनी आवाज़ पर प्रशिक्षित करें।"
+                                    else
+                                        "Customize your wake word (default: Madhu) and train the acoustic recognizer on your voice.",
+                                    fontSize = 11.sp,
+                                    color = TextMuted
+                                )
+
+                                OutlinedTextField(
+                                    value = userPreferences.customBotName,
+                                    onValueChange = { viewModel.updateCustomBotName(it) },
+                                    label = { Text(if (isHindi) "बॉट का नाम (वेक वर्ड)" else "Custom Bot Name (Wake Word)", fontSize = 11.sp) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+
+                                Button(
+                                    onClick = { showVoiceTrainingDialog = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "🎙️ वॉयस मॉडल ट्रेनिंग स्टूडियो खोलें" else "🎙️ Open Voice Training Studio",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
                         // ── 🌐 Spoken Speech Recognition Language ──────────────────
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -3152,6 +3231,84 @@ fun SettingsTab(
                                             color = Color(0xFF38BDF8),
                                             lineHeight = 14.sp
                                         )
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 🌐 Google Sign-In & Gemini Subscription Link ────────────
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🌐", fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "Google अकाउंट व Gemini सब्सक्रिप्शन" else "Google Account & Gemini Subscription",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = TextPrimary
+                                        )
+                                    }
+                                    if (userPreferences.isGoogleSignedIn) {
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFF10B981).copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = "Connected",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF10B981),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = if (isHindi)
+                                        "Google One AI Premium / Gemini Advanced: अपने Google अकाउंट को लिंक करें और Google AI Studio से API Key जोड़ें।"
+                                    else
+                                        "Use your Gemini Advanced or Google One AI Premium subscription with Madhu Mangal via Google AI Studio API.",
+                                    fontSize = 11.sp,
+                                    color = TextMuted
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = userPreferences.googleAccountEmail,
+                                        onValueChange = { viewModel.updateGoogleAccount(it, it.isNotBlank()) },
+                                        placeholder = { Text(if (isHindi) "Google अकाउंट ईमेल..." else "your.email@gmail.com", fontSize = 11.sp) },
+                                        label = { Text("Google Account Email", fontSize = 11.sp) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            val uri = android.net.Uri.parse("https://aistudio.google.com/app/apikey")
+                                            val browserIntent = Intent(Intent.ACTION_VIEW, uri)
+                                            context.startActivity(browserIntent)
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                                    ) {
+                                        Text(if (isHindi) "🔑 API Key लें" else "🔑 Get Key", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                     }
                                 }
                             }
@@ -4048,6 +4205,247 @@ fun SettingsTab(
             onDismiss = { showWhatsNewDialog = false }
         )
     }
+
+    if (showVoiceTrainingDialog) {
+        VoiceTrainingStudioDialog(
+            userPreferences = userPreferences,
+            viewModel = viewModel,
+            isHindi = isHindi,
+            onDismiss = { showVoiceTrainingDialog = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun VoiceTrainingStudioDialog(
+    userPreferences: UserPreferences,
+    viewModel: MainViewModel,
+    isHindi: Boolean,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val liveTranscript by viewModel.liveTranscript.collectAsState()
+    val isRecording by viewModel.isServiceRunning.collectAsState()
+    var manualAliasInput by remember { mutableStateOf("") }
+
+    val acousticAliases = remember(userPreferences.customWakeAliases) {
+        userPreferences.customWakeAliases.toMutableList()
+    }
+    var detectedNames by remember { mutableStateOf<List<String>>(acousticAliases) }
+
+    // Live capture as user speaks
+    LaunchedEffect(liveTranscript) {
+        val trimmed = liveTranscript.trim()
+        if (trimmed.isNotBlank() && !trimmed.startsWith("(") && !trimmed.startsWith("[")) {
+            val words = trimmed.split(Regex("[\\s,]+")).filter { it.length >= 2 }
+            val newCandidates = (words + listOf(trimmed)).distinct()
+            newCandidates.forEach { candidate ->
+                if (!detectedNames.contains(candidate)) {
+                    detectedNames = detectedNames + candidate
+                    viewModel.addCustomWakeAlias(candidate)
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Psychology, contentDescription = null, tint = AccentPurple)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isHindi) "🎙️ वॉयस मॉडल ट्रेनिंग स्टूडियो" else "🎙️ Voice Acoustic Training Studio",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = if (isHindi)
+                        "अपने प्राकृतिक लहजे में '${userPreferences.customBotName}' बोलें। STT जो भी सुनेगा, वह नीचे ध्वनिक नामों की सूची में जुड़ता जाएगा।"
+                    else
+                        "Speak '${userPreferences.customBotName}' naturally in your voice. As you speak, whatever STT hears expands your acoustic alias list below:",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+
+                // Live Mic Trigger & Status Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isRecording) ActiveRed.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    border = BorderStroke(1.dp, if (isRecording) ActiveRed else CardBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Button(
+                            onClick = {
+                                if (isRecording) {
+                                    viewModel.stopRecordingService(context)
+                                } else {
+                                    viewModel.startRecordingService(context)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isRecording) ActiveRed else PrimaryBlue),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = null,
+                                tint = if (isRecording) TextPrimary else DarkBackground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isRecording)
+                                    (if (isHindi) "सुन रहा है... (रोकने के लिए टैप करें)" else "Listening... (Tap to Pause)")
+                                else
+                                    (if (isHindi) "🎙️ आवाज़ सुनना शुरू करें" else "🎙️ Start Voice Training"),
+                                fontWeight = FontWeight.Bold,
+                                color = if (isRecording) TextPrimary else DarkBackground,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        if (isRecording) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (liveTranscript.isNotBlank()) "STT Heard: \"$liveTranscript\"" else "Say '${userPreferences.customBotName}' now...",
+                                fontSize = 11.sp,
+                                color = if (liveTranscript.isNotBlank()) PrimaryBlue else TextMuted,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                // List of Detected Acoustic Names
+                Text(
+                    text = if (isHindi) "पहचाने गए ध्वनिक नाम (${detectedNames.size}):" else "Acoustic Names Detected by STT (${detectedNames.size}):",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                if (detectedNames.isEmpty()) {
+                    Text(
+                        text = if (isHindi) "अभी तक कोई ध्वनिक नाम रिकॉर्ड नहीं हुआ। 'आवाज़ सुनना शुरू करें' पर टैप करें।" else "No acoustic variations captured yet. Tap Start Voice Training and say '${userPreferences.customBotName}'.",
+                        fontSize = 11.sp,
+                        color = TextMuted
+                    )
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        detectedNames.forEach { name ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = AccentPurple.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, AccentPurple.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(name, fontSize = 11.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Remove",
+                                        tint = ActiveRed,
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clickable {
+                                                detectedNames = detectedNames - name
+                                                viewModel.removeCustomWakeAlias(name)
+                                            }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Manual phonetic entry
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = manualAliasInput,
+                        onValueChange = { manualAliasInput = it },
+                        placeholder = { Text(if (isHindi) "मैन्युअल ध्वनिक नाम..." else "Manual phonetic alias...", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    Button(
+                        onClick = {
+                            val candidate = manualAliasInput.trim()
+                            if (candidate.isNotBlank() && !detectedNames.contains(candidate)) {
+                                detectedNames = detectedNames + candidate
+                                viewModel.addCustomWakeAlias(candidate)
+                                manualAliasInput = ""
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Text(if (isHindi) "जोड़ें" else "Add", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+
+                // Neural Network Roadmap Note
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = PrimaryBlue.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "🧠 Neural Network On-Device Acoustic Engine",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "These recorded acoustic voice variations are stored locally. In the final stage, they are compiled into a localized ultra-lightweight neural network acoustic model trained on your voice, requiring minimal CPU/GPU and storage.",
+                            fontSize = 10.sp,
+                            color = TextSecondary,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(if (isHindi) "सहेजें और बंद करें" else "Save & Done", color = DarkBackground, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = SurfaceDark
+    )
 }
 
 /**

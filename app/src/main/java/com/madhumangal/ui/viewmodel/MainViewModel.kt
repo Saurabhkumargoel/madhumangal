@@ -563,6 +563,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateCustomBotName(name: String) {
+        viewModelScope.launch {
+            prefsRepo.updateCustomBotName(name)
+        }
+    }
+
+    fun addCustomWakeAlias(alias: String) {
+        viewModelScope.launch {
+            prefsRepo.addCustomWakeAlias(alias)
+        }
+    }
+
+    fun removeCustomWakeAlias(alias: String) {
+        viewModelScope.launch {
+            prefsRepo.removeCustomWakeAlias(alias)
+        }
+    }
+
+    fun updateGoogleAccount(email: String, isSignedIn: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateGoogleAccount(email, isSignedIn)
+        }
+    }
+
+    fun updateOrbScale(multiplier: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateOrbScale(multiplier)
+        }
+    }
+
+    fun updateOrbOffset(x: Float, y: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateOrbOffset(x, y)
+        }
+    }
+
+    fun updateHomeCardLayout(scale: Float, unit: String, offsetX: Float, offsetY: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateHomeCardLayout(scale, unit, offsetX, offsetY)
+        }
+    }
+
+    fun updateMediaViewMode(mode: String) {
+        viewModelScope.launch {
+            prefsRepo.updateMediaViewMode(mode)
+        }
+    }
+
     fun downloadModel(modelId: String, onProgress: (Float) -> Unit = {}, onComplete: (Boolean) -> Unit = {}) {
         startOrResumeModelDownload(modelId, onProgress, onComplete)
     }
@@ -2266,8 +2314,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Top level or nested audioConfig
                 if (importAudio) {
                     val audioObj = json.optJSONObject("audioConfig") ?: json
-                    if (audioObj.has("bufferLengthSeconds")) prefsRepo.updateBufferLength(audioObj.optInt("bufferLengthSeconds", 30))
-                    if (audioObj.has("overlapSeconds")) prefsRepo.updateOverlap(audioObj.optInt("overlapSeconds", 3))
+                    if (audioObj.has("bufferLengthSeconds")) prefsRepo.updateBufferLength(audioObj.optInt("bufferLengthSeconds", 1800))
+                    if (audioObj.has("overlapSeconds")) prefsRepo.updateOverlap(audioObj.optInt("overlapSeconds", 10))
                     if (audioObj.has("sampleRate")) prefsRepo.updateSampleRate(audioObj.optInt("sampleRate", 16000))
                     if (audioObj.has("liveTranscribe")) prefsRepo.updateLiveTranscribe(audioObj.optBoolean("liveTranscribe", true))
                     if (audioObj.has("skipSilence")) prefsRepo.updateSkipSilence(audioObj.optBoolean("skipSilence", true))

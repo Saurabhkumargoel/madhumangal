@@ -1,15 +1,19 @@
 package com.madhumangal.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import org.json.JSONObject
 
 data class AppThemeOption(
@@ -48,7 +52,8 @@ object AppThemeColors {
             customBorderHex != null -> try { Color(android.graphics.Color.parseColor(customBorderHex)) } catch (_: Exception) { Color(0xFF334155) }
             themeId == "AMOLED_HIGH" -> Color(0xFF161616)
             themeId == "AMOLED_BLACK" -> Color(0xFF222222)
-            themeId == "LIGHT" -> Color(0xFFE2E8F0)
+            themeId == "LIGHT" -> Color(0xFFCBD5E1)
+            themeId == "MATERIAL_YOU" -> scheme.outlineVariant.copy(alpha = 0.65f)
             themeId == "CYBERPUNK" -> Color(0xFF4A2574)
             themeId == "DRACULA" -> Color(0xFF6272A4)
             themeId == "EMERALD_FOREST" -> Color(0xFF1B4D3E)
@@ -75,15 +80,17 @@ object AppThemes {
     // 2. Light Theme: Crisp, corporate light styling
     val LightMode = lightColorScheme(
         primary = Color(0xFF0284C7),
-        secondary = Color(0xFF7C3AED),
-        tertiary = Color(0xFFDC2626),
+        secondary = Color(0xFF6366F1),
+        tertiary = Color(0xFF0D9488),
         background = Color(0xFFF8FAFC),
         surface = Color(0xFFFFFFFF),
         surfaceVariant = Color(0xFFF1F5F9),
         onPrimary = Color(0xFFFFFFFF),
         onSecondary = Color(0xFFFFFFFF),
+        onTertiary = Color(0xFFFFFFFF),
         onBackground = Color(0xFF0F172A),
-        onSurface = Color(0xFF0F172A)
+        onSurface = Color(0xFF0F172A),
+        onSurfaceVariant = Color(0xFF334155)
     )
 
     // 3. Dark Theme: Clean standard dark slate
@@ -192,6 +199,15 @@ object AppThemes {
     )
 
     val ALL_THEMES = listOf(
+        AppThemeOption(
+            id = "MATERIAL_YOU",
+            name = "Material You (Dynamic Monet)",
+            description = "Adaptive colors matched dynamically to your Android wallpaper (Android 12+)",
+            primaryColor = Color(0xFF0284C7),
+            backgroundColor = Color(0xFF0F172A),
+            surfaceColor = Color(0xFF1E293B),
+            accentColor = Color(0xFF38BDF8)
+        ),
         AppThemeOption(
             id = "GRADIENT_BLACK",
             name = "Obsidian Gradient Black",
@@ -364,7 +380,17 @@ fun MadhumangalTheme(
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
-    val (colorScheme, customBorder) = AppThemes.getColorScheme(themeName, isSystemDark, customThemeJson)
+    val context = LocalContext.current
+    val (colorScheme, customBorder) = if (themeName == "MATERIAL_YOU") {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val dynamicScheme = if (isSystemDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            Pair(dynamicScheme, null)
+        } else {
+            AppThemes.getColorScheme("SYSTEM", isSystemDark, customThemeJson)
+        }
+    } else {
+        AppThemes.getColorScheme(themeName, isSystemDark, customThemeJson)
+    }
 
     // Synchronously update dynamic theme state
     AppThemeColors.updateFromScheme(colorScheme, themeName, customBorder)

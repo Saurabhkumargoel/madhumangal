@@ -1,5 +1,7 @@
 package com.madhumangal.ui.releasenotes
 
+import com.madhumangal.util.AppConstants
+
 data class ReleaseHighlight(
     val category: String, // "NEW", "FIX", "IMPROVEMENT"
     val text: String
@@ -16,6 +18,34 @@ data class ReleaseEntry(
 object ReleaseNotesRegistry {
 
     val releases: List<ReleaseEntry> = listOf(
+        ReleaseEntry(
+            versionCode = 202611131,
+            versionName = "0.0.2026.11.13",
+            releaseDate = "November 13, 2026",
+            summary = "Voice Training Studio for Custom Bot Names, Material You Theming, Multi-File Log Sharing, List/Grid/Detailed Media View, 2.5x Voice Orb with Dev Positioning, and Safe Run Flow Confirmation.",
+            highlights = listOf(
+                ReleaseHighlight("NEW", "🎙️ Custom Bot Name & Voice Acoustic Training Studio: Set your custom wake name and train the app on your voice. As you speak, the studio records what STT hears and expands your custom acoustic alias list."),
+                ReleaseHighlight("NEW", "🎨 Material You Theme & Polished Light Theme: Android dynamic Monet theming matched to your wallpaper, plus crisp, high-contrast, corporate-grade Light Theme."),
+                ReleaseHighlight("NEW", "📤 Multi-File Direct Log Sharing: Select multiple log sessions and share the actual .txt files directly via system share sheet with visible session count indicator."),
+                ReleaseHighlight("NEW", "🗂️ Media View Mode Switching: Switch seamlessly between List (compact), Grid (2-column waveforms), and Detailed views in Recordings tab."),
+                ReleaseHighlight("NEW", "🔮 2.5x Voice Orb & Dev Mode Customizer: Scaled voice orb 2.5x with fixed center anchor (no jumping when touched) and dev mode sliders for scale & offset."),
+                ReleaseHighlight("NEW", "⚡ Safe 'Run Flow' Confirmation Dialog: Prompts before running heavy AI/STT pipeline with customizable options (Notes, Tasks, STT Model)."),
+                ReleaseHighlight("IMPROVEMENT", "⏱️ 30-Minute Slices & 10s Overlap Defaults: Professional long-duration background audio recording standard."),
+                ReleaseHighlight("IMPROVEMENT", "🏷️ Madhu Mangal Branding: Added space in app name ('Madhu Mangal') and unified assistant title.")
+            )
+        ),
+        ReleaseEntry(
+            versionCode = 202611121,
+            versionName = "0.0.2026.11.12",
+            releaseDate = "November 12, 2026",
+            summary = "Multi-Turn Conversational Follow-Up Window Fix, Strict Vosk Kaldi Validation, and Live Google Speech Hybrid Integration.",
+            highlights = listOf(
+                ReleaseHighlight("FIX", "🗣️ Conversational Follow-Up Window: Countdown strictly pauses while Madhu is speaking, giving you the full 15-second window after speech finishes for follow-up questions."),
+                ReleaseHighlight("FIX", "🧠 Vosk Model Validation & Integrity: Strict conjunction check for Kaldi components (am, conf, graph) and nested directory auto-resolution to eliminate 'Failed to create a model' errors."),
+                ReleaseHighlight("NEW", "🌐 Google Speech Hybrid Live Recognizer: Active live streaming recognition in background service with multilingual Hindi/Hinglish detection."),
+                ReleaseHighlight("NEW", "📁 Storage Access Framework (SAF) Custom Export: Pick folder and filename on every backup.")
+            )
+        ),
         ReleaseEntry(
             versionCode = 202611051,
             versionName = "0.0.2026.11.05",
@@ -103,14 +133,25 @@ object ReleaseNotesRegistry {
         )
     )
 
-    fun getReleasesSince(lastSeenVersionCode: Int): List<ReleaseEntry> {
-        if (lastSeenVersionCode <= 0) {
-            // First time or legacy install: show the latest release, with all past releases available
-            return releases.take(1)
-        }
-        val unread = releases.filter { it.versionCode > lastSeenVersionCode }
-        return if (unread.isNotEmpty()) unread else releases.take(1)
+    fun getAllReleases(): List<ReleaseEntry> {
+        val currentVersion = try { AppConstants.APP_VERSION } catch (_: Throwable) { "" }
+        val currentCode = try { AppConstants.VERSION_CODE } catch (_: Throwable) { 0 }
+        if (releases.isEmpty()) return emptyList()
+        val latest = releases.first()
+        val dynamicLatest = latest.copy(
+            versionName = if (currentVersion.isNotBlank()) currentVersion else latest.versionName,
+            versionCode = if (currentCode > 0) currentCode else latest.versionCode
+        )
+        return listOf(dynamicLatest) + releases.drop(1)
     }
 
-    fun getAllReleases(): List<ReleaseEntry> = releases
+    fun getReleasesSince(lastSeenVersionCode: Int): List<ReleaseEntry> {
+        val all = getAllReleases()
+        val currentCode = try { AppConstants.VERSION_CODE } catch (_: Throwable) { 0 }
+        if (lastSeenVersionCode <= 0 || (currentCode > 0 && currentCode > lastSeenVersionCode)) {
+            return all.take(1)
+        }
+        val unread = all.filter { it.versionCode > lastSeenVersionCode }
+        return if (unread.isNotEmpty()) unread else all.take(1)
+    }
 }

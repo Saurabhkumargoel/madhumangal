@@ -1,5 +1,6 @@
 package com.madhumangal.ui.screens
 
+import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -563,23 +565,17 @@ fun LogsTab(
 
                         if (selectedFiles.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                // Share Selected
+                                // Share Selected Actual Files via FileProvider
                                 OutlinedButton(
                                     onClick = {
-                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
-                                        val sendIntent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            putExtra(Intent.EXTRA_TEXT, combined)
-                                            type = "text/plain"
-                                        }
-                                        context.startActivity(Intent.createChooser(sendIntent, if (isHindi) "चयनित लॉग शेयर करें (${selectedFiles.size})" else "Share Selected Logs (${selectedFiles.size})"))
+                                        shareLogFiles(context, selectedFiles.toList(), isHindi)
                                     },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.height(26.dp)
                                 ) {
                                     Icon(Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(11.dp))
                                     Spacer(modifier = Modifier.width(3.dp))
-                                    Text(if (isHindi) "शेयर" else "Share", fontSize = 10.sp, color = AccentPurple, fontWeight = FontWeight.Bold)
+                                    Text(if (isHindi) "फ़ाइलें (${selectedFiles.size})" else "Files (${selectedFiles.size})", fontSize = 10.sp, color = AccentPurple, fontWeight = FontWeight.Bold)
                                 }
 
                                 // Copy .md
@@ -990,38 +986,73 @@ fun LogsTab(
     }
     }
 
-    // Floating Share Button at bottom right corner to share all current session files
-    FloatingActionButton(
+    // Floating Share Button at bottom left: shares visible sessions (or selected sessions) with live count
+    val targetShareFiles = remember(selectedFiles, pagedFiles) {
+        if (selectedFiles.isNotEmpty()) selectedFiles.toList() else pagedFiles
+    }
+    val shareCount = targetShareFiles.size
+
+    ExtendedFloatingActionButton(
         onClick = {
-            try {
-                val allSessionsText = AppLogger.getAllSessionLogsText(context)
-                val sendIntent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_TEXT, allSessionsText)
-                    putExtra(Intent.EXTRA_SUBJECT, "Madhumangal All Current Session Logs")
-                    type = "text/plain"
-                }
-                val shareIntent = Intent.createChooser(sendIntent, if (isHindi) "सभी सत्र लॉग शेयर करें" else "Share All Session Files")
-                context.startActivity(shareIntent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Share error: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            shareLogFiles(context, targetShareFiles, isHindi)
         },
         containerColor = AccentPurple,
         contentColor = Color.White,
-        shape = CircleShape,
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = 16.dp, bottom = 16.dp)
-            .size(48.dp)
+            .align(Alignment.BottomStart)
+            .padding(start = 16.dp, bottom = 16.dp)
     ) {
         Icon(
             imageVector = Icons.Default.Share,
-            contentDescription = "Share All Session Files",
-            modifier = Modifier.size(20.dp)
+            contentDescription = "Share Session Files",
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = if (selectedFiles.isNotEmpty())
+                (if (isHindi) "📤 शेयर ($shareCount)" else "📤 Share ($shareCount)")
+            else
+                (if (isHindi) "📤 दृश्य सत्र ($shareCount)" else "📤 Visible ($shareCount)"),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
         )
     }
 }
+}
+
+private fun shareLogFiles(context: Context, files: List<File>, isHindi: Boolean) {
+    if (files.isEmpty()) {
+        Toast.makeText(context, if (isHindi) "शेयर करने के लिए कोई फ़ाइल नहीं मिली" else "No log files to share", Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val authority = "${context.packageName}.fileprovider"
+        if (files.size == 1) {
+            val file = files.first()
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                type = "text/plain"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(sendIntent, if (isHindi) "लॉग फ़ाइल शेयर करें" else "Share Log File (${file.name})"))
+        } else {
+            val uris = ArrayList(files.map { file ->
+                androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+            })
+            val sendIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                putExtra(Intent.EXTRA_SUBJECT, "Madhu Mangal Log Files (${files.size})")
+                type = "text/plain"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(sendIntent, if (isHindi) "${files.size} लॉग फ़ाइलें शेयर करें" else "Share ${files.size} Log Files"))
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "Error sharing log files: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
 }
 
 private data class LogSection(
