@@ -653,9 +653,9 @@ class TinyAiProcessor {
         // 1. Identity ("तुम्हारा नाम क्या है", "who are you", "what is your name", "what are you called", "व्हाट इज योर में")
         if (lower.contains("नाम") || lower.contains("name") || lower.contains("who are you") || lower.contains("कॉल यू") || lower.contains("व्हाट इज योर") || lower.contains("तुम्हारा नाम")) {
             val response = if (isHindi) {
-                "मेरा नाम गुड बॉट (GoodBot) है। मैं आपका व्यक्तिगत वॉयस असिस्टेंट और टास्क ऑर्गनाइज़र हूँ।"
+                "मेरा नाम मधु (Madhu) है। मैं मधुमंगल (Madhumangal) का आपका व्यक्तिगत वॉयस असिस्टेंट और टास्क ऑर्गनाइज़र हूँ।"
             } else {
-                "I am GoodBot, your personal voice assistant and smart task organizer."
+                "I am Madhu, your personal voice assistant and smart task organizer in Madhumangal."
             }
             return Pair(response, emptyList())
         }

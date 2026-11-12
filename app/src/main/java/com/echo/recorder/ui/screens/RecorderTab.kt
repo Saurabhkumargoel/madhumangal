@@ -241,7 +241,7 @@ fun RecorderTab(
         ) {
             Column {
                 Text(
-                    text = "GoodEcho",
+                    text = "Madhumangal",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -860,8 +860,8 @@ fun RecorderTab(
                 },
                 text = {
                     Text(
-                        text = if (isHindi) "गुड-इको आपके डिवाइस पर 100% ऑफ़लाइन प्रतिलेखन करता है। लाइव बोलने पर स्क्रीन पर शब्द देखने के लिए Vosk Hindi (45 MB) मॉडल आवश्यक है।\n\nक्या आप इसे अभी डाउनलोड करना चाहते हैं या केवल ऑडियो रिकॉर्ड करना चाहते हैं?"
-                               else "GoodEcho transcribes your speech 100% on-device without internet or audio conflicts. To see live text while speaking, the lightweight Vosk Hindi model (45 MB) is required.\n\nWould you like to download it now or record raw audio only?",
+                        text = if (isHindi) "मधुमंगल आपके डिवाइस पर 100% ऑफ़लाइन प्रतिलेखन करता है। लाइव बोलने पर स्क्रीन पर शब्द देखने के लिए Vosk Hindi (45 MB) मॉडल आवश्यक है।\n\nक्या आप इसे अभी डाउनलोड करना चाहते हैं या केवल ऑडियो रिकॉर्ड करना चाहते हैं?"
+                               else "Madhumangal transcribes your speech 100% on-device without internet or audio conflicts. To see live text while speaking, the lightweight Vosk Hindi model (45 MB) is required.\n\nWould you like to download it now or record raw audio only?",
                         color = TextSecondary,
                         fontSize = 14.sp
                     )

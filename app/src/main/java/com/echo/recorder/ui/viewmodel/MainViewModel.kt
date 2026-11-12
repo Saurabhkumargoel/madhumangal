@@ -1947,7 +1947,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         apiKey = prefs.cloudApiKey,
                         model = prefs.cloudModelName.ifBlank { "gemini-1.5-flash" },
                         systemInstruction = prefs.customSystemPrompt.ifBlank {
-                            "You are GoodBot, a warm, intelligent, concise personal assistant. Answer the user helpfully in Hindi, Hinglish, or English depending on their input. Keep responses natural, direct, and conversational."
+                            "You are Madhu, a warm, intelligent, concise personal assistant in Madhumangal. Answer the user helpfully in Hindi, Hinglish, or English depending on their input. Keep responses natural, direct, and conversational."
                         },
                         contextInfo = contextInfo
                     )

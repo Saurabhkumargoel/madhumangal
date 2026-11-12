@@ -1003,9 +1003,48 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 - **Aesthetic Refinement:** OLED gradient dark themes (`#0F141C` -> `#07090E`) with dynamic 18-bar soundwaves replace harsh neon clutter with an ultra-premium, responsive aesthetic.
 - **Customizability & Control:** Developer Mode granular tier controls `[Smt] [Adv] [Dev]` empower power users to tailor their interface without breaking active configurations due to the Active Option Safeguard.
 
+### 2.12 Application Rebranding to Madhumangal & Assistant to Madhu with Private Git Sync
+
+#### 1. Issue & Incident Summary
+1. **Rebranding Alignment:**
+   - User requested consistent rebranding of the entire application to **Madhumangal** (मधुमंगल) and the conversational voice assistant to **Madhu** (मधु).
+   - Previous identifiers ("GoodEcho", "GoodBot") were legacy names that caused mismatch with the user's private GitHub repository (`Saurabhkumargoel/madhumangal`).
+2. **Branching & Version Control Workflow:**
+   - User established a strict git mandate: Every change must have a dedicated branch matching `feature/<description>`, `bug/<description>`, or `hotfix/<description>`, synced to a private repository (`https://github.com/Saurabhkumargoel/madhumangal.git`), and local `git push` must push automatically.
+
+#### 2. Root Cause Analysis & Engineering Fixes
+1. **Comprehensive Rebranding:**
+   - **Application Name:** Updated `app_name` and `notification_title` in `strings.xml` to `Madhumangal` and `Madhumangal Active`.
+   - **Export APK Naming:** Updated `app/build.gradle.kts` to output `Madhumangal_v${versionName}.apk` to `.shared/`.
+   - **Assistant Identity & Wake-Words:**
+     - In `DumbHomeTab.kt`: Added `madhu`, `मधु`, `हे मधु`, `hey madhu`, `hello madhu`, `madhumangal`, `मधुमंगल` to `botKeywordRegex`.
+     - In `TinyAiProcessor.kt`: Updated self-identification to *"मेरा नाम मधु (Madhu) है। मैं मधुमंगल का आपका व्यक्तिगत वॉयस असिस्टेंट और टास्क ऑर्गनाइज़र हूँ।"*
+     - In `MainViewModel.kt` & `GeminiApiService.kt`: Updated system prompts to *"You are Madhu, a warm, intelligent, concise personal assistant in Madhumangal."*
+     - Updated User Help & Prompts modal instructions to "मधु गाइड व निर्देश" / "Madhu Guide & Instructions".
+2. **Automated Branching & Git Upstream Sync:**
+   - Created private GitHub repository `https://github.com/Saurabhkumargoel/madhumangal`.
+   - Configured `push.autoSetupRemote true` in git config.
+   - Formalized Invariant 8 in `.agrules` mandating branch naming `feature/<description>`, `bug/<description>`, or `hotfix/<description>`.
+
+---
+
+## 🏛️ Multi-Perspective Critique Framework Evaluation
+
+### 1. 🛠️ Tech Lead Critique
+- **Naming Cohesion:** Rebranding cleanly propagated across `strings.xml`, Compose UI, Gradle artifact exports, AI system instructions, and unit tests without breaking legacy wake-word fallbacks.
+- **Git Discipline:** Standardizing feature branches (`feature/rename-app-madhumangal-bot-madhu`) with `push.autoSetupRemote` prevents accidental unverified pushes directly into `main`.
+
+### 2. 📱 Product Manager Critique
+- **Cultural & Brand Resonance:** "Madhumangal" and "Madhu" create an affectionate, approachable, and culturally aligned persona for Hindi/Hinglish speaking users compared to generic corporate bot names.
+- **User Trust:** Having all APK exports directly labeled `Madhumangal_v*.apk` provides immediate visual validation when sideloading or sharing APK builds.
+
+### 3. 👤 End-User Critique
+- **Natural Wake-Word Experience:** Saying *"मधु"* or *"Hey Madhu"* feels significantly more intuitive and effortless than reciting multiple English syllables (*"Good Bot"*).
+
 ---
 
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
+
 
 
 

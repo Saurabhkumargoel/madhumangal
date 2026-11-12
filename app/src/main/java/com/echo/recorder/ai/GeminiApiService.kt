@@ -205,7 +205,7 @@ object GeminiApiService {
         query: String,
         apiKey: String,
         model: String = "gemini-1.5-flash",
-        systemInstruction: String = "You are GoodBot, a warm, intelligent, concise voice assistant. Give natural, helpful answers in the user's language (Hindi, Hinglish, or English). Keep voice responses direct and easy to listen to.",
+        systemInstruction: String = "You are Madhu, a warm, intelligent, concise voice assistant in Madhumangal. Give natural, helpful answers in the user's language (Hindi, Hinglish, or English). Keep voice responses direct and easy to listen to.",
         contextInfo: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         if (query.isBlank() || apiKey.isBlank()) {

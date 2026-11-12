@@ -96,7 +96,7 @@ tasks.register("exportApkToShared") {
         val versionName = android.defaultConfig.versionName ?: "unknown"
         val apkSource = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
         if (apkSource.exists()) {
-            val destFile = File(sharedDir, "GoodEcho_v${versionName}.apk")
+            val destFile = File(sharedDir, "Madhumangal_v${versionName}.apk")
             apkSource.copyTo(destFile, overwrite = true)
             println("✅ [EXPORT] Successfully exported APK to: ${destFile.absolutePath} (${destFile.length() / 1024} KB)")
         } else {

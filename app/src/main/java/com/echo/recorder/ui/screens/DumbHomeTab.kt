@@ -383,9 +383,9 @@ fun DumbHomeTab(
         }
     }
 
-    // Keyword Matcher with extensive Vosk Hindi phonetic & acoustic variations from test logs
+    // Keyword Matcher with Madhu/Madhumangal and extensive Vosk Hindi phonetic & acoustic variations from test logs
     val botKeywordRegex = remember {
-        Regex("(?i)(good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*भौत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद|गॉड\\s*बाद|गॉड\\s*बात|गार्ड\\s*बात|गत\\s*बात|गत\\s*डॉट|रोड\\s*बाद|घर\\s*बैठे|घोर\\s*बाद|घोर\\s*बॉट|दैट\\s*दे)")
+        Regex("(?i)(madhu\\s*bot|madhu|मधु\\s*बॉट|मधु|मधुमंगल|हे\\s*मधु|hey\\s*madhu|hello\\s*madhu|madhumangal|good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*भौत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद|गॉड\\s*बाद|गॉड\\s*बात|गार्ड\\s*बात|गत\\s*बात|गत\\s*डॉट|रोड\\s*बाद|घर\\s*बैठे|घोर\\s*बाद|घोर\\s*बॉट|दैट\\s*दे)")
     }
 
     // Active Conversational Window Countdown (15s default, 12s on follow-up)
@@ -1029,7 +1029,7 @@ fun DumbHomeTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isHindi) "गुड बॉट गाइड व निर्देश" else "Good Bot Guide & Instructions",
+                            text = if (isHindi) "मधु गाइड व निर्देश" else "Madhu Guide & Instructions",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = TextPrimary
@@ -1044,16 +1044,16 @@ fun DumbHomeTab(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = if (isHindi) "🎙️ बातचीत कैसे करें:" else "🎙️ How to Talk with Good Bot:",
+                            text = if (isHindi) "🎙️ बातचीत कैसे करें:" else "🎙️ How to Talk with Madhu:",
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlue,
                             fontSize = 13.sp
                         )
                         Text(
                             text = if (isHindi)
-                                "• केंद्र में स्थित वॉइस बटन को दबाएं या सीधे \"गुड बॉट\" कहें।\n• बॉट जब बोल रहा हो, आप बीच में बात करके उसे रोक (Interrupt) सकते हैं।\n• 10 सेकंड की विंडो में अगला सवाल बिना \"गुड बॉट\" कहे सीधे पूछें।"
+                                "• केंद्र में स्थित वॉइस बटन को दबाएं या सीधे \"मधु\" कहें।\n• बॉट जब बोल रहा हो, आप बीच में बात करके उसे रोक (Interrupt) सकते हैं।\n• एक्टिव विंडो में अगला सवाल बिना \"मधु\" कहे सीधे पूछें।"
                             else
-                                "• Tap the central voice orb or say \"Good Bot\" anytime.\n• You can interrupt the bot while it is speaking simply by speaking.\n• During the 10s active window, ask follow-up questions directly without repeating \"Good Bot\".",
+                                "• Tap the central voice orb or say \"Madhu\" anytime.\n• You can interrupt the bot while it is speaking simply by speaking.\n• During the active window, ask follow-up questions directly without repeating \"Madhu\".",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                             lineHeight = 18.sp
