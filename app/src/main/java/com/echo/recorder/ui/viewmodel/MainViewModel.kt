@@ -155,7 +155,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateInverseRecordingsSort(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateInverseRecordingsSort(enabled)
+        }
+    }
+
     // Persistent Settings Accordion States (survives tab switching)
+    var isSettingsGeneralExpanded by mutableStateOf(false)
     var isSettingsStorageExpanded by mutableStateOf(true)
     var isSettingsThemesExpanded by mutableStateOf(true)
     var isSettingsAudioExpanded by mutableStateOf(false)

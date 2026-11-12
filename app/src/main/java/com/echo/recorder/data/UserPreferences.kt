@@ -95,13 +95,17 @@ data class UserPreferences(
     val selectedCalendarApp: String = CALENDAR_APP_GOOGLE,
     val devAdvancedVisibleSettings: Set<String> = DEFAULT_ADVANCED_VISIBLE_SETTINGS,
     val homeTheme: String = HOME_THEME_CHARCOAL,
-    val devSettingTierOverrides: Map<String, String> = emptyMap()
+    val devSettingTierOverrides: Map<String, String> = emptyMap(),
+    val inverseRecordingsSort: Boolean = false
 ) {
     val isDeveloperMode: Boolean get() = settingsMode == SettingsMode.DEVELOPER
     val isAdvancedOrDev: Boolean get() = settingsMode == SettingsMode.ADVANCED || settingsMode == SettingsMode.DEVELOPER
 
     fun getEffectiveTier(settingKey: String, defaultTier: String = "DEVELOPER"): String {
         devSettingTierOverrides[settingKey]?.let { return it }
+        if (DEFAULT_SMART_VISIBLE_SETTINGS.contains(settingKey)) {
+            return "SMART"
+        }
         if (devAdvancedVisibleSettings.contains(settingKey)) {
             return "ADVANCED"
         }
@@ -126,6 +130,19 @@ data class UserPreferences(
         const val CALENDAR_APP_GOOGLE = "GOOGLE_CALENDAR"
         const val CALENDAR_APP_SAMSUNG = "SAMSUNG_CALENDAR"
         const val CALENDAR_APP_DEFAULT = "SYSTEM_DEFAULT"
+
+        val DEFAULT_SMART_VISIBLE_SETTINGS: Set<String> = setOf(
+            "sec_general",
+            "sec_themes",
+            "setting_app_language",
+            "setting_font_mode",
+            "theme_GRADIENT_BLACK",
+            "theme_MIDNIGHT_BLUE",
+            "theme_DARK",
+            "theme_LIGHT",
+            "stt_google_speech",
+            "stt_vosk_hindi"
+        )
 
         val DEFAULT_ADVANCED_VISIBLE_SETTINGS: Set<String> = setOf(
             "sec_audio_recording",

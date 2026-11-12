@@ -101,12 +101,21 @@ fun TranscriptsTab(
     onToggleRecording: () -> Unit = {},
     onAbortRecording: () -> Unit = {},
     recorderLayoutMode: String = "BOTH_TABS",
+    inverseRecordingsSort: Boolean = false,
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // Group transcriptions by attempt/session ID (PID)
-    val groupedSessions = remember(transcriptions) {
-        transcriptions.groupBy { item ->
+    // Group transcriptions by attempt/session ID (PID), sorted by inverseRecordingsSort
+    val orderedTranscriptions = remember(transcriptions, inverseRecordingsSort) {
+        if (inverseRecordingsSort) {
+            transcriptions.sortedBy { it.timestampMillis }
+        } else {
+            transcriptions.sortedByDescending { it.timestampMillis }
+        }
+    }
+
+    val groupedSessions = remember(orderedTranscriptions) {
+        orderedTranscriptions.groupBy { item ->
             if (item.sessionId.isNotBlank()) item.sessionId
             else {
                 val dateTag = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date(item.timestampMillis))
@@ -308,7 +317,8 @@ fun TranscriptsTab(
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 12.dp)
+                contentPadding = PaddingValues(bottom = 12.dp),
+                reverseLayout = inverseRecordingsSort
             ) {
                 groupedSessions.forEach { (sessionId, sessionChunks) ->
                     val isExpanded = expandedSessions.contains(sessionId)

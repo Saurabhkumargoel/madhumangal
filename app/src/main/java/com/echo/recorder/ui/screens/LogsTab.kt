@@ -22,10 +22,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -201,6 +204,7 @@ fun groupLogFilesByTimeGap(
 fun LogsTab(
     viewModel: MainViewModel? = null,
     userPreferences: UserPreferences? = null,
+    listState: LazyListState = rememberLazyListState(),
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -208,7 +212,6 @@ fun LogsTab(
     val clipboardManager = LocalClipboardManager.current
     val logs by AppLogger.logsFlow.collectAsState()
     var selectedFilter by remember { mutableStateOf("ALL") }
-    val listState = rememberLazyListState()
 
     var isManageFilesExpanded by remember { mutableStateOf(false) }
     var selectedFiles by remember { mutableStateOf<Set<File>>(emptySet()) }
@@ -324,12 +327,13 @@ fun LogsTab(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(DarkBackground)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DarkBackground)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
         // Title & Entry Count
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -424,7 +428,7 @@ fun LogsTab(
                                 putExtra(Intent.EXTRA_TEXT, textToExport)
                                 type = "text/plain"
                             }
-                            val shareIntent = Intent.createChooser(sendIntent, "Export Active Session (${activeFile?.name ?: "active"})")
+                            val shareIntent = Intent.createChooser(sendIntent, if (isHindi) "सक्रिय सत्र शेयर करें" else "Share Active Session (${activeFile?.name ?: "active"})")
                             context.startActivity(shareIntent)
                         },
                         shape = RoundedCornerShape(8.dp),
@@ -433,102 +437,13 @@ fun LogsTab(
                     ) {
                         Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(if (isHindi) "निर्यात" else "Export", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(if (isHindi) "शेयर" else "Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
 
-        // Action Buttons: Copy All, Share Log File, Global Export All, Clear
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Button(
-                onClick = {
-                    val allText = if (selectedFilter != "ALL") {
-                        AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
-                    } else {
-                        AppLogger.getAllLogsText()
-                    }
-                    clipboardManager.setText(AnnotatedString(allText))
-                    Toast.makeText(context, if (isHindi) "लॉग कॉपी किए गए (${filteredLogs.size})!" else "Logs copied (${filteredLogs.size})!", Toast.LENGTH_SHORT).show()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(if (isHindi) "कॉपी" else "Copy", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val allText = if (selectedFilter != "ALL") {
-                        AppLogger.getFilteredLogsText(selectedFilter, filteredLogs)
-                    } else {
-                        AppLogger.getAllLogsText()
-                    }
-                    val sendIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, allText)
-                        type = "text/plain"
-                    }
-                    val shareIntent = Intent.createChooser(sendIntent, "Share Logs ($selectedFilter)")
-                    context.startActivity(shareIntent)
-                },
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(imageVector = Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(if (isHindi) "शेयर" else "Share", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    try {
-                        val allSessionsText = AppLogger.getAllSessionLogsText(context)
-                        val cacheFile = File(context.cacheDir, "all_sessions_export.txt")
-                        cacheFile.writeText(allSessionsText)
-                        val contentUri = androidx.core.content.FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            cacheFile
-                        )
-                        val sendIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_STREAM, contentUri)
-                            putExtra(Intent.EXTRA_SUBJECT, "GoodEcho All Session Logs")
-                            type = "text/plain"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        val shareIntent = Intent.createChooser(sendIntent, "Global Export: All Session Logs")
-                        context.startActivity(shareIntent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                modifier = Modifier.weight(1.3f)
-            ) {
-                Text(if (isHindi) "🌐 सभी लॉग" else "🌐 All Logs", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-            }
-
-            OutlinedButton(
-                onClick = { showClearLogsConfirm = true },
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-            ) {
-                Icon(imageVector = Icons.Default.Delete, contentDescription = "Clear Logs", tint = ActiveRed, modifier = Modifier.size(14.dp))
-            }
-        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -648,79 +563,53 @@ fun LogsTab(
 
                         if (selectedFiles.isNotEmpty()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                // Copy Text
+                                // Share Selected
+                                OutlinedButton(
+                                    onClick = {
+                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, combined)
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, if (isHindi) "चयनित लॉग शेयर करें (${selectedFiles.size})" else "Share Selected Logs (${selectedFiles.size})"))
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(if (isHindi) "शेयर" else "Share", fontSize = 10.sp, color = AccentPurple, fontWeight = FontWeight.Bold)
+                                }
+
+                                // Copy .md
                                 OutlinedButton(
                                     onClick = {
                                         val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
                                         clipboardManager.setText(AnnotatedString(combined))
-                                        Toast.makeText(context, if (isHindi) "${selectedFiles.size} फ़ाइलें कॉपी की गईं!" else "Copied ${selectedFiles.size} log file(s)!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, if (isHindi) "${selectedFiles.size} फ़ाइलें .md कॉपी की गईं!" else "Copied ${selectedFiles.size} log file(s) as .md!", Toast.LENGTH_SHORT).show()
                                     },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.height(26.dp)
                                 ) {
-                                    Text(if (isHindi) "कॉपी" else "Copy", fontSize = 10.sp, color = PrimaryBlue)
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(".md", fontSize = 10.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
                                 }
 
-                                // Export MD
+                                // Copy .txt
                                 OutlinedButton(
                                     onClick = {
                                         val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
-                                        val latestBaseName = selectedFiles.maxByOrNull { it.lastModified() }?.nameWithoutExtension ?: "session"
-                                        val logsDir = AppStorageManager.getLogsDirectory(context)
-                                        val mergedFile = File(logsDir, "${latestBaseName}_merged.md")
-                                        mergedFile.writeText(combined)
-                                        refreshFilesTrigger++
-                                        val uri = try {
-                                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", mergedFile)
-                                        } catch (e: Exception) { null }
-
-                                        val sendIntent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            putExtra(Intent.EXTRA_TEXT, combined)
-                                            if (uri != null) {
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            type = "text/markdown"
-                                        }
-                                        context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.md)"))
-                                        Toast.makeText(context, if (isHindi) "सहेजी गई: ${mergedFile.name}" else "Saved & shared: ${mergedFile.name}", Toast.LENGTH_SHORT).show()
+                                        clipboardManager.setText(AnnotatedString(combined))
+                                        Toast.makeText(context, if (isHindi) "${selectedFiles.size} फ़ाइलें .txt कॉपी की गईं!" else "Copied ${selectedFiles.size} log file(s) as .txt!", Toast.LENGTH_SHORT).show()
                                     },
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                     modifier = Modifier.height(26.dp)
                                 ) {
-                                    Text(".md", fontSize = 10.sp, color = Color(0xFF10B981))
-                                }
-
-                                // Export TXT
-                                OutlinedButton(
-                                    onClick = {
-                                        val combined = AppLogger.exportSelectedSessionLogs(selectedFiles.toList())
-                                        val latestBaseName = selectedFiles.maxByOrNull { it.lastModified() }?.nameWithoutExtension ?: "session"
-                                        val logsDir = AppStorageManager.getLogsDirectory(context)
-                                        val mergedFile = File(logsDir, "${latestBaseName}_merged.txt")
-                                        mergedFile.writeText(combined)
-                                        refreshFilesTrigger++
-                                        val uri = try {
-                                            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", mergedFile)
-                                        } catch (e: Exception) { null }
-
-                                        val sendIntent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            putExtra(Intent.EXTRA_TEXT, combined)
-                                            if (uri != null) {
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            type = "text/plain"
-                                        }
-                                        context.startActivity(Intent.createChooser(sendIntent, "Export Logs (.txt)"))
-                                        Toast.makeText(context, if (isHindi) "सहेजी गई: ${mergedFile.name}" else "Saved & shared: ${mergedFile.name}", Toast.LENGTH_SHORT).show()
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(26.dp)
-                                ) {
-                                    Text(".txt", fontSize = 10.sp, color = PrimaryBlue)
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(11.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(".txt", fontSize = 10.sp, color = PrimaryBlue, fontWeight = FontWeight.Bold)
                                 }
 
                                 // Delete Selected
@@ -1083,7 +972,8 @@ fun LogsTab(
                                 SessionDividerRow(
                                     entry = section.header,
                                     selectedFilter = selectedFilter,
-                                    filteredLogs = filteredLogs
+                                    filteredLogs = filteredLogs,
+                                    isHindi = isHindi
                                 )
                             }
                         }
@@ -1098,6 +988,39 @@ fun LogsTab(
             }
         }
     }
+    }
+
+    // Floating Share Button at bottom right corner to share all current session files
+    FloatingActionButton(
+        onClick = {
+            try {
+                val allSessionsText = AppLogger.getAllSessionLogsText(context)
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, allSessionsText)
+                    putExtra(Intent.EXTRA_SUBJECT, "GoodEcho All Current Session Logs")
+                    type = "text/plain"
+                }
+                val shareIntent = Intent.createChooser(sendIntent, if (isHindi) "सभी सत्र लॉग शेयर करें" else "Share All Session Files")
+                context.startActivity(shareIntent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Share error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        },
+        containerColor = AccentPurple,
+        contentColor = Color.White,
+        shape = CircleShape,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 16.dp, bottom = 16.dp)
+            .size(48.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Share,
+            contentDescription = "Share All Session Files",
+            modifier = Modifier.size(20.dp)
+        )
+    }
 }
 }
 
@@ -1110,7 +1033,8 @@ private data class LogSection(
 fun SessionDividerRow(
     entry: LogEntry,
     selectedFilter: String = "ALL",
-    filteredLogs: List<LogEntry> = emptyList()
+    filteredLogs: List<LogEntry> = emptyList(),
+    isHindi: Boolean = false
 ) {
     val context = LocalContext.current
     Surface(
@@ -1173,12 +1097,12 @@ fun SessionDividerRow(
             ) {
                 Icon(
                     imageVector = Icons.Default.Share,
-                    contentDescription = "Export Session",
+                    contentDescription = "Share Session",
                     tint = DarkBackground,
                     modifier = Modifier.size(11.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Export", color = DarkBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(if (selectedFilter != "ALL") (if (isHindi) "शेयर" else "Share") else (if (isHindi) "शेयर" else "Share"), color = DarkBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.width(4.dp))

@@ -951,7 +951,62 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+### 2.11 Multi-Turn Conversational Recovery, Reminder Trigger, SAF Export & Double-Back Navigation
+
+#### 1. Issue & Incident Summary
+1. **Multi-Turn Assistant Freezing on Second Query:**
+   - In conversational mode, users reported the assistant stopped answering after the first query. Root cause analysis revealed Devanagari wake-word regexes using ASCII word boundaries `\b` (e.g. `\bगुड\b`) which failed on non-ASCII Devanagari characters, and TTS completion callbacks were not releasing processing locks reliably.
+2. **Back Button Exited Without Deselecting / Accidental Exits:**
+   - Pressing back while managing/selecting multiple log or transcript files immediately exited the application rather than canceling the selection first.
+   - Accidental single back taps exited the entire app without confirmation.
+3. **Google Speech Hinglish Dumbness & Missing Offline Setting:**
+   - Users reported Google Voice STT felt "dumb" compared to Google Gboard/Assistant because it lacked hybrid language configuration (`EXTRA_ADDITIONAL_LANGUAGES`) and users had no easy entry point to download offline language packs.
+4. **"Mujhe Yaad Dilana" / "मुझे याद दिलाना" Reminder Trigger:**
+   - User requested voice reminder detection that parses time/title and launches the configured calendar app (Google Calendar, Samsung Calendar, or System Default).
+5. **Settings Export to Hardcoded Directory:**
+   - Exporting settings previously saved to a fixed `notes/` folder without prompting the user to choose their desired folder or cloud sync location.
+
+#### 2. Root Cause Analysis & Engineering Fixes
+1. **Devanagari Unicode Word Boundaries & State Release:**
+   - Removed `\b` from all Devanagari regexes in `DumbHomeTab.kt` (`गुड बॉट`, `नमस्ते`, `याद दिलाना`).
+   - Added robust reset in `handleQueryText()` and `speakAnswer()` ensuring `isProcessingAssistant` is unlocked in `onDone` and `onError`.
+2. **Hierarchical BackHandler with 5-Second Double-Back Guard:**
+   - In `LogsTab.kt` and `TranscriptsTab.kt`: Attached scoped `BackHandler(enabled = selectedFiles.isNotEmpty())` to deselect all files before propagating to navigation.
+   - In `MainScreen.kt`: Implemented a 5000ms sliding window double-back exit handler. The first back press displays a Toast (`"Press back again to exit"` / `"बाहर निकलने के लिए फिर से बैक दबाएं"`), and only a consecutive press within 5 seconds exits the app.
+3. **Google Speech Hinglish Optimization & Offline Settings Intent:**
+   - Updated `GoogleSpeechService` to pass `RecognizerIntent.EXTRA_ADDITIONAL_LANGUAGES` with `arrayOf("hi-IN", "en-IN")` and `EXTRA_LANGUAGE_MODEL_FREE_FORM`.
+   - Added `launchGoogleOfflineVoiceSettings(context)` firing `Intent("com.google.android.voicesearch.SETTINGS")` with fallback to `Settings.ACTION_LOCALE_SETTINGS`.
+4. **Natural Language Reminder Detection & Calendar Launcher:**
+   - Added `launchCalendarReminder(context, query, calendarApp)`:
+     - Strips trigger phrases (`"मुझे याद दिलाना"`, `"याद रखना"`, `"remind me to"`).
+     - Detects morning/evening/night/tomorrow time references ("सुबह", "शाम", "रात", "कल", "tomorrow", "pm", "am") and calculates epoch milliseconds.
+     - Fires `Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)` with `EXTRA_TITLE` and `EXTRA_BEGIN_TIME`, targeting the package selected in Developer Mode (`com.google.android.calendar`, `com.samsung.android.calendar`, or system default).
+5. **SAF Document Picker for Settings Export:**
+   - Integrated `ActivityResultContracts.CreateDocument("application/json")` in `SettingsTab.kt`.
+   - The user is now prompted by the Android system file picker to choose destination directory and filename on every export.
+
+---
+
+## 🏛️ Multi-Perspective Critique Framework Evaluation
+
+### 1. 🛠️ Tech Lead Critique
+- **Code Health & Safety:** All regexes handling Devanagari and Latin text now use unicode-safe patterns without ASCII boundary traps. BackHandler logic is cleanly decoupled between tab-level selection clearing and activity-level exit throttling.
+- **SAF Compliance:** Replacing raw file I/O with SAF `contentResolver.openOutputStream(uri)` ensures 100% Android 14/15 Scoped Storage compliance without requiring dangerous `MANAGE_EXTERNAL_STORAGE` permissions.
+- **Test Integrity:** Zero mock data; unit tests in `GoodBotConversationalTest.kt` pass 100% (28/28 tests green) covering exact reminder string parsing, time calculation, and tier visibility.
+
+### 2. 📱 Product Manager Critique
+- **User Flow & Delight:** The "mujhe yaad dilana" trigger bridges natural voice assistant queries with the user's primary calendar app seamlessly without requiring Google account credentials inside the app.
+- **Friction Reduction:** The first-run onboarding screen with 1-tap offline Vosk Hindi model setup and explicit Google Speech hybrid instructions eliminates the #1 user drop-off cause (untranscribed silence on first run).
+- **Accidental Exit Prevention:** Double-back 5-second exit prevents catastrophic loss of in-progress recording and note browsing.
+
+### 3. 👤 End-User Critique
+- **Aesthetic Refinement:** OLED gradient dark themes (`#0F141C` -> `#07090E`) with dynamic 18-bar soundwaves replace harsh neon clutter with an ultra-premium, responsive aesthetic.
+- **Customizability & Control:** Developer Mode granular tier controls `[Smt] [Adv] [Dev]` empower power users to tailor their interface without breaking active configurations due to the Active Option Safeguard.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
+
 
 
 

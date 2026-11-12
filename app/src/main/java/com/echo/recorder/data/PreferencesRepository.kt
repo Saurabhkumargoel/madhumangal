@@ -69,6 +69,7 @@ class PreferencesRepository(private val context: Context) {
         val DEV_ADVANCED_VISIBLE_SETTINGS = androidx.datastore.preferences.core.stringSetPreferencesKey("dev_advanced_visible_settings")
         val HOME_THEME = stringPreferencesKey("home_theme")
         val DEV_SETTING_TIER_OVERRIDES = stringPreferencesKey("dev_setting_tier_overrides")
+        val INVERSE_RECORDINGS_SORT = booleanPreferencesKey("inverse_recordings_sort")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -136,7 +137,8 @@ class PreferencesRepository(private val context: Context) {
             selectedCalendarApp = preferences[PreferencesKeys.SELECTED_CALENDAR_APP] ?: UserPreferences.CALENDAR_APP_GOOGLE,
             devAdvancedVisibleSettings = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS,
             homeTheme = preferences[PreferencesKeys.HOME_THEME] ?: UserPreferences.HOME_THEME_CHARCOAL,
-            devSettingTierOverrides = overridesMap
+            devSettingTierOverrides = overridesMap,
+            inverseRecordingsSort = preferences[PreferencesKeys.INVERSE_RECORDINGS_SORT] ?: false
         )
     }
 
@@ -513,6 +515,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateLogFilesPerPage(perPage: Int) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LOG_FILES_PER_PAGE] = perPage
+        }
+    }
+
+    suspend fun updateInverseRecordingsSort(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.INVERSE_RECORDINGS_SORT] = enabled
         }
     }
 

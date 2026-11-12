@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -158,6 +159,7 @@ import java.io.File
 fun SettingsTab(
     viewModel: MainViewModel,
     userPreferences: UserPreferences,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -171,7 +173,6 @@ fun SettingsTab(
 
     var expandedSttSetupModelId by remember { mutableStateOf<String?>(null) }
     var expandedAiSetupModelId by remember { mutableStateOf<String?>(null) }
-    val listState = rememberLazyListState()
 
     // Download progress tracking per model
     val downloadingProgress = remember { mutableStateMapOf<String, Float>() }
@@ -311,7 +312,7 @@ fun SettingsTab(
 
     val isAdvanced = userPreferences.isAdvancedOrDev
     var showWhatsNewDialog by remember { mutableStateOf(false) }
-    var isGeneralExpanded by remember { mutableStateOf(true) }
+    var isGeneralExpanded by viewModel::isSettingsGeneralExpanded
     var showApiKey by remember { mutableStateOf(false) }
     var showHfToken by remember { mutableStateOf(false) }
     var showResetConfirmDialog by remember { mutableStateOf(false) }
@@ -609,6 +610,49 @@ fun SettingsTab(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // ── 🔄 Inverse Recordings Sorting (Oldest at top, reverse WhatsApp-style scroll) ────
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, CardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("⇅", fontSize = 14.sp, color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isHindi) "रिकॉर्डिंग उलटी क्रमबद्ध करें" else "Inverse Recordings Sort",
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = if (isHindi) "पुरानी रिकॉर्डिंग ऊपर व चैट (व्हाट्सएप) जैसा उलटा स्क्रॉल" else "Oldest at top, reverse WhatsApp-style history scroll",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextMuted,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                Switch(
+                                    checked = userPreferences.inverseRecordingsSort,
+                                    onCheckedChange = { viewModel.updateInverseRecordingsSort(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = PrimaryBlue,
+                                        checkedTrackColor = PrimaryBlue.copy(alpha = 0.5f)
+                                    )
+                                )
                             }
                         }
 

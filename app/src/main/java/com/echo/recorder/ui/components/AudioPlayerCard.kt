@@ -2,8 +2,11 @@ package com.echo.recorder.ui.components
 
 import android.media.MediaPlayer
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -93,6 +97,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AudioPlayerCard(
     transcription: TranscriptionWithAudio,
@@ -119,10 +124,37 @@ fun AudioPlayerCard(
     var showEditDialog by remember { mutableStateOf(false) }
     var showSttModelMenu by remember { mutableStateOf(false) }
     var showAiModelMenu by remember { mutableStateOf(false) }
+    var showFlowActionsPopup by remember { mutableStateOf(false) }
 
     // Initialized from Settings default; updates automatically when Settings default changes unless overridden!
     var selectedSttModel by remember(defaultSttModel) { mutableStateOf(defaultSttModel) }
     var selectedAiModel by remember(defaultAiModel) { mutableStateOf(defaultAiModel) }
+
+    val sttShortName = when (selectedSttModel) {
+        UserPreferences.STT_MODEL_VOSK_HINDI -> "Vosk (Hi)"
+        UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> "Vosk (L)"
+        UserPreferences.STT_MODEL_SHERPA_ONNX_HINDI -> "Sherpa (Zip)"
+        UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk (En)"
+        UserPreferences.STT_MODEL_CLOUD_GEMINI -> "Gemini"
+        UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper (B)"
+        UserPreferences.STT_MODEL_WHISPER_LARGE -> "Whisper (L)"
+        UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper (T)"
+        UserPreferences.STT_MODEL_INDIC_CONFORMER -> "Indic"
+        UserPreferences.STT_MODEL_GOOGLE_SPEECH -> "Google"
+        else -> "Vosk"
+    }
+
+    val aiShortName = when (selectedAiModel) {
+        UserPreferences.AI_MODEL_LOCAL_TINY -> "Tiny AI"
+        UserPreferences.AI_MODEL_LOCAL_GEMMA_3_1B -> "Gemma 3 1B"
+        UserPreferences.AI_MODEL_LOCAL_GEMMA_3_4B -> "Gemma 3 4B"
+        UserPreferences.AI_MODEL_LOCAL_GEMMA_3_12B -> "Gemma 3 12B"
+        UserPreferences.AI_MODEL_CLOUD_GEMINI -> "Gemini"
+        UserPreferences.AI_MODEL_LOCAL_GEMMA -> "Gemma 2B"
+        UserPreferences.AI_MODEL_LOCAL_LLAMA -> "Llama 1B"
+        UserPreferences.AI_MODEL_CLOUD_OPENAI -> "GPT-4o"
+        else -> "AI"
+    }
 
     var showFileViewerDialog by remember { mutableStateOf(false) }
     var showTasksDialog by remember { mutableStateOf(false) }
@@ -267,6 +299,7 @@ fun AudioPlayerCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+
             // File Tag Info & Path chip
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
@@ -309,14 +342,128 @@ fun AudioPlayerCard(
                 }
             }
 
-            // Main Transcription Body
+            // ── Run Panel Row: Run Flow (Touch & Hold opens pop-up) + Notes + Tasks in same row ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Reduced size Run Flow button (Single tap runs flow, Touch & Hold opens pop up)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (!isTranscribing && !isProcessingAi) AccentPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .weight(1.4f)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .combinedClickable(
+                            enabled = !isTranscribing && !isProcessingAi,
+                            onClick = {
+                                Toast.makeText(context, if (isHindi) "फ्लो चल रहा है..." else "Running complete flow for this chunk...", Toast.LENGTH_SHORT).show()
+                                onRunFlow(transcription.id)
+                            },
+                            onLongClick = {
+                                showFlowActionsPopup = true
+                            }
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (isTranscribing || isProcessingAi) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isTranscribing) (if (isHindi) "ट्रांसक्राइब..." else "Transcribing...")
+                                       else (if (isHindi) "कार्य..." else "Extracting..."),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
+                        } else {
+                            Text("⚡", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isHindi) "फ्लो चलाएं" else "Run Flow",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // Compact Notes button
+                OutlinedButton(
+                    onClick = { showFileViewerDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.6f)),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f).height(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = if (isHindi) "नोट्स" else "Notes",
+                        color = PrimaryBlue,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Compact Tasks button
+                OutlinedButton(
+                    onClick = { showTasksDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (tasks.isNotEmpty()) Color(0xFF10B981) else TextMuted.copy(alpha = 0.5f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1f).height(38.dp)
+                ) {
+                    Text("📋", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = if (tasks.isNotEmpty()) "${tasks.size} " + (if (isHindi) "कार्य" else "Tasks") else (if (isHindi) "कार्य" else "Tasks"),
+                        color = if (tasks.isNotEmpty()) Color(0xFF10B981) else TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // ── Main Transcription Body (Moved Below Flow Buttons with Max Height & Scroll) ──
             if (hasValidTranscript) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = if (isHindi) "प्रतिलेख" else "TRANSCRIPT",
@@ -353,7 +500,8 @@ fun AudioPlayerCard(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
@@ -365,8 +513,8 @@ fun AudioPlayerCard(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (isHindi) "इस टुकड़े को हिंदी/हिंग्लिश टेक्स्ट में बदलने के लिए नीचे 'ट्रांसक्राइब' दबाएं या 'मॉडल ▾' चुनें।"
-                                   else "Tap 'Transcribe Audio' below or choose a model via 'Model ▾' to convert this chunk into Hindi/Hinglish text.",
+                            text = if (isHindi) "फ्लो चलाएं (या देर तक दबाकर मॉडल चुनें) जिससे यह टुकड़ा टेक्स्ट में बदल जाए।"
+                                   else "Tap 'Run Flow' above (or touch & hold to select individual models) to transcribe this chunk.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextMuted
                         )
@@ -374,9 +522,9 @@ fun AudioPlayerCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Rich Media Player: Sound Mountains Waveform, Seekbar, -5s, Play/Pause, +5s
+            // ── Rich Media Player (Moved Below Transcription): Waveform, Seekbar, Controls ──
             if (audioExists) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -541,390 +689,340 @@ fun AudioPlayerCard(
                     }
                 }
             }
+        }
+    }
 
-            val sttShortName = when (selectedSttModel) {
-                UserPreferences.STT_MODEL_VOSK_HINDI -> "Vosk (Hi)"
-                UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> "Vosk (L)"
-                UserPreferences.STT_MODEL_SHERPA_ONNX_HINDI -> "Sherpa (Zip)"
-                UserPreferences.STT_MODEL_VOSK_EN_IN -> "Vosk (En)"
-                UserPreferences.STT_MODEL_CLOUD_GEMINI -> "Gemini"
-                UserPreferences.STT_MODEL_WHISPER_BASE -> "Whisper (B)"
-                UserPreferences.STT_MODEL_WHISPER_LARGE -> "Whisper (L)"
-                UserPreferences.STT_MODEL_WHISPER_TINY -> "Whisper (T)"
-                UserPreferences.STT_MODEL_INDIC_CONFORMER -> "Indic"
-                UserPreferences.STT_MODEL_GOOGLE_SPEECH -> "Google"
-                else -> "Vosk"
-            }
-
-            val aiShortName = when (selectedAiModel) {
-                UserPreferences.AI_MODEL_LOCAL_TINY -> "Tiny AI"
-                UserPreferences.AI_MODEL_LOCAL_GEMMA_3_1B -> "Gemma 3 1B"
-                UserPreferences.AI_MODEL_LOCAL_GEMMA_3_4B -> "Gemma 3 4B"
-                UserPreferences.AI_MODEL_LOCAL_GEMMA_3_12B -> "Gemma 3 12B"
-                UserPreferences.AI_MODEL_CLOUD_GEMINI -> "Gemini"
-                UserPreferences.AI_MODEL_LOCAL_GEMMA -> "Gemma 2B"
-                UserPreferences.AI_MODEL_LOCAL_LLAMA -> "Llama 1B"
-                UserPreferences.AI_MODEL_CLOUD_OPENAI -> "GPT-4o"
-                else -> "AI"
-            }
-
-            // ── Primary Action: Run Complete Flow (STT + AI Note/Task Extraction) ──
-            Button(
-                onClick = {
-                    Toast.makeText(context, "Running complete flow for this chunk...", Toast.LENGTH_SHORT).show()
-                    onRunFlow(transcription.id)
-                },
-                enabled = !isTranscribing && !isProcessingAi,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentPurple,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (isTranscribing || isProcessingAi) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.5.dp,
-                        color = Color.White
-                    )
+    // ── Pop-up for Individual Transcribe & AI Notes (Triggered by Touch & Hold on Run Flow) ──
+    if (showFlowActionsPopup) {
+        AlertDialog(
+            onDismissRequest = { showFlowActionsPopup = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚡", fontSize = 18.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isTranscribing) (if (isHindi) "ऑडियो ट्रांसक्राइब हो रहा है..." else "Transcribing Audio...")
-                               else (if (isHindi) "कार्य निकाले जा रहे हैं..." else "Extracting Hierarchical Tasks..."),
-                        color = Color.White,
+                        text = if (isHindi) "अलग-अलग इंजन व मॉडल क्रियाएं" else "Individual Flow Actions & Models",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                } else {
-                    Text("⚡", fontSize = 14.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (hasValidTranscript) (if (isHindi) "फ्लो चलाएं (पुनः प्रतिलेखन व कार्य)" else "Run Flow (Re-Transcribe & Extract Tasks)")
-                               else (if (isHindi) "फ्लो चलाएं (प्रतिलेखन व कार्य)" else "Run Flow (Transcribe & Extract Tasks)"),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 15.sp,
+                        color = TextPrimary
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ── Action Buttons Row 1: STT Transcription & Notes ──────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Main Transcribe button
-                Button(
-                    onClick = {
-                        Toast.makeText(context, "Transcribing with $sttShortName...", Toast.LENGTH_SHORT).show()
-                        onRetranscribeWithModel(transcription.id, selectedSttModel)
-                    },
-                    enabled = !isTranscribing,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (!hasValidTranscript) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1.3f)
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    if (isTranscribing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = if (!hasValidTranscript) DarkBackground else PrimaryBlue
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                    } else {
-                        Icon(
-                            imageVector = if (!hasValidTranscript) Icons.Default.AutoAwesome else Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = if (!hasValidTranscript) DarkBackground else PrimaryBlue,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
                     Text(
-                        text = if (isTranscribing) (if (isHindi) "प्रतिलेखन जारी..." else "Transcribing...")
-                               else if (!hasValidTranscript) (if (isHindi) "ट्रांसक्राइब" else "Transcribe")
-                               else (if (isHindi) "पुनः ट्रांसक्राइब" else "Transcribe"),
-                        fontWeight = FontWeight.Bold,
-                        color = if (!hasValidTranscript) DarkBackground else TextPrimary,
-                        fontSize = 11.sp
+                        text = if (isHindi) "आप किसी विशिष्ट मॉडल से ट्रांसक्राइब या एआई नोट्स अलग से निकाल सकते हैं:"
+                               else "Run individual processing stages with specific models:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
                     )
-                }
 
-                // STT Model Selector Button with current short name
-                Box {
-                    OutlinedButton(
-                        onClick = { showSttModelMenu = true },
-                        enabled = !isTranscribing,
+                    // 1. Transcribe Section
+                    Surface(
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(sttShortName, color = PrimaryBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select STT Model",
-                            tint = PrimaryBlue,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = if (isHindi) "1. स्पीच-टू-टेक्स्ट (STT)" else "1. Speech-to-Text (STT)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = PrimaryBlue
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        showFlowActionsPopup = false
+                                        Toast.makeText(context, "Transcribing with $sttShortName...", Toast.LENGTH_SHORT).show()
+                                        onRetranscribeWithModel(transcription.id, selectedSttModel)
+                                    },
+                                    enabled = !isTranscribing,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (!hasValidTranscript) PrimaryBlue else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Icon(
+                                        imageVector = if (!hasValidTranscript) Icons.Default.AutoAwesome else Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = if (!hasValidTranscript) DarkBackground else PrimaryBlue,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isTranscribing) (if (isHindi) "जारी..." else "Transcribing...")
+                                               else if (!hasValidTranscript) (if (isHindi) "ट्रांसक्राइब" else "Transcribe")
+                                               else (if (isHindi) "पुनः ट्रांसक्राइब" else "Transcribe"),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (!hasValidTranscript) DarkBackground else TextPrimary,
+                                        fontSize = 11.sp
+                                    )
+                                }
 
-                    DropdownMenu(
-                        expanded = showSttModelMenu,
-                        onDismissRequest = { showSttModelMenu = false }
-                    ) {
-                        UserPreferences.AVAILABLE_STT_MODELS.forEach { modelOpt ->
-                            val isDefault = modelOpt.id == defaultSttModel
-                            val isSelected = modelOpt.id == selectedSttModel
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                // STT Model selector button
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { showSttModelMenu = true },
+                                        enabled = !isTranscribing,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                                     ) {
-                                        Column(modifier = Modifier.weight(1f, fill = false)) {
-                                            Text(
-                                                text = modelOpt.name,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) PrimaryBlue else TextPrimary,
-                                                fontSize = 13.sp
+                                        Text(sttShortName, color = PrimaryBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select STT Model",
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showSttModelMenu,
+                                        onDismissRequest = { showSttModelMenu = false }
+                                    ) {
+                                        UserPreferences.AVAILABLE_STT_MODELS.forEach { modelOpt ->
+                                            val isDefault = modelOpt.id == defaultSttModel
+                                            val isSelected = modelOpt.id == selectedSttModel
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                            Text(
+                                                                text = modelOpt.name,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (isSelected) PrimaryBlue else TextPrimary,
+                                                                fontSize = 13.sp
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            if (isDefault) {
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = PrimaryBlue.copy(alpha = 0.15f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Default ⚙️",
+                                                                        color = PrimaryBlue,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 10.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                            if (isSelected) {
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "✓ Selected",
+                                                                        color = Color(0xFF10B981),
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 10.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    val isInstalled = when (modelOpt.id) {
+                                                        UserPreferences.STT_MODEL_GOOGLE_SPEECH -> true
+                                                        UserPreferences.STT_MODEL_VOSK_HINDI -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                                                        UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+                                                        UserPreferences.STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                                                        UserPreferences.STT_MODEL_SHERPA_ONNX_HINDI -> File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "sherpa-onnx-hindi").exists()
+                                                        else -> true
+                                                    }
+                                                    if (isInstalled) {
+                                                        selectedSttModel = modelOpt.id
+                                                        showSttModelMenu = false
+                                                        Toast.makeText(context, "Selected for chunk: ${modelOpt.name}", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        showSttModelMenu = false
+                                                        Toast.makeText(context, "⚠️ ${modelOpt.name} is not installed! Download it from Settings first.", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            if (isDefault) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = PrimaryBlue.copy(alpha = 0.15f)
-                                                ) {
-                                                    Text(
-                                                        text = "Default ⚙️",
-                                                        color = PrimaryBlue,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 10.sp,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                            if (isSelected) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
-                                                ) {
-                                                    Text(
-                                                        text = "✓ Selected",
-                                                        color = Color(0xFF10B981),
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 10.sp,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
-                                },
-                                onClick = {
-                                    val isInstalled = when (modelOpt.id) {
-                                        UserPreferences.STT_MODEL_GOOGLE_SPEECH -> true
-                                        UserPreferences.STT_MODEL_VOSK_HINDI -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_NAME)
-                                        UserPreferences.STT_MODEL_VOSK_HINDI_LARGE -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
-                                        UserPreferences.STT_MODEL_VOSK_EN_IN -> com.echo.recorder.stt.VoskSTTEngine.ModelStatus.isInstalled(context, com.echo.recorder.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
-                                        UserPreferences.STT_MODEL_SHERPA_ONNX_HINDI -> File(com.echo.recorder.util.AppStorageManager.getModelsDirectory(context), "sherpa-onnx-hindi").exists()
-                                        else -> true
-                                    }
-                                    if (isInstalled) {
-                                        selectedSttModel = modelOpt.id
-                                        showSttModelMenu = false
-                                        Toast.makeText(context, "Selected for chunk: ${modelOpt.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. AI Notes Section
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = if (isHindi) "2. एआई नोट्स व कार्य निष्कर्षण" else "2. AI Notes & Task Extraction",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = AccentPurple
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        showFlowActionsPopup = false
+                                        Toast.makeText(context, "Extracting notes & tasks via $aiShortName...", Toast.LENGTH_SHORT).show()
+                                        onReprocessAiWithModel(transcription.id, selectedAiModel)
+                                    },
+                                    enabled = !isProcessingAi && hasValidTranscript,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = AccentPurple.copy(alpha = 0.2f),
+                                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    if (isProcessingAi) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = AccentPurple
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
                                     } else {
-                                        showSttModelMenu = false
-                                        Toast.makeText(context, "⚠️ ${modelOpt.name} is not installed! Download it from Settings first.", Toast.LENGTH_LONG).show()
+                                        Text("🤖", fontSize = 13.sp)
+                                        Spacer(modifier = Modifier.width(4.dp))
                                     }
+                                    Text(
+                                        text = if (isProcessingAi) (if (isHindi) "कार्य निकाले जा रहे हैं..." else "Extracting...")
+                                               else (if (isHindi) "एआई विश्लेषण" else "AI Notes"),
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentPurple,
+                                        fontSize = 11.sp
+                                    )
                                 }
-                            )
-                        }
-                    }
-                }
 
-                // Compact "📝 Notes" button moved into STT Row
-                OutlinedButton(
-                    onClick = { showFileViewerDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.6f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Description,
-                        contentDescription = null,
-                        tint = PrimaryBlue,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "Notes",
-                        color = PrimaryBlue,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ── Action Buttons Row 2: AI Notes & Tasks (Vibrant Purple) ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Main AI Processing Button
-                Button(
-                    onClick = {
-                        Toast.makeText(context, "Extracting notes & tasks via $aiShortName...", Toast.LENGTH_SHORT).show()
-                        onReprocessAiWithModel(transcription.id, selectedAiModel)
-                    },
-                    enabled = !isProcessingAi && hasValidTranscript,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentPurple.copy(alpha = 0.2f),
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1.3f)
-                ) {
-                    if (isProcessingAi) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = AccentPurple
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                    } else {
-                        Text("🤖", fontSize = 13.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Text(
-                        text = if (isProcessingAi) (if (isHindi) "कार्य निकाले जा रहे हैं..." else "Extracting...")
-                               else (if (isHindi) "एआई विश्लेषण" else "AI Notes"),
-                        fontWeight = FontWeight.Bold,
-                        color = AccentPurple,
-                        fontSize = 11.sp
-                    )
-                }
-
-                // AI Model Selector Button
-                Box {
-                    OutlinedButton(
-                        onClick = { showAiModelMenu = true },
-                        enabled = !isProcessingAi,
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Text(aiShortName, color = AccentPurple, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select AI Model",
-                            tint = AccentPurple,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showAiModelMenu,
-                        onDismissRequest = { showAiModelMenu = false }
-                    ) {
-                        UserPreferences.AVAILABLE_AI_MODELS.forEach { aiOpt ->
-                            val isDefault = aiOpt.id == defaultAiModel
-                            val isSelected = aiOpt.id == selectedAiModel
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                // AI Model selector button
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { showAiModelMenu = true },
+                                        enabled = !isProcessingAi,
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                                     ) {
-                                        Column(modifier = Modifier.weight(1f, fill = false)) {
-                                            Text(
-                                                text = aiOpt.name,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) AccentPurple else TextPrimary,
-                                                fontSize = 13.sp
+                                        Text(aiShortName, color = AccentPurple, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select AI Model",
+                                            tint = AccentPurple,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showAiModelMenu,
+                                        onDismissRequest = { showAiModelMenu = false }
+                                    ) {
+                                        UserPreferences.AVAILABLE_AI_MODELS.forEach { aiOpt ->
+                                            val isDefault = aiOpt.id == defaultAiModel
+                                            val isSelected = aiOpt.id == selectedAiModel
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                            Text(
+                                                                text = aiOpt.name,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                color = if (isSelected) AccentPurple else TextPrimary,
+                                                                fontSize = 13.sp
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            if (isDefault) {
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = AccentPurple.copy(alpha = 0.15f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Default ⚙️",
+                                                                        color = AccentPurple,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 10.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                            if (isSelected) {
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "✓ Selected",
+                                                                        color = Color(0xFF10B981),
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 10.sp,
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    selectedAiModel = aiOpt.id
+                                                    showAiModelMenu = false
+                                                    Toast.makeText(context, "Selected AI: ${aiOpt.name}", Toast.LENGTH_SHORT).show()
+                                                }
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            if (isDefault) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = AccentPurple.copy(alpha = 0.15f)
-                                                ) {
-                                                    Text(
-                                                        text = "Default ⚙️",
-                                                        color = AccentPurple,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 10.sp,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                            if (isSelected) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
-                                                ) {
-                                                    Text(
-                                                        text = "✓ Selected",
-                                                        color = Color(0xFF10B981),
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 10.sp,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
                                     }
-                                },
-                                onClick = {
-                                    selectedAiModel = aiOpt.id
-                                    showAiModelMenu = false
-                                    Toast.makeText(context, "Selected AI: ${aiOpt.name}", Toast.LENGTH_SHORT).show()
                                 }
-                            )
+                            }
                         }
                     }
                 }
-
-                // Compact "📋 Tasks" button moved into AI Row
-                OutlinedButton(
-                    onClick = { showTasksDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (tasks.isNotEmpty()) Color(0xFF10B981) else TextMuted.copy(alpha = 0.5f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                ) {
-                    Text("📋", fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "${tasks.size}",
-                        color = if (tasks.isNotEmpty()) Color(0xFF10B981) else TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            },
+            confirmButton = {
+                TextButton(onClick = { showFlowActionsPopup = false }) {
+                    Text(if (isHindi) "बंद करें" else "Close", color = PrimaryBlue, fontWeight = FontWeight.Bold)
                 }
-            }
-        }
+            },
+            containerColor = SurfaceDark
+        )
     }
 
     // "Open Transcription & Subtitles" File Viewer & Intent Dialog

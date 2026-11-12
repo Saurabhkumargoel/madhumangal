@@ -44,18 +44,22 @@ import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -482,6 +486,7 @@ fun DumbHomeTab(
     )
 
     val scrollState = rememberScrollState()
+    var showHelpDialog by remember { mutableStateOf(false) }
 
     // Categorized Custom Actions by Placement
     val headerActions = remember(customActions) { customActions.filter { it.position == ActionPosition.HEADER } }
@@ -550,73 +555,90 @@ fun DumbHomeTab(
                         }
                     }
 
-                    // Elapsed Timer or Active Listening Window Badge
-                    if (isWaitingForFollowUpQuery) {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0xFF10B981).copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Elapsed Timer or Active Listening Window Badge
+                        if (isWaitingForFollowUpQuery) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF10B981))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isHindi) "सुन रहा है: ${activeWindowSecondsRemaining}s" else "Listening: ${activeWindowSecondsRemaining}s",
+                                        color = Color(0xFF10B981),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else if (isRecording) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = ActiveRed.copy(alpha = 0.15f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(ActiveRed)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    val hrs = elapsedSeconds / 3600
+                                    val mins = (elapsedSeconds % 3600) / 60
+                                    val secs = elapsedSeconds % 60
+                                    Text(
+                                        text = if (hrs > 0) String.format("%02d:%02d:%02d", hrs, mins, secs) else String.format("%02d:%02d", mins, secs),
+                                        color = ActiveRed,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = SurfaceDark,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                            ) {
                                 Text(
-                                    text = if (isHindi) "सुन रहा है: ${activeWindowSecondsRemaining}s" else "Listening: ${activeWindowSecondsRemaining}s",
-                                    color = Color(0xFF10B981),
+                                    text = if (isHindi) "निष्क्रिय" else "IDLE",
+                                    color = TextMuted,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
                         }
-                    } else if (isRecording) {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = ActiveRed.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed.copy(alpha = 0.4f))
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Help Button (Opens instructions, guides & prompts modal)
+                        IconButton(
+                            onClick = { showHelpDialog = true },
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(ActiveRed)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                val hrs = elapsedSeconds / 3600
-                                val mins = (elapsedSeconds % 3600) / 60
-                                val secs = elapsedSeconds % 60
-                                Text(
-                                    text = if (hrs > 0) String.format("%02d:%02d:%02d", hrs, mins, secs) else String.format("%02d:%02d", mins, secs),
-                                    color = ActiveRed,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                    } else {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = SurfaceDark,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
-                        ) {
-                            Text(
-                                text = if (isHindi) "निष्क्रिय" else "IDLE",
-                                color = TextMuted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            Icon(
+                                imageVector = Icons.Default.HelpOutline,
+                                contentDescription = "Help & Prompts",
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -764,91 +786,7 @@ fun DumbHomeTab(
                 )
             }
 
-            // PROMINENT BIG START / STOP RECORDING BUTTON
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = onToggleRecording,
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRecording) Color(0xFFDC2626) else PrimaryBlue
-                ),
-                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
-                modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .height(48.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isRecording) {
-                            if (isHindi) "सुनना बंद करें • STOP" else "STOP LISTENING"
-                        } else {
-                            if (isHindi) "सुनना शुरू करें • START" else "START LISTENING"
-                        },
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-            }
 
-            // GUIDED CONVERSATION PROMPTS (CLEAN PILLS)
-            Spacer(modifier = Modifier.height(14.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = if (isHindi) "💡 ऐसे पूछें (टैप करें):" else "💡 Quick Prompts (Tap to ask):",
-                    fontSize = 11.sp,
-                    color = TextMuted,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val promptSuggestions = if (isHindi) listOf(
-                        "🔔 मुझे याद दिलाना कल 10 बजे मीटिंग है" to "मुझे याद दिलाना कल 10 बजे मीटिंग है",
-                        "⏰ समय क्या है?" to "समय क्या है?",
-                        "📅 आज क्या तारीख है?" to "आज क्या तारीख है?",
-                        "🔋 बैटरी कितनी है?" to "बैटरी कितनी है?"
-                    ) else listOf(
-                        "🔔 Remind me tomorrow 10am meeting" to "Remind me tomorrow at 10 AM for meeting",
-                        "⏰ What's the time?" to "What is the time?",
-                        "📅 What's the date?" to "What is the date?",
-                        "🔋 Battery level?" to "Battery level?"
-                    )
-
-                    promptSuggestions.forEach { (label, prompt) ->
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0xFF141923),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263346)),
-                            modifier = Modifier.clickable { handleQueryText(prompt) }
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 11.sp,
-                                color = TextSecondary,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
-            }
 
             // Quick Actions Placement Grid
             if (quickActions.isNotEmpty()) {
@@ -1074,6 +1012,105 @@ fun DumbHomeTab(
                     viewModel.updateBotCustomActions(BotCustomAction.serializeList(updated))
                 },
                 onDismiss = { showStudioDialog = false }
+            )
+        }
+
+        // Help & User Instructions Dialog
+        if (showHelpDialog) {
+            AlertDialog(
+                onDismissRequest = { showHelpDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.HelpOutline,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isHindi) "गुड बॉट गाइड व निर्देश" else "Good Bot Guide & Instructions",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = TextPrimary
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (isHindi) "🎙️ बातचीत कैसे करें:" else "🎙️ How to Talk with Good Bot:",
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = if (isHindi)
+                                "• केंद्र में स्थित वॉइस बटन को दबाएं या सीधे \"गुड बॉट\" कहें।\n• बॉट जब बोल रहा हो, आप बीच में बात करके उसे रोक (Interrupt) सकते हैं।\n• 10 सेकंड की विंडो में अगला सवाल बिना \"गुड बॉट\" कहे सीधे पूछें।"
+                            else
+                                "• Tap the central voice orb or say \"Good Bot\" anytime.\n• You can interrupt the bot while it is speaking simply by speaking.\n• During the 10s active window, ask follow-up questions directly without repeating \"Good Bot\".",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isHindi) "💡 उदाहरण सवाल (टैप करके पूछें):" else "💡 Example Prompts (Tap to ask):",
+                            fontWeight = FontWeight.Bold,
+                            color = AccentPurple,
+                            fontSize = 13.sp
+                        )
+
+                        val promptSuggestions = if (isHindi) listOf(
+                            "🔔 मुझे याद दिलाना कल 10 बजे मीटिंग है" to "मुझे याद दिलाना कल 10 बजे मीटिंग है",
+                            "⏰ समय क्या है?" to "समय क्या है?",
+                            "📅 आज क्या तारीख है?" to "आज क्या तारीख है?",
+                            "🔋 बैटरी कितनी है?" to "बैटरी कितनी है?"
+                        ) else listOf(
+                            "🔔 Remind me tomorrow 10am meeting" to "Remind me tomorrow at 10 AM for meeting",
+                            "⏰ What's the time?" to "What is the time?",
+                            "📅 What's the date?" to "What is the date?",
+                            "🔋 Battery level?" to "Battery level?"
+                        )
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            promptSuggestions.forEach { (label, prompt) ->
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFF141923),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263346)),
+                                    modifier = Modifier.clickable {
+                                        showHelpDialog = false
+                                        handleQueryText(prompt)
+                                    }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        color = TextSecondary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showHelpDialog = false }) {
+                        Text(if (isHindi) "समझ गया" else "Got It", color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = SurfaceDark
             )
         }
     }

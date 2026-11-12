@@ -22,6 +22,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -224,6 +225,31 @@ fun MainScreen(
         )
     }
 
+    val settingsListState = rememberLazyListState()
+    val transcriptsListState = rememberLazyListState()
+    val logsListState = rememberLazyListState()
+
+    var lastTabClickTime by remember { mutableStateOf(0L) }
+    var lastClickedTab by remember { mutableStateOf<MainTab?>(null) }
+
+    fun handleTabClick(tab: MainTab) {
+        val now = System.currentTimeMillis()
+        if (selectedTab == tab && lastClickedTab == tab && (now - lastTabClickTime < 650L)) {
+            scope.launch {
+                when (tab) {
+                    MainTab.SETTINGS -> settingsListState.animateScrollToItem(0)
+                    MainTab.LOGS -> logsListState.animateScrollToItem(Int.MAX_VALUE.coerceAtLeast(0))
+                    MainTab.RECORDER, MainTab.MEDIA -> transcriptsListState.animateScrollToItem(0)
+                    else -> {}
+                }
+            }
+        } else {
+            selectedTab = tab
+        }
+        lastTabClickTime = now
+        lastClickedTab = tab
+    }
+
     var lastBackPressTime by remember { mutableStateOf(0L) }
     val activity = context as? Activity
 
@@ -315,7 +341,7 @@ fun MainScreen(
                     when (tab) {
                         MainTab.HOME -> NavigationBarItem(
                             selected = selectedTab == MainTab.HOME,
-                            onClick = { selectedTab = MainTab.HOME },
+                            onClick = { handleTabClick(MainTab.HOME) },
                             icon = {
                                 val homeIcon = when (userPreferences.homeTab) {
                                     "RECORDER" -> Icons.Default.Mic
@@ -337,7 +363,7 @@ fun MainScreen(
                         )
                         MainTab.DUMB_ASSISTANT -> NavigationBarItem(
                             selected = selectedTab == MainTab.DUMB_ASSISTANT,
-                            onClick = { selectedTab = MainTab.DUMB_ASSISTANT },
+                            onClick = { handleTabClick(MainTab.DUMB_ASSISTANT) },
                             icon = { Icon(Icons.Default.SmartToy, contentDescription = "Good Bot") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_assistant", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -350,7 +376,7 @@ fun MainScreen(
                         )
                         MainTab.DASHBOARD -> NavigationBarItem(
                             selected = selectedTab == MainTab.DASHBOARD,
-                            onClick = { selectedTab = MainTab.DASHBOARD },
+                            onClick = { handleTabClick(MainTab.DASHBOARD) },
                             icon = { Icon(Icons.Default.CheckCircle, contentDescription = "Dashboard") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_dashboard", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -363,7 +389,7 @@ fun MainScreen(
                         )
                         MainTab.RECORDER -> NavigationBarItem(
                             selected = selectedTab == MainTab.RECORDER,
-                            onClick = { selectedTab = MainTab.RECORDER },
+                            onClick = { handleTabClick(MainTab.RECORDER) },
                             icon = { Icon(Icons.Default.Mic, contentDescription = "Recorder") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_recorder", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -376,7 +402,7 @@ fun MainScreen(
                         )
                         MainTab.AI -> NavigationBarItem(
                             selected = selectedTab == MainTab.AI,
-                            onClick = { selectedTab = MainTab.AI },
+                            onClick = { handleTabClick(MainTab.AI) },
                             icon = {
                                 androidx.compose.material3.Surface(
                                     shape = androidx.compose.foundation.shape.CircleShape,
@@ -407,7 +433,7 @@ fun MainScreen(
                         )
                         MainTab.MEDIA -> NavigationBarItem(
                             selected = selectedTab == MainTab.MEDIA,
-                            onClick = { selectedTab = MainTab.MEDIA },
+                            onClick = { handleTabClick(MainTab.MEDIA) },
                             icon = { Icon(Icons.Default.PermMedia, contentDescription = "Media") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_media", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -420,7 +446,7 @@ fun MainScreen(
                         )
                         MainTab.LOGS -> NavigationBarItem(
                             selected = selectedTab == MainTab.LOGS,
-                            onClick = { selectedTab = MainTab.LOGS },
+                            onClick = { handleTabClick(MainTab.LOGS) },
                             icon = { Icon(Icons.Default.Terminal, contentDescription = "Logs") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_logs", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -433,7 +459,7 @@ fun MainScreen(
                         )
                         MainTab.SETTINGS -> NavigationBarItem(
                             selected = selectedTab == MainTab.SETTINGS,
-                            onClick = { selectedTab = MainTab.SETTINGS },
+                            onClick = { handleTabClick(MainTab.SETTINGS) },
                             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                             label = { Text(com.echo.recorder.util.AppStrings.get("tab_settings", isHindi), fontSize = 10.sp) },
                             colors = NavigationBarItemDefaults.colors(
@@ -605,6 +631,7 @@ fun MainScreen(
                             }
                         },
                         recorderLayoutMode = userPreferences.recorderLayoutMode,
+                        inverseRecordingsSort = userPreferences.inverseRecordingsSort,
                         isHindi = isHindi,
                         modifier = Modifier.padding(paddingValues)
                     )
@@ -801,18 +828,21 @@ fun MainScreen(
                     }
                 },
                 recorderLayoutMode = userPreferences.recorderLayoutMode,
+                inverseRecordingsSort = userPreferences.inverseRecordingsSort,
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )
             MainTab.LOGS -> LogsTab(
                 viewModel = viewModel,
                 userPreferences = userPreferences,
+                listState = logsListState,
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )
             MainTab.SETTINGS -> SettingsTab(
                 viewModel = viewModel,
                 userPreferences = userPreferences,
+                listState = settingsListState,
                 modifier = Modifier.padding(paddingValues)
             )
         }
