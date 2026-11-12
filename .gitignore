@@ -1,13 +1,51 @@
-*.iml
-.gradle
-/local.properties
-/.idea/
-.DS_Store
-/build
-/app/build
-captures
-.externalNativeBuild
-.cxx
+# Built application files
+*.apk
+*.aar
+*.aab
+
+# Gradle & Build cache
+.gradle/
+build/
+app/build/
+
+# Local configuration & environment secrets
 local.properties
-.venv
-.shared
+.env
+.env.*
+*.keystore
+*.jks
+creds*
+.shared/creds*
+google-services.json
+
+# Android Studio & IntelliJ IDEA
+*.iml
+.idea/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# VS Code & other editors
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*.orig
+
+# Python & virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Local agent management rules & internal tooling (not part of Android codebase)
+.agrules
+agrules/
+autoloop.py
+requirements.txt
+
+# Artifacts & Local Releases
+.shared/
+*.log
