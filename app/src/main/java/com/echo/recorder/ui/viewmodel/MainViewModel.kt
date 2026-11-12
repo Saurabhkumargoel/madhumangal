@@ -669,7 +669,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         connectTimeout = 35_000
                         readTimeout = 60_000
                         instanceFollowRedirects = false // Manual follow across protocols/domains (e.g. HuggingFace -> S3/Cloudflare CDN)
-                        setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Madhumangal)")
                         if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
                             setRequestProperty("Authorization", "Bearer $hfToken")
                         }
@@ -713,7 +713,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             connectTimeout = 35_000
                             readTimeout = 60_000
                             instanceFollowRedirects = false
-                            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; GoodEcho)")
+                            setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Madhumangal)")
                             if (hfToken.isNotBlank() && (currentUrl.contains("huggingface.co") || currentUrl.contains("hf.co"))) {
                                 setRequestProperty("Authorization", "Bearer $hfToken")
                             }
@@ -1826,7 +1826,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Generate clean HTML
                     val htmlContent = buildString {
                         append("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n")
-                        append("<title>YesBoss / GoodEcho Task Dashboard</title>\n")
+                        append("<title>Madhumangal Task Dashboard</title>\n")
                         append("<style>\n")
                         append("body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0F172A; color: #F8FAFC; padding: 24px; line-height: 1.6; }\n")
                         append("h1 { color: #38BDF8; font-size: 26px; border-bottom: 2px solid #1E293B; padding-bottom: 8px; }\n")
@@ -1871,7 +1871,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     // Generate Markdown
                     val mdContent = buildString {
-                        append("# 📋 YesBoss / GoodEcho Task Dashboard\n\n")
+                        append("# 📋 Madhumangal Task Dashboard\n\n")
                         append("*Exported on: ${java.util.Date()} • Total: ${allTasks.size} items*\n\n")
 
                         val topLevelTasks = allTasks.filter { it.parentId == null }

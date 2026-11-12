@@ -276,7 +276,7 @@ class AudioRecordingService : Service() {
                 com.echo.recorder.util.AppLogger.w("AUDIO", "Recording thread terminated cleanly: ${e.message}")
             }
         }.apply {
-            name = "GoodEcho-AudioRecord"
+            name = "Madhumangal-AudioRecord"
             start()
         }
     }
@@ -434,7 +434,7 @@ class AudioRecordingService : Service() {
         )
 
         return NotificationCompat.Builder(this, EchoApplication.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("🔴 GoodEcho: Recording Live")
+            .setContentTitle("🔴 Madhumangal: Recording Live")
             .setContentText("Listening continuously (${bufferManager.bufferLengthSeconds}s chunks, ${bufferManager.sampleRate}Hz)")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
@@ -454,9 +454,9 @@ class AudioRecordingService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 1001
-        const val ACTION_START = "com.echo.recorder.ACTION_START"
-        const val ACTION_STOP = "com.echo.recorder.ACTION_STOP"
-        const val ACTION_NOTIFICATION_STOP = "com.echo.recorder.ACTION_NOTIFICATION_STOP"
+        const val ACTION_START = "com.madhumangal.ACTION_START"
+        const val ACTION_STOP = "com.madhumangal.ACTION_STOP"
+        const val ACTION_NOTIFICATION_STOP = "com.madhumangal.ACTION_NOTIFICATION_STOP"
 
         @Volatile
         var instance: AudioRecordingService? = null

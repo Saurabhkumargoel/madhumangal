@@ -356,7 +356,7 @@ object AppThemes {
 }
 
 @Composable
-fun GoodEchoTheme(
+fun MadhumangalTheme(
     themeName: String = "MIDNIGHT_BLUE",
     customThemeJson: String = "",
     fontScale: Float = 1.0f,
@@ -374,6 +374,23 @@ fun GoodEchoTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = dynamicTypography,
+        content = content
+    )
+}
+
+@Composable
+fun GoodEchoTheme(
+    themeName: String = "MIDNIGHT_BLUE",
+    customThemeJson: String = "",
+    fontScale: Float = 1.0f,
+    fontMode: String = "DEFAULT",
+    content: @Composable () -> Unit
+) {
+    MadhumangalTheme(
+        themeName = themeName,
+        customThemeJson = customThemeJson,
+        fontScale = fontScale,
+        fontMode = fontMode,
         content = content
     )
 }

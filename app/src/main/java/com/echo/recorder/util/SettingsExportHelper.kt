@@ -16,7 +16,7 @@ object SettingsExportHelper {
 
     fun exportToJson(prefs: UserPreferences): String {
         val root = JSONObject().apply {
-            put("app", "GoodEcho")
+            put("app", "Madhumangal")
             put("exportTimestamp", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date()))
             put("settingsMode", prefs.settingsMode.name)
             put("bufferLengthSeconds", prefs.bufferLengthSeconds)
@@ -148,18 +148,18 @@ object SettingsExportHelper {
         try {
             val dateStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-            val exportFile = File(exportDir, "good_echo_settings_$dateStamp.json")
+            val exportFile = File(exportDir, "madhumangal_settings_$dateStamp.json")
             exportFile.writeText(jsonString)
 
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", exportFile)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
-                putExtra(Intent.EXTRA_SUBJECT, "GoodEcho Beta Settings Export ($dateStamp)")
+                putExtra(Intent.EXTRA_SUBJECT, "Madhumangal Settings Export ($dateStamp)")
                 putExtra(Intent.EXTRA_TEXT, jsonString)
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "Export GoodEcho Settings JSON"))
+            context.startActivity(Intent.createChooser(intent, "Export Madhumangal Settings JSON"))
             AppLogger.i("SETTINGS_EXPORT", "Settings exported to ${exportFile.absolutePath} and shared.")
         } catch (e: Exception) {
             AppLogger.e("SETTINGS_EXPORT", "Error sharing settings: ${e.message}", e)

@@ -14,7 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.echo.recorder.ui.screens.MainScreen
-import com.echo.recorder.ui.theme.GoodEchoTheme
+import com.echo.recorder.ui.theme.MadhumangalTheme
 import com.echo.recorder.ui.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val userPreferences by viewModel.userPreferences.collectAsState()
-            GoodEchoTheme(
+            MadhumangalTheme(
                 themeName = userPreferences.activeTheme,
                 customThemeJson = userPreferences.customThemeJson,
                 fontScale = userPreferences.fontScale,

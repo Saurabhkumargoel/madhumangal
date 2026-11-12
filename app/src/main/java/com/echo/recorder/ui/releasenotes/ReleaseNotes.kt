@@ -68,7 +68,7 @@ object ReleaseNotesRegistry {
             summary = "Developer Mode, GoodBot Custom Studio, Zero-Crash Audio Stop, and Conversational Voice Assistant.",
             highlights = listOf(
                 ReleaseHighlight("FIX", "🛑 Zero-Crash Recording Stop: Fixed critical crash when stopping recording while speaking by safely joining audio threads before native memory release."),
-                ReleaseHighlight("FIX", "🔔 Remnant Notification Fixed: Dismisses zombie 'GoodEcho Recording Live' notifications and ensures notification stop button cleanly ends service."),
+                ReleaseHighlight("FIX", "🔔 Remnant Notification Fixed: Dismisses zombie 'Madhumangal Recording Live' notifications and ensures notification stop button cleanly ends service."),
                 ReleaseHighlight("NEW", "🤖 Conversational GoodBot (15s Window): After saying 'Good Bot', the bot stays active for 15s to hear your question without repeating wake words."),
                 ReleaseHighlight("NEW", "🗣️ Expanded Hindi Acoustic Matching: Recognizes Vosk Hindi phonetic variations ('गुड बहुत', 'गॉड बॉट', 'गुड बात', 'गॉड बहुत', etc.)."),
                 ReleaseHighlight("NEW", "⚡ Instant Voice Answers: Instant on-device TTS voice responses for Time, Date, and Battery status."),

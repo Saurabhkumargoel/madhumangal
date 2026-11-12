@@ -24,14 +24,14 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.GoodEcho"
+        android:theme="@style/Theme.Madhumangal"
         tools:targetApi="34">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.GoodEcho">
+            android:theme="@style/Theme.Madhumangal">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -50,8 +50,8 @@
             android:name=".audio.NotificationActionReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.echo.recorder.ACTION_NOTIFICATION_STOP" />
-                <action android:name="com.echo.recorder.ACTION_STOP" />
+                <action android:name="com.madhumangal.ACTION_NOTIFICATION_STOP" />
+                <action android:name="com.madhumangal.ACTION_STOP" />
             </intent-filter>
         </receiver>
 

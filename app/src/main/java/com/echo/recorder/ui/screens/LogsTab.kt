@@ -998,7 +998,7 @@ fun LogsTab(
                 val sendIntent = Intent().apply {
                     action = Intent.ACTION_SEND
                     putExtra(Intent.EXTRA_TEXT, allSessionsText)
-                    putExtra(Intent.EXTRA_SUBJECT, "GoodEcho All Current Session Logs")
+                    putExtra(Intent.EXTRA_SUBJECT, "Madhumangal All Current Session Logs")
                     type = "text/plain"
                 }
                 val shareIntent = Intent.createChooser(sendIntent, if (isHindi) "सभी सत्र लॉग शेयर करें" else "Share All Session Files")

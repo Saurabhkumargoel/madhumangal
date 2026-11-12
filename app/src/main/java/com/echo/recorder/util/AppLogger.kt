@@ -51,7 +51,7 @@ object AppLogger {
         val sessionTimestamp = sessionDateFormat.format(Date())
         sessionLogFile = File(sessionLogsDir, "session_${sessionTimestamp}.${logFileExtension}")
 
-        i("SYSTEM", "GoodEcho Logger initialized. Active session file: ${sessionLogFile?.absolutePath}")
+        i("SYSTEM", "Madhumangal Logger initialized. Active session file: ${sessionLogFile?.absolutePath}")
     }
 
     fun startNewSession(context: Context, customLogsDir: String? = null, extension: String? = null) {
@@ -146,7 +146,7 @@ object AppLogger {
         if (files.isEmpty()) return getAllLogsText()
         val sb = StringBuilder()
         sb.append("=========================================\n")
-        sb.append("   GOODECHO GLOBAL EXPORT OF ALL SESSIONS\n")
+        sb.append("   MADHUMANGAL GLOBAL EXPORT OF ALL SESSIONS\n")
         sb.append("   Total Sessions: ${files.size}\n")
         sb.append("   Export Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
         sb.append("=========================================\n\n")
@@ -180,7 +180,7 @@ object AppLogger {
         if (files.isEmpty()) return ""
         val sb = StringBuilder()
         sb.append("=========================================\n")
-        sb.append("   GOODECHO MULTI-SESSION LOG EXPORT\n")
+        sb.append("   MADHUMANGAL MULTI-SESSION LOG EXPORT\n")
         sb.append("   Total Selected Sessions: ${files.size}\n")
         sb.append("   Export Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}\n")
         sb.append("=========================================\n\n")
@@ -207,7 +207,7 @@ object AppLogger {
         val sb = StringBuilder()
         val activeFile = getCurrentSessionFile()
         sb.append("====================================================\n")
-        sb.append("   GOODECHO SESSION LOGS\n")
+        sb.append("   MADHUMANGAL SESSION LOGS\n")
         sb.append("   Session File: ${activeFile?.name ?: "active"}\n")
         sb.append("   Filter Applied: $filter\n")
         sb.append("   Total Matching Entries: ${entries.size}\n")
