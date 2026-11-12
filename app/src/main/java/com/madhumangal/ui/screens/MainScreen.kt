@@ -632,6 +632,8 @@ fun MainScreen(
                         },
                         recorderLayoutMode = userPreferences.recorderLayoutMode,
                         inverseRecordingsSort = userPreferences.inverseRecordingsSort,
+                        mediaViewMode = userPreferences.mediaViewMode,
+                        onUpdateViewMode = { viewModel.updateMediaViewMode(it) },
                         isHindi = isHindi,
                         modifier = Modifier.padding(paddingValues)
                     )
@@ -829,6 +831,8 @@ fun MainScreen(
                 },
                 recorderLayoutMode = userPreferences.recorderLayoutMode,
                 inverseRecordingsSort = userPreferences.inverseRecordingsSort,
+                mediaViewMode = userPreferences.mediaViewMode,
+                onUpdateViewMode = { viewModel.updateMediaViewMode(it) },
                 isHindi = isHindi,
                 modifier = Modifier.padding(paddingValues)
             )

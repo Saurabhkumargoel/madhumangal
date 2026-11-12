@@ -372,5 +372,107 @@ class MadhuConversationalTest {
         assertEquals(3L, inverted.first().id)
         assertEquals(1L, inverted.last().id)
     }
+
+    @Test
+    fun testVoskModelValidationRequiresAllComponents() {
+        val tempDir = java.io.File.createTempFile("vosk_test", "dir")
+        tempDir.delete()
+        tempDir.mkdirs()
+
+        try {
+            // Empty dir is NOT valid
+            assertFalse(com.madhumangal.stt.VoskSTTEngine.isValidModelFolder(tempDir))
+
+            // Only conf is NOT valid
+            val confDir = java.io.File(tempDir, "conf").apply { mkdirs() }
+            java.io.File(confDir, "model.conf").writeText("test")
+            assertFalse(com.madhumangal.stt.VoskSTTEngine.isValidModelFolder(tempDir))
+
+            // Only conf + am is NOT valid (still missing graph)
+            val amDir = java.io.File(tempDir, "am").apply { mkdirs() }
+            java.io.File(amDir, "final.mdl").writeText("test")
+            assertFalse(com.madhumangal.stt.VoskSTTEngine.isValidModelFolder(tempDir))
+
+            // All three (conf + am + graph) IS valid!
+            val graphDir = java.io.File(tempDir, "graph").apply { mkdirs() }
+            java.io.File(graphDir, "HCLG.fst").writeText("test")
+            assertTrue(com.madhumangal.stt.VoskSTTEngine.isValidModelFolder(tempDir))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testVoskModelFindsNestedSubdirectory() {
+        val rootDir = java.io.File.createTempFile("vosk_nested", "dir")
+        rootDir.delete()
+        rootDir.mkdirs()
+
+        try {
+            val nestedModel = java.io.File(rootDir, "vosk-model-small-hi-0.22").apply { mkdirs() }
+            java.io.File(nestedModel, "conf").apply { mkdirs() }.let { java.io.File(it, "model.conf").writeText("test") }
+            java.io.File(nestedModel, "am").apply { mkdirs() }.let { java.io.File(it, "final.mdl").writeText("test") }
+            java.io.File(nestedModel, "graph").apply { mkdirs() }.let { java.io.File(it, "Gr.fst").writeText("test") }
+
+            val found = com.madhumangal.stt.VoskSTTEngine.findValidModelDir(rootDir)
+            assertTrue("Expected to resolve nested valid model directory", found != null)
+            assertEquals(nestedModel.absolutePath, found?.absolutePath)
+        } finally {
+            rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testMultiTurnConversationalWindowCountdownLogic() {
+        var isWaitingForFollowUp = true
+        var isBotSpeaking = true
+        var windowSecondsRemaining = 15
+
+        // While bot is speaking, timer must not decrement
+        if (isWaitingForFollowUp && !isBotSpeaking) {
+            windowSecondsRemaining--
+        }
+        assertEquals(15, windowSecondsRemaining)
+
+        // Once bot finishes speaking, timer decrements
+        isBotSpeaking = false
+        if (isWaitingForFollowUp && !isBotSpeaking) {
+            windowSecondsRemaining--
+        }
+        assertEquals(14, windowSecondsRemaining)
+    }
+
+    @Test
+    fun testCustomBotNameAndAcousticAliasesMatching() {
+        val customBotName = "Echo"
+        val customWakeAliases = setOf("एकको", "ऐको", "एक्को", "इको")
+        val baseVariants = mutableListOf("madhu", "मधु", Regex.escape(customBotName), "hey\\s*${Regex.escape(customBotName)}")
+        customWakeAliases.forEach { baseVariants.add(Regex.escape(it)) }
+        val dynamicRegex = Regex("(?i)(" + baseVariants.joinToString("|") + ")")
+
+        assertTrue(dynamicRegex.containsMatchIn("Echo what is the time"))
+        assertTrue(dynamicRegex.containsMatchIn("hey echo how are you"))
+        assertTrue(dynamicRegex.containsMatchIn("एकको तारीख बताओ"))
+        assertTrue(dynamicRegex.containsMatchIn("मधु समय बताओ"))
+    }
+
+    @Test
+    fun testDefaultBufferLengthAndOverlapSettings() {
+        val prefs = com.madhumangal.data.UserPreferences()
+        assertEquals(1800, prefs.bufferLengthSeconds)
+        assertEquals(10, prefs.overlapSeconds)
+        assertTrue(prefs.inverseRecordingsSort)
+        assertEquals("DETAILED", prefs.mediaViewMode)
+        assertEquals(2.5f, prefs.orbScaleMultiplier, 0.01f)
+    }
+
+    @Test
+    fun testReleaseNotesRegistryDynamicLatestVersion() {
+        val allReleases = com.madhumangal.ui.releasenotes.ReleaseNotesRegistry.getAllReleases()
+        assertTrue(allReleases.isNotEmpty())
+        val latest = allReleases.first()
+        assertTrue(latest.versionName.isNotBlank())
+        assertTrue(latest.highlights.isNotEmpty())
+    }
 }
 

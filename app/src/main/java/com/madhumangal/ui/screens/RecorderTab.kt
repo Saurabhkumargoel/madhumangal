@@ -241,7 +241,7 @@ fun RecorderTab(
         ) {
             Column {
                 Text(
-                    text = "Madhumangal",
+                    text = "Madhu Mangal",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary

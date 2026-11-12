@@ -11,8 +11,8 @@ import kotlin.math.sqrt
 
 class AudioBufferManager(
     var outputDirectory: File,
-    bufferLengthSeconds: Int = 15,
-    overlapSeconds: Int = 3,
+    bufferLengthSeconds: Int = 1800,
+    overlapSeconds: Int = 10,
     var sampleRate: Int = 8000,
     var skipSilence: Boolean = true,
     private val onSegmentCreated: (file: File, startTimeMillis: Long, endTimeMillis: Long, durationSeconds: Int, overlapSeconds: Int) -> Unit

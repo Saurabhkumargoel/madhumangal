@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -60,6 +61,9 @@ class AudioRecordingService : Service() {
     private var customTranscriptionDir: String? = null
     private var currentLanguage: String = "hi-IN"
     private var currentLogExtension: String = "txt"
+    private val prefsRepo: com.madhumangal.data.PreferencesRepository by lazy {
+        (applicationContext as MadhumangalApplication).preferencesRepository
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): AudioRecordingService = this@AudioRecordingService
@@ -187,56 +191,106 @@ class AudioRecordingService : Service() {
             }
         }
 
-        // Initialize Vosk live streaming transcriber (100% offline, zero mic conflict)
-        val voskModelDir = when {
-            com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME) ->
-                com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME)
-            com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN) ->
-                com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
-            com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE) ->
-                com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
-            else -> null
-        }
+        // Determine STT engine preference (Google Speech hybrid vs Vosk 100% offline)
+        val currentPrefs = kotlinx.coroutines.runBlocking { prefsRepo.userPreferencesFlow.first() }
+        val isGoogleSpeech = currentPrefs.selectedSttModel == com.madhumangal.data.UserPreferences.STT_MODEL_GOOGLE_SPEECH
 
-        if (voskModelDir != null) {
-            com.madhumangal.util.AppLogger.i("STT", "Starting VoskLiveTranscriber with model: ${voskModelDir.name} at 16000Hz (Zero mic conflict)")
-            voskLiveTranscriber = com.madhumangal.stt.VoskLiveTranscriber(
-                modelDir = voskModelDir,
-                sampleRate = 16000f,
-                onPartial = { partial ->
-                    synchronized(speechLock) {
-                        lastPartialSpeech = partial
-                    }
-                    AudioRecordingState.liveTranscript.value = partial
-                },
-                onFinal = { text ->
-                    val now = System.currentTimeMillis()
-                    val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
-                    val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
-                    subtitleSequence++
-
-                    // Save live speech to timestamped subtitle SRT file
-                    com.madhumangal.util.AppStorageManager.appendLiveSessionSrt(
+        if (isGoogleSpeech) {
+            com.madhumangal.util.AppLogger.i("STT", "Starting LiveSpeechRecognizer (Google Speech Recognizer) with language: ${currentPrefs.selectedLanguage}")
+            mainHandler.post {
+                try {
+                    liveSpeechRecognizer = com.madhumangal.stt.LiveSpeechRecognizer(
                         context = applicationContext,
-                        sessionTimestamp = sessionTimestamp,
-                        entryIndex = subtitleSequence,
-                        startMs = utteranceStartMs,
-                        endMs = utteranceEndMs,
-                        text = text,
-                        customDir = customTranscriptionDir
-                    )
+                        initialLanguage = currentPrefs.selectedLanguage,
+                        onPartialResult = { partial ->
+                            synchronized(speechLock) {
+                                lastPartialSpeech = partial
+                            }
+                            AudioRecordingState.liveTranscript.value = partial
+                        },
+                        onFinalResult = { text ->
+                            val now = System.currentTimeMillis()
+                            val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
+                            val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
+                            subtitleSequence++
 
-                    synchronized(speechLock) {
-                        if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
-                        currentCycleSpeech.append(text)
-                        lastPartialSpeech = ""
+                            // Save live speech to timestamped subtitle SRT file
+                            com.madhumangal.util.AppStorageManager.appendLiveSessionSrt(
+                                context = applicationContext,
+                                sessionTimestamp = sessionTimestamp,
+                                entryIndex = subtitleSequence,
+                                startMs = utteranceStartMs,
+                                endMs = utteranceEndMs,
+                                text = text,
+                                customDir = customTranscriptionDir
+                            )
+
+                            synchronized(speechLock) {
+                                if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
+                                currentCycleSpeech.append(text)
+                                lastPartialSpeech = ""
+                            }
+                            AudioRecordingState.liveTranscript.value = text
+                        }
+                    ).apply {
+                        startListening()
                     }
-                    AudioRecordingState.liveTranscript.value = text
+                } catch (e: Exception) {
+                    com.madhumangal.util.AppLogger.e("STT", "Failed to start LiveSpeechRecognizer", e)
                 }
-            )
+            }
         } else {
-            com.madhumangal.util.AppLogger.w("STT", "No Vosk offline speech model installed. Live speech transcription inactive until model is downloaded.")
-            AudioRecordingState.liveTranscript.value = "(Offline speech model not installed - download in Settings or Recorder screen)"
+            // Initialize Vosk live streaming transcriber (100% offline, zero mic conflict)
+            val voskModelDir = when {
+                com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME) ->
+                    com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_NAME)
+                com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN) ->
+                    com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_EN_IN)
+                com.madhumangal.stt.VoskSTTEngine.ModelStatus.isInstalled(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE) ->
+                    com.madhumangal.stt.VoskSTTEngine.ModelStatus.getModelDir(applicationContext, com.madhumangal.stt.VoskSTTEngine.MODEL_DIR_HINDI_LARGE)
+                else -> null
+            }
+
+            if (voskModelDir != null) {
+                com.madhumangal.util.AppLogger.i("STT", "Starting VoskLiveTranscriber with model: ${voskModelDir.name} at 16000Hz (Zero mic conflict)")
+                voskLiveTranscriber = com.madhumangal.stt.VoskLiveTranscriber(
+                    modelDir = voskModelDir,
+                    sampleRate = 16000f,
+                    onPartial = { partial ->
+                        synchronized(speechLock) {
+                            lastPartialSpeech = partial
+                        }
+                        AudioRecordingState.liveTranscript.value = partial
+                    },
+                    onFinal = { text ->
+                        val now = System.currentTimeMillis()
+                        val utteranceEndMs = (now - sessionStartMillis).coerceAtLeast(1000L)
+                        val utteranceStartMs = (utteranceEndMs - 3500L).coerceAtLeast(0L)
+                        subtitleSequence++
+
+                        // Save live speech to timestamped subtitle SRT file
+                        com.madhumangal.util.AppStorageManager.appendLiveSessionSrt(
+                            context = applicationContext,
+                            sessionTimestamp = sessionTimestamp,
+                            entryIndex = subtitleSequence,
+                            startMs = utteranceStartMs,
+                            endMs = utteranceEndMs,
+                            text = text,
+                            customDir = customTranscriptionDir
+                        )
+
+                        synchronized(speechLock) {
+                            if (currentCycleSpeech.isNotEmpty()) currentCycleSpeech.append(" ")
+                            currentCycleSpeech.append(text)
+                            lastPartialSpeech = ""
+                        }
+                        AudioRecordingState.liveTranscript.value = text
+                    }
+                )
+            } else {
+                com.madhumangal.util.AppLogger.w("STT", "No Vosk offline speech model installed. Live speech transcription inactive until model is downloaded.")
+                AudioRecordingState.liveTranscript.value = "(Offline speech model not installed - download in Settings or Recorder screen)"
+            }
         }
 
         audioRecord?.startRecording()

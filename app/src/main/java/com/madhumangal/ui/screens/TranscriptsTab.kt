@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -109,7 +111,9 @@ fun TranscriptsTab(
     onToggleRecording: () -> Unit = {},
     onAbortRecording: () -> Unit = {},
     recorderLayoutMode: String = "BOTH_TABS",
-    inverseRecordingsSort: Boolean = false,
+    inverseRecordingsSort: Boolean = true,
+    mediaViewMode: String = "DETAILED",
+    onUpdateViewMode: (String) -> Unit = {},
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -132,8 +136,8 @@ fun TranscriptsTab(
         }.toList()
     }
 
-    // State for List View vs Detailed View mode toggle
-    var isListViewMode by remember { mutableStateOf(false) }
+    // State for View Mode: LIST, GRID, DETAILED
+    var currentViewMode by remember(mediaViewMode) { mutableStateOf(mediaViewMode) }
 
     // State for collapsible sessions: default all expanded
     var expandedSessions by remember(groupedSessions) {
@@ -264,19 +268,40 @@ fun TranscriptsTab(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { isListViewMode = !isListViewMode },
-                        modifier = Modifier.size(32.dp)
+                    // 3-way Segmented View Mode Switcher (List, Grid, Detailed)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, CardBorder)
                     ) {
-                        Icon(
-                            imageVector = if (isListViewMode) Icons.Default.ViewAgenda else Icons.Default.FormatListBulleted,
-                            contentDescription = if (isListViewMode) "Switch to Detailed View" else "Switch to Compact List View",
-                            tint = PrimaryBlue,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            listOf(
+                                "LIST" to (if (isHindi) "≡ सूची" else "≡ List"),
+                                "GRID" to (if (isHindi) "⊞ ग्रिड" else "⊞ Grid"),
+                                "DETAILED" to (if (isHindi) "☰ विवरण" else "☰ Detail")
+                            ).forEach { (mode, label) ->
+                                val isSelected = currentViewMode == mode
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) PrimaryBlue else Color.Transparent,
+                                    modifier = Modifier.clickable {
+                                        currentViewMode = mode
+                                        onUpdateViewMode(mode)
+                                    }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) DarkBackground else TextSecondary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     TextButton(
                         onClick = {
@@ -470,42 +495,78 @@ fun TranscriptsTab(
                     }
 
                     if (isExpanded) {
-                        items(
-                            items = orderedChunks,
-                            key = { "chunk_${it.id}" }
-                        ) { chunk ->
-                            val chunkTasks = remember(allTasks, chunk.id) {
-                                allTasks.filter { it.transcriptionId == chunk.id }
+                        when (currentViewMode) {
+                            "LIST" -> {
+                                items(
+                                    items = orderedChunks,
+                                    key = { "chunk_list_${it.id}" }
+                                ) { chunk ->
+                                    CompactAudioPlayerRow(
+                                        transcription = chunk,
+                                        onDelete = onDeleteTranscription,
+                                        onRetranscribe = onRetranscribe,
+                                        onRunFlow = { id -> onRunFlow(sessionId, id) },
+                                        isHindi = isHindi,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
-                            if (isListViewMode) {
-                                CompactAudioPlayerRow(
-                                    transcription = chunk,
-                                    onDelete = onDeleteTranscription,
-                                    onRetranscribe = onRetranscribe,
-                                    onRunFlow = { id -> onRunFlow(sessionId, id) },
-                                    isHindi = isHindi,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            } else {
-                                AudioPlayerCard(
-                                    transcription = chunk,
-                                    tasks = chunkTasks,
-                                    isTranscribing = transcribingIds.contains(chunk.id),
-                                    isProcessingAi = processingAiIds.contains(chunk.id),
-                                    defaultSttModel = defaultSttModel,
-                                    defaultAiModel = defaultAiModel,
-                                    onDelete = onDeleteTranscription,
-                                    onRetranscribe = onRetranscribe,
-                                    onRetranscribeWithModel = onRetranscribeWithModel,
-                                    onReprocessAiWithModel = onReprocessAiWithModel,
-                                    onUpdateText = onUpdateText,
-                                    onToggleTaskCompletion = onToggleTaskCompletion,
-                                    onUpdateTaskDetails = onUpdateTaskDetails,
-                                    onDeleteTask = onDeleteTask,
-                                    onRunFlow = { id -> onRunFlow(sessionId, id) },
-                                    isHindi = isHindi,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
+                            "GRID" -> {
+                                items(
+                                    items = orderedChunks.chunked(2),
+                                    key = { pair -> "grid_${pair.map { it.id }.joinToString("_")}" }
+                                ) { pair ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        pair.forEach { chunk ->
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                GridAudioPlayerCard(
+                                                    transcription = chunk,
+                                                    isTranscribing = transcribingIds.contains(chunk.id),
+                                                    isProcessingAi = processingAiIds.contains(chunk.id),
+                                                    onDelete = onDeleteTranscription,
+                                                    onRetranscribe = onRetranscribe,
+                                                    onRunFlow = { id -> onRunFlow(sessionId, id) },
+                                                    isHindi = isHindi
+                                                )
+                                            }
+                                        }
+                                        if (pair.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+                            else -> {
+                                items(
+                                    items = orderedChunks,
+                                    key = { "chunk_det_${it.id}" }
+                                ) { chunk ->
+                                    val chunkTasks = remember(allTasks, chunk.id) {
+                                        allTasks.filter { it.transcriptionId == chunk.id }
+                                    }
+                                    AudioPlayerCard(
+                                        transcription = chunk,
+                                        tasks = chunkTasks,
+                                        isTranscribing = transcribingIds.contains(chunk.id),
+                                        isProcessingAi = processingAiIds.contains(chunk.id),
+                                        defaultSttModel = defaultSttModel,
+                                        defaultAiModel = defaultAiModel,
+                                        onDelete = onDeleteTranscription,
+                                        onRetranscribe = onRetranscribe,
+                                        onRetranscribeWithModel = onRetranscribeWithModel,
+                                        onReprocessAiWithModel = onReprocessAiWithModel,
+                                        onUpdateText = onUpdateText,
+                                        onToggleTaskCompletion = onToggleTaskCompletion,
+                                        onUpdateTaskDetails = onUpdateTaskDetails,
+                                        onDeleteTask = onDeleteTask,
+                                        onRunFlow = { id -> onRunFlow(sessionId, id) },
+                                        isHindi = isHindi,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -769,6 +830,156 @@ fun CompactAudioPlayerRow(
                     tint = ActiveRed.copy(alpha = 0.8f),
                     modifier = Modifier.size(16.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun GridAudioPlayerCard(
+    transcription: TranscriptionWithAudio,
+    isTranscribing: Boolean,
+    isProcessingAi: Boolean,
+    onDelete: (Long) -> Unit,
+    onRetranscribe: (Long) -> Unit,
+    onRunFlow: (Long) -> Unit,
+    isHindi: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    val file = remember(transcription.filePath) { java.io.File(transcription.filePath) }
+    val audioExists = remember(file) { file.exists() }
+
+    fun togglePlay() {
+        if (!audioExists) {
+            android.widget.Toast.makeText(context, if (isHindi) "ऑडियो फ़ाइल नहीं मिली" else "Audio file not found", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isPlaying) {
+            mediaPlayer?.pause()
+            isPlaying = false
+        } else {
+            try {
+                if (mediaPlayer == null) {
+                    mediaPlayer = android.media.MediaPlayer().apply {
+                        setDataSource(transcription.filePath)
+                        prepare()
+                        setOnCompletionListener { isPlaying = false }
+                    }
+                }
+                mediaPlayer?.start()
+                isPlaying = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    DisposableEffect(transcription.filePath) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
+    val formattedTime = remember(transcription.timestampMillis) {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(transcription.timestampMillis))
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = SurfaceDark,
+        border = BorderStroke(1.dp, CardBorder)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Header Row: Time, Duration badge, Delete button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formattedTime,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = PrimaryBlue.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = "${transcription.durationSeconds}s",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryBlue,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Body: Transcript preview or status
+            Text(
+                text = if (transcription.text.isNotBlank()) transcription.text
+                       else (if (isHindi) "[ट्रांसक्रिप्शन बाकी]" else "[Audio slice recorded]"),
+                fontSize = 12.sp,
+                color = if (transcription.text.isNotBlank()) TextSecondary else TextMuted,
+                maxLines = 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                lineHeight = 16.sp,
+                modifier = Modifier.heightIn(min = 36.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Footer Row: Play Button & Run Flow Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { togglePlay() },
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryBlue.copy(alpha = 0.15f))
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = { onRunFlow(transcription.id) },
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, AccentPurple.copy(alpha = 0.6f)),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    if (isTranscribing || isProcessingAi) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentPurple
+                        )
+                    } else {
+                        Text(
+                            text = if (isHindi) "⚡ चलाएं" else "⚡ Flow",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentPurple
+                        )
+                    }
+                }
             }
         }
     }

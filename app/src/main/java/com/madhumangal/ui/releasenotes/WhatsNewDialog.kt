@@ -110,7 +110,7 @@ fun WhatsNewDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "What's New in Madhumangal",
+                                text = "What's New in Madhu Mangal",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary

@@ -89,8 +89,8 @@ object SettingsExportHelper {
 
             UserPreferences(
                 settingsMode = mode,
-                bufferLengthSeconds = root.optInt("bufferLengthSeconds", 15),
-                overlapSeconds = root.optInt("overlapSeconds", 3),
+                bufferLengthSeconds = root.optInt("bufferLengthSeconds", 1800),
+                overlapSeconds = root.optInt("overlapSeconds", 10),
                 sampleRate = root.optInt("sampleRate", UserPreferences.QUALITY_TINIEST),
                 liveTranscribe = root.optBoolean("liveTranscribe", true),
                 skipSilence = root.optBoolean("skipSilence", true),

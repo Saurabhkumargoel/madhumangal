@@ -1138,6 +1138,111 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+## 38. Multi-Turn Follow-Up Window Fix, Vosk Model Integrity Validation, and Live Google Speech Hybrid Integration (2026-11-12)
+
+### 1. Root Cause Analysis
+1. **"Not answering the second time at all":**
+   - In `DumbHomeTab.kt`, the conversational follow-up timer countdown was launched via `LaunchedEffect(isWaitingForFollowUpQuery)`. The 12-15s timer immediately began decrementing while the bot was still actively speaking through TTS. For multi-sentence responses (lasting 10-15s), the active follow-up window expired before the bot finished speaking.
+   - When the user then spoke their second query, `isWaitingForFollowUpQuery` was already `false`. Unless the user repeated the explicit wake word, the bot ignored the second question.
+   - Furthermore, `AudioRecordingState.liveTranscript` was not cleared upon query acceptance, causing stale transcript tokens to linger and corrupt subsequent utterance recognition.
+2. **Vosk Model Crash (`java.io.IOException: Failed to create a model` in `.shared/202611122056`):**
+   - `isValidModelFolder(dir)` previously used disjunction (`||`) across model components (`am`, `conf`, `graph`). If a model download was aborted or unzipped only partially (e.g. creating only `conf/` or `model.conf`), the app falsely treated the model as fully installed.
+   - Initializing `Model(path)` with missing Kaldi acoustic files (`am/final.mdl`) or graph files threw fatal JNI `IOException: Failed to create a model`.
+   - `VoskLiveTranscriber` did not recursively resolve nested model directories (e.g., zip subfolders `vosk-model-small-hi-0.22/`).
+3. **Google Speech Selection Ignored & Overwritten:**
+   - In `MainViewModel.kt`, an obsolete startup hook automatically checked `if (selectedSttModel == STT_MODEL_GOOGLE_SPEECH)` and forcibly overwrote it to `STT_MODEL_VOSK_HINDI`, preventing the user from using Google Speech.
+   - In `AudioRecordingService.kt`, `LiveSpeechRecognizer` was never instantiated or started during recording; the service strictly defaulted to Vosk only.
+
+### 2. Mitigation Implemented
+1. **Multi-Turn Window State Machine Refinement:**
+   - In `DumbHomeTab.kt`, updated `LaunchedEffect(isWaitingForFollowUpQuery, isBotSpeaking)`: the countdown timer strictly pauses while `isBotSpeaking == true`.
+   - In `UtteranceProgressListener.onDone()`, reset `activeWindowSecondsRemaining = 15` and set `isWaitingForFollowUpQuery = true` so the user is guaranteed the full 15 seconds after speech completes.
+   - In `handleQueryText()`, immediately flushed `liveTranscript.value = ""` and updated `lastProcessedTranscript` to prevent duplicate triggering.
+2. **Strict Vosk Model Validation & Nested Resolution:**
+   - In `VoskSTTEngine.kt`, updated `isValidModelFolder()` to require conjunction (`&&`) across all three Kaldi components: acoustic model (`am/`), configuration (`conf/`), and decoding graph (`graph/`).
+   - Implemented recursive nested directory resolution up to depth 2 in `findValidModelDir()`.
+   - In `VoskLiveTranscriber.kt`, resolved directories with `findValidModelDir()` and safely caught `IOException` with informative logging.
+   - In `MainViewModel.kt`, verified valid model extraction before updating `prefsRepo.setModelDownloaded()`, auto-cleaning invalid extractions.
+3. **True Google Speech Recognizer Support in Background Service:**
+   - In `AudioRecordingService.kt`, checked `currentPrefs.selectedSttModel == STT_MODEL_GOOGLE_SPEECH` and initialized `LiveSpeechRecognizer` with hybrid multilingual extras (`hi-IN` + `en-IN`, `hi-Latn`, `en-US`).
+   - Purged the startup override in `MainViewModel.kt` that silently reverted user preferences.
+4. **Unit Testing & Packaging:**
+   - Added unit tests in `MadhuConversationalTest.kt` verifying:
+     - Strict model folder component requirements (`testVoskModelValidationRequiresAllComponents`).
+     - Nested model directory resolution (`testVoskModelFindsNestedSubdirectory`).
+     - Speaking vs follow-up countdown logic (`testMultiTurnConversationalWindowCountdownLogic`).
+   - All 31 unit tests passing (`./gradlew testDebugUnitTest`).
+   - Generated production-ready APK: `Madhumangal_v0.0.2026.11.12.2348.apk` (59,997 KB) in `.shared/`.
+
+### 3. Multi-Perspective Critique Evaluation
+- **🛠️ Tech Lead:** Conjunction validation for external binary model artifacts prevents hard native JNI aborts and allows clean fallback UI prompts when downloads are interrupted.
+- **📱 Product Manager:** The multi-turn follow-up window now accurately reflects human conversational tempo: the assistant listens only after it finishes answering.
+- **👤 End-User:** Google Speech Recognizer now functions as intended with hybrid Hinglish mode when selected, and subsequent questions in voice conversations receive immediate answers without requiring repeated wake words.
+
+## 39. Custom Bot Name & Voice Acoustic Training Studio, Material You Theming, Multi-File Log Sharing, 30m/10s Defaults, Media View Modes, and Home Orb & Card Dev Controls (2026-11-13)
+
+### 1. Root Cause Analysis
+1. **Short Audio Slicing & Overlap Defaults:**
+   - Previous defaults were configured to short durations (e.g. 300s/5s), triggering frequent audio segment breaks and unnecessary overhead during long ambient recordings.
+2. **Static Release Notes on Dynamic Builds:**
+   - `ReleaseNotesRegistry.getAllReleases()` previously returned static version lists with hardcoded `versionCode` values. Because `build.gradle.kts` dynamically computes `versionCode` from the build epoch timestamp (`System.currentTimeMillis() / 1000`), the "What's New" dialog failed to prioritize the active runtime build, displaying stale historical version changelogs instead.
+3. **Legacy "GoodBot" Traces & Wake Word Listening:**
+   - Legacy TTS utterance IDs retained `"good_bot_speech_..."` tags, and the conversational listener strictly filtered for hardcoded "GoodBot" variants without recognizing the new assistant identity "Madhu" or adapting to acoustic transcription differences.
+4. **Lack of Acoustic Alias Adaptation:**
+   - Offline and live STT models frequently transcribe user pronunciation of custom names into diverse phonetic approximations (e.g., "माधु", "मधु", "मंगळ", "madhu", "madoo"). Without a continuous acoustic capture studio, users had no mechanism to capture what STT hears and expand the trigger list dynamically.
+5. **Log Text Merging vs. Direct File Sharing:**
+   - Sharing multiple session logs previously combined textual content into an intent `EXTRA_TEXT`, which ran into Android intent transaction buffer limits (1MB `TransactionTooLargeException`) and prevented sharing raw log files to productivity tools.
+   - The share button shared all historical logs rather than restricting to the currently visible paged sessions, and lacked a real-time counter.
+6. **Outdated Light Theme & Missing Material You:**
+   - The Light theme suffered from low-contrast elements and lacked support for dynamic color palette extraction on Android 12+ (Monet).
+7. **Unintuitive "Run Flow" & Overlap Clutter in Media Cards:**
+   - The "Run Flow" button lacked granular action choice and safe user confirmation before executing full STT/AI pipeline pipelines.
+   - The visual banner `[Audio slice captured, overlap boundary section, ]` introduced cognitive clutter and disrupted corporate UI standards.
+8. **Orb Jumping on Touch & Static Home Card Layout:**
+   - In `DumbHomeTab.kt`, the root `Column` used `verticalArrangement = Arrangement.SpaceBetween`. When touching the orb, recording started and rendered dynamic wave and transcript components at the bottom, forcing the orb to jump upward.
+   - Home card elements lacked adjustable sizing and positioning controls in Developer Mode.
+
+### 2. Mitigation Implemented
+1. **30-Minute Slices and 10-Second Overlap Defaults:**
+   - Configured `bufferLengthSeconds = 1800` (30 minutes) and `overlapSeconds = 10` as defaults in `AudioBufferManager.kt`, `UserPreferences.kt`, `PreferencesRepository.kt`, and `SettingsExportHelper.kt`.
+2. **Dynamic Runtime Release Notes Binding:**
+   - In `ReleaseNotes.kt`, dynamically bound `AppConstants.APP_VERSION` and `AppConstants.VERSION_CODE` to the top entry in `ReleaseNotesRegistry.getAllReleases()`, guaranteeing that the What's New dialog always showcases current build highlights.
+3. **Purged Legacy GoodBot Traces & Fixed Wake-Word Recognition:**
+   - Replaced all TTS utterance IDs with `"madhu_speech_..."`.
+   - Updated title and branding to `"Madhu Mangal"` with clean space separation.
+   - Expanded phonetic Devanagari and Latin triggers for "Madhu" (`"मधु"`, `"माधु"`, `"माधो"`, `"मद्धू"`, `"madhu"`, `"madoo"`).
+4. **Custom Bot Name & Voice Acoustic Training Studio:**
+   - Added `customBotName` and `customWakeAliases: Set<String>` in DataStore preferences.
+   - Implemented `VoiceTrainingStudioDialog` in `SettingsTab.kt` allowing users to record their voice, view live STT acoustic interpretations, and add recognized phrases to the wake alias list with a 1-tap counter.
+   - Documented the architecture roadmap toward an on-device, lightweight neural network acoustic classifier.
+5. **Google Sign-In & Gemini AI Subscription Link:**
+   - Added a direct Google Account & Gemini AI Studio card in `SettingsTab.kt` with a 1-tap browser intent launching the Google AI Studio API key generator.
+6. **Multi-File Direct File Sharing with Session Counter:**
+   - In `LogsTab.kt`, implemented direct file sharing via Android `FileProvider` (`ACTION_SEND_MULTIPLE` / `ACTION_SEND`).
+   - Positioned an `ExtendedFloatingActionButton` at bottom-left (`Alignment.BottomStart`) with a live counter: `📤 Share (${shareCount})` targeting visible page sessions (`pagedFiles`) or selected files.
+7. **Material You (Monet) Dynamic Theming & Polished Light Theme:**
+   - In `Theme.kt`, enabled `dynamicDarkColorScheme(context)` and `dynamicLightColorScheme(context)` on Android 12+ (API 31+).
+   - Upgraded `LightColorScheme` with crisp `#CBD5E1` borders, deep `#0F172A` text, and elevated neutral surfaces.
+8. **Split "Run Flow" Button with Safe Confirmation:**
+   - Converted "Run Flow" in `AudioPlayerCard.kt` into a split button featuring a dropdown chevron (`▼`) for direct sub-action execution.
+   - Added a safe confirmation dialog before triggering full multi-stage processing.
+   - Removed `[Audio slice captured, overlap boundary section, ]` and overlap visual indicators.
+9. **Media View Switcher & Default Inverse Sorting:**
+   - Set `inverseRecordingsSort = true` by default in `UserPreferences`.
+   - Added a 3-way segmented view mode toggle in `TranscriptsTab.kt`: `[ ≡ List | ⊞ Grid | ☰ Detail ]`.
+   - Implemented `GridAudioPlayerCard` rendering 2-column waveform cards.
+10. **2.5x Voice Orb & Center-Point Anchored Dev Layout Inspector:**
+    - In `DumbHomeTab.kt`, replaced `Arrangement.SpaceBetween` with `Arrangement.spacedBy(16.dp)` / `Top`, preventing orb movement on touch.
+    - Scaled the voice orb to 2.5x base (`userPreferences.orbScaleMultiplier = 2.5f`).
+    - Added `DevLayoutInspectorDialog` allowing real-time adjustment of scale, offsets, and multi-unit support (`px`, `%`, `vw`, `vh`) anchored at the center point.
+
+### 3. Multi-Perspective Critique Evaluation
+- **🛠️ Tech Lead:** Multi-file sharing via `FileProvider.getUriForFile` eliminates 1MB IPC buffer overflow crashes (`TransactionTooLargeException`) when distributing large log batches. Dynamic release notes injection removes the manual burden of updating version codes across both `build.gradle.kts` and UI registries.
+- **📱 Product Manager:** The Voice Acoustic Training Studio empowers users whose accents or regional dialects diverge from standard Vosk/Google acoustic models, allowing them to personalize wake words. The 3-way media view switcher and split "Run Flow" button align the interface with modern corporate audio tooling.
+- **👤 End-User:** The voice orb stays firmly in place without jumping when tapped, the light theme is clean and readable in daylight, and recordings can be browsed in list, 2-column grid, or detailed inspection views sorted newest-first.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

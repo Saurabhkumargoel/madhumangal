@@ -35,8 +35,15 @@ class VoskLiveTranscriber(
         try {
             executor.execute {
                 try {
-                    AppLogger.i("VOSK_LIVE", "Initializing Vosk Live Transcriber from ${modelDir.absolutePath} at ${sampleRate}Hz...")
-                    val m = Model(modelDir.absolutePath)
+                    val validDir = VoskSTTEngine.findValidModelDir(modelDir)
+                    if (validDir == null) {
+                        val err = java.io.IOException("Vosk model files (am, conf, graph) not found in ${modelDir.absolutePath}")
+                        AppLogger.e("VOSK_LIVE", err.message ?: "Vosk model files not found", err)
+                        onInitFailed?.invoke(err)
+                        return@execute
+                    }
+                    AppLogger.i("VOSK_LIVE", "Initializing Vosk Live Transcriber from ${validDir.absolutePath} at ${sampleRate}Hz...")
+                    val m = Model(validDir.absolutePath)
                     val rec = Recognizer(m, sampleRate).apply {
                         setMaxAlternatives(0)
                         setWords(false)

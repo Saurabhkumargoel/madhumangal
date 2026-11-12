@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,25 +50,31 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -154,8 +161,9 @@ fun DumbHomeTab(
     var isWaitingForFollowUpQuery by remember { mutableStateOf(false) }
     var activeWindowSecondsRemaining by remember { mutableIntStateOf(0) }
 
-    // Developer Studio Dialog State
+    // Developer Studio & Layout Inspector Dialog States
     var showStudioDialog by remember { mutableStateOf(false) }
+    var showDevLayoutInspector by remember { mutableStateOf(false) }
     val customActions = remember(userPreferences.botCustomActions) {
         BotCustomAction.parseList(userPreferences.botCustomActions)
     }
@@ -189,7 +197,7 @@ fun DumbHomeTab(
                 // Multi-Turn: Keep listening for follow-up questions after answering unless user explicitly silenced
                 if (!isExplicitlySilenced) {
                     isWaitingForFollowUpQuery = true
-                    activeWindowSecondsRemaining = 12
+                    activeWindowSecondsRemaining = 15
                 }
             }
 
@@ -214,7 +222,7 @@ fun DumbHomeTab(
             isBotSpeaking = true
             ttsStartTime = System.currentTimeMillis()
             ttsEngine?.setSpeechRate(userPreferences.ttsSpeed)
-            ttsEngine?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "good_bot_speech_${System.currentTimeMillis()}")
+            ttsEngine?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "madhu_speech_${System.currentTimeMillis()}")
         }
     }
 
@@ -296,6 +304,11 @@ fun DumbHomeTab(
     fun handleQueryText(query: String) {
         val qLower = query.lowercase(Locale.ROOT).trim()
 
+        // Clear active live speech buffer so the consumed query does not linger or retrigger
+        com.madhumangal.audio.AudioRecordingState.liveTranscript.value = ""
+        lastProcessedTranscript = query
+        lastProcessedTime = System.currentTimeMillis()
+
         // Check if user is asking to silence/dismiss the bot
         val isDismissQuery = qLower in listOf("bye", "stop", "quiet", "बाय", "अलविदा", "बस", "चुप", "शांत", "थैंक यू", "धन्यवाद", "थैंक्स") ||
                 qLower.startsWith("अलविदा") || qLower.startsWith("bye") || qLower.startsWith("बस करो")
@@ -332,7 +345,7 @@ fun DumbHomeTab(
             lastAiResponse = answer
             speakBot(answer)
             isWaitingForFollowUpQuery = true
-            activeWindowSecondsRemaining = 12
+            activeWindowSecondsRemaining = 15
             return
         }
 
@@ -353,7 +366,7 @@ fun DumbHomeTab(
                     lastAiResponse = response.text
                     speakBot(response.text)
                     isWaitingForFollowUpQuery = true
-                    activeWindowSecondsRemaining = 12
+                    activeWindowSecondsRemaining = 15
                 }
             }
         }
@@ -383,22 +396,51 @@ fun DumbHomeTab(
         }
     }
 
-    // Keyword Matcher with Madhu/Madhumangal and extensive Vosk Hindi phonetic & acoustic variations from test logs
-    val botKeywordRegex = remember {
-        Regex("(?i)(madhu\\s*bot|madhu|मधु\\s*बॉट|मधु|मधुमंगल|हे\\s*मधु|hey\\s*madhu|hello\\s*madhu|madhumangal|good\\s*bot|gud\\s*bot|god\\s*bot|got\\s*bot|good\\s*boy|गुड\\s*बॉट|गॉड\\s*बॉट|गुड\\s*बहुत|गॉड\\s*बहुत|गुड\\s*भौत|गुड\\s*बात|गोद\\s*बहुत|गत\\s*बहुत|गुड़\\s*बहुत|गुड\\s*बोट|गुड\\s*वाट|गुड\\s*वाच|गुड\\s*बाप|गुड\\s*बाय|गुडबॉट|गॉडबॉट|गुडबहुत|गुड\\s*बाद|गत\\s*बाद|गोल्ड\\s*बाद|गोल्ड\\s*बॉन्ड|गोल्ड\\s*बहुत|घोर\\s*बहुत|गुरु\\s*बहुत|घर\\s*बहुत|गौर\\s*बहुत|गुट\\s*बहुत|गुड\\s*मौत|घटना\\s*मौत|गीत\\s*की\\s*मौत|गुड\\s*पाठ|गोड\\s*गोड\\s*बहुत|गुड\\s*गुड\\s*मौत|गुरु\\s*भूत|गोद\\s*बात|बोर्ड\\s*बाद|गत\\s*बॉट|गत\\s*आठ|दुखद\\s*मौत|गॉड\\s*गॉड|गर\\s*दौर|बहुत\\s*बाद|गॉड\\s*बाद|गॉड\\s*बात|गार्ड\\s*बात|गत\\s*बात|गत\\s*डॉट|रोड\\s*बाद|घर\\s*बैठे|घोर\\s*बाद|घोर\\s*बॉट|दैट\\s*दे)")
+    // Keyword Matcher dynamically supporting custom bot name, acoustic alias list from voice training, and Hindi phonetic variations
+    val botKeywordRegex = remember(userPreferences.customBotName, userPreferences.customWakeAliases) {
+        val baseVariants = mutableListOf(
+            "madhu\\s*bot", "madhu", "मधु\\s*बॉट", "मधु", "माधु", "मदु", "मधू", "माधो", "माधव",
+            "मधुमंगल", "हे\\s*मधु", "hey\\s*madhu", "hello\\s*madhu", "madhumangal",
+            "good\\s*bot", "gud\\s*bot", "god\\s*bot", "got\\s*bot", "good\\s*boy",
+            "गुड\\s*बॉट", "गॉड\\s*बॉट", "गुड\\s*बहुत", "गॉड\\s*बहुत", "गुड\\s*भौत", "गुड\\s*बात",
+            "गोद\\s*बहुत", "गत\\s*बहुत", "गुड़\\s*बहुत", "गुड\\s*बोट", "गुड\\s*वाट", "गुड\\s*वाच",
+            "गुड\\s*बाप", "गुड\\s*बाय", "गुडबॉट", "गॉडबॉट", "गुडबहुत", "गुड\\s*बाद", "गत\\s*बाद",
+            "गोल्ड\\s*बाद", "गोल्ड\\s*बॉन्ड", "गोल्ड\\s*बहुत", "घोर\\s*बहुत", "गुरु\\s*बहुत",
+            "घर\\s*बहुत", "गौर\\s*बहुत", "गुट\\s*बहुत", "गुड\\s*मौत", "घटना\\s*मौत", "गीत\\s*की\\s*मौत",
+            "गुड\\s*पाठ", "गोड\\s*गोड\\s*बहुत", "गुड\\s*गुड\\s*मौत", "गुरु\\s*भूत", "गोद\\s*बात",
+            "बोर्ड\\s*बाद", "गत\\s*बॉट", "गत\\s*आठ", "दुखद\\s*मौत", "गॉड\\s*गॉड", "गर\\s*दौर",
+            "बहुत\\s*बाद", "गॉड\\s*बाद", "गॉड\\s*बात", "गार्ड\\s*बात", "गत\\s*बात", "गत\\s*डॉट",
+            "रोड\\s*बाद", "घर\\s*बैठे", "घोर\\s*बाद", "घोर\\s*बॉट", "दैट\\s*दे"
+        )
+        val customName = userPreferences.customBotName.trim()
+        if (customName.isNotBlank()) {
+            baseVariants.add(Regex.escape(customName))
+            baseVariants.add("${Regex.escape(customName)}\\s*bot")
+            baseVariants.add("hey\\s*${Regex.escape(customName)}")
+            baseVariants.add("hello\\s*${Regex.escape(customName)}")
+            baseVariants.add("हे\\s*${Regex.escape(customName)}")
+        }
+        userPreferences.customWakeAliases.forEach { alias ->
+            if (alias.isNotBlank()) {
+                baseVariants.add(Regex.escape(alias.trim()))
+            }
+        }
+        val pattern = "(?i)(" + baseVariants.distinct().joinToString("|") + ")"
+        Regex(pattern)
     }
 
-    // Active Conversational Window Countdown (15s default, 12s on follow-up)
-    LaunchedEffect(isWaitingForFollowUpQuery) {
-        if (isWaitingForFollowUpQuery) {
+    // Active Conversational Window Countdown (15s default)
+    // Only counts down when bot is NOT speaking so the user has the full window AFTER bot speech completes
+    LaunchedEffect(isWaitingForFollowUpQuery, isBotSpeaking) {
+        if (isWaitingForFollowUpQuery && !isBotSpeaking) {
             if (activeWindowSecondsRemaining <= 0) {
                 activeWindowSecondsRemaining = 15
             }
-            while (activeWindowSecondsRemaining > 0 && isWaitingForFollowUpQuery) {
+            while (activeWindowSecondsRemaining > 0 && isWaitingForFollowUpQuery && !isBotSpeaking) {
                 delay(1000)
                 activeWindowSecondsRemaining--
             }
-            if (activeWindowSecondsRemaining <= 0) {
+            if (activeWindowSecondsRemaining <= 0 && !isBotSpeaking) {
                 isWaitingForFollowUpQuery = false
             }
         }
@@ -509,10 +551,45 @@ fun DumbHomeTab(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // TOP HEADER
             Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        val botDisplayName = userPreferences.customBotName.ifBlank { "Madhu" }
+                        Text(
+                            text = if (isHindi) "$botDisplayName (मधु)" else botDisplayName,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Madhu Mangal Assistant",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { showHelpDialog = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HelpOutline,
+                            contentDescription = "Help & Prompts",
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -626,21 +703,6 @@ fun DumbHomeTab(
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Help Button (Opens instructions, guides & prompts modal)
-                        IconButton(
-                            onClick = { showHelpDialog = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.HelpOutline,
-                                contentDescription = "Help & Prompts",
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
                     }
                 }
 
@@ -660,10 +722,19 @@ fun DumbHomeTab(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // CENTER GLOWING VOICE ORB
+            // CENTER GLOWING VOICE ORB (2.5x Scale default, dev-mode position & scale adjustable)
+            val baseOrbScale = userPreferences.orbScaleMultiplier.coerceIn(0.5f, 5.0f)
+            val orbOffsetX = userPreferences.orbOffsetX
+            val orbOffsetY = userPreferences.orbOffsetY
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
+                    .offset(orbOffsetX.dp, orbOffsetY.dp)
+                    .graphicsLayer {
+                        scaleX = baseOrbScale / 1.6f
+                        scaleY = baseOrbScale / 1.6f
+                        transformOrigin = TransformOrigin.Center
+                    }
                     .size(240.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -804,129 +875,154 @@ fun DumbHomeTab(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // LIVE USER TRANSCRIPT CARD
-            if (isRecording && liveTranscript.isNotBlank()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.9f)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (isHindi) "लाइव आवाज़ ट्रांसक्रिप्ट" else "LIVE SPEECH",
-                                color = PrimaryBlue,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                            if (isSpeechDetected) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(PrimaryBlue)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = liveTranscript,
-                            color = TextPrimary,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
+            // MESSAGE CARDS WRAPPER (Transformable in Dev Mode with center point scale and offsets)
+            val homeCardScale = userPreferences.homeCardScale.coerceIn(0.5f, 3.0f)
+            val homeCardUnit = userPreferences.homeCardUnit
+            val homeCardOffsetX = userPreferences.homeCardOffsetX
+            val homeCardOffsetY = userPreferences.homeCardOffsetY
+            val effectiveScale = when (homeCardUnit) {
+                "PERCENT" -> homeCardScale
+                "PX" -> homeCardScale
+                "VW" -> homeCardScale
+                "VH" -> homeCardScale
+                else -> homeCardScale
             }
 
-            // BOT RESPONSE / INTERRUPT CARD
-            AnimatedVisibility(
-                visible = lastAiResponse != null || isBotSpeaking,
-                enter = fadeIn(),
-                exit = fadeOut()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = effectiveScale
+                        scaleY = effectiveScale
+                        translationX = homeCardOffsetX
+                        translationY = homeCardOffsetY
+                        transformOrigin = TransformOrigin.Center
+                    },
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    border = androidx.compose.foundation.BorderStroke(
-                        width = 1.5.dp,
-                        color = if (isBotSpeaking) AccentPurple else CardBorder
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = AccentPurple,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                // LIVE USER TRANSCRIPT CARD
+                if (isRecording && liveTranscript.isNotBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark.copy(alpha = 0.9f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Text(
-                                    text = if (isHindi) "मधु उत्तर" else "MADHU RESPONSE",
-                                    color = AccentPurple,
-                                    fontSize = 11.sp,
+                                    text = if (isHindi) "लाइव आवाज़ ट्रांसक्रिप्ट" else "LIVE SPEECH",
+                                    color = PrimaryBlue,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp
+                                    letterSpacing = 1.sp
                                 )
+                                if (isSpeechDetected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(PrimaryBlue)
+                                    )
+                                }
                             }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = liveTranscript,
+                                color = TextPrimary,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
 
-                            // Silence / Interrupt Button
-                            if (isBotSpeaking) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = ActiveRed.copy(alpha = 0.15f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed.copy(alpha = 0.4f)),
-                                    modifier = Modifier.clickable { silenceBot() }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                // BOT RESPONSE / INTERRUPT CARD
+                AnimatedVisibility(
+                    visible = lastAiResponse != null || isBotSpeaking,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 1.5.dp,
+                            color = if (isBotSpeaking) AccentPurple else CardBorder
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = AccentPurple,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    val botDisplayName = userPreferences.customBotName.ifBlank { "Madhu" }
+                                    Text(
+                                        text = if (isHindi) "$botDisplayName उत्तर" else "${botDisplayName.uppercase(Locale.ROOT)} RESPONSE",
+                                        color = AccentPurple,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+
+                                // Silence / Interrupt Button
+                                if (isBotSpeaking) {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = ActiveRed.copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, ActiveRed.copy(alpha = 0.4f)),
+                                        modifier = Modifier.clickable { silenceBot() }
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.VolumeOff,
-                                            contentDescription = "Silence",
-                                            tint = ActiveRed,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = if (isHindi) "रोकें" else "Hush / Silence",
-                                            color = ActiveRed,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.VolumeOff,
+                                                contentDescription = "Silence",
+                                                tint = ActiveRed,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isHindi) "रोकें" else "Hush / Silence",
+                                                color = ActiveRed,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = lastAiResponse ?: "",
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp
+                            )
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = lastAiResponse ?: "",
-                            color = TextPrimary,
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp
-                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
             }
 
             // Bottom Custom Action Placement Area
@@ -986,6 +1082,22 @@ fun DumbHomeTab(
                     CustomActionButton(action = action, onClick = { executeCustomAction(action) })
                 }
 
+                // Dev Mode Layout Inspector FAB
+                FloatingActionButton(
+                    onClick = { showDevLayoutInspector = true },
+                    shape = CircleShape,
+                    containerColor = AccentPurple,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
+                    modifier = Modifier.size(54.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Dev Layout Inspector",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
                 // Pencil Circular FAB (Madhu Studio for Developer Mode)
                 FloatingActionButton(
                     onClick = { showStudioDialog = true },
@@ -1002,6 +1114,18 @@ fun DumbHomeTab(
                     )
                 }
             }
+        }
+
+        // Developer Layout Inspector Dialog
+        if (showDevLayoutInspector) {
+            DevLayoutInspectorDialog(
+                userPreferences = userPreferences,
+                onUpdateOrbScale = { viewModel.updateOrbScale(it) },
+                onUpdateOrbOffset = { x, y -> viewModel.updateOrbOffset(x, y) },
+                onUpdateHomeCardLayout = { s, u, x, y -> viewModel.updateHomeCardLayout(s, u, x, y) },
+                onDismiss = { showDevLayoutInspector = false },
+                isHindi = isHindi
+            )
         }
 
         // Studio Dialog
@@ -1291,4 +1415,188 @@ fun AnimatedSoundwaveBars(
             )
         }
     }
+}
+
+@Composable
+fun DevLayoutInspectorDialog(
+    userPreferences: UserPreferences,
+    onUpdateOrbScale: (Float) -> Unit,
+    onUpdateOrbOffset: (Float, Float) -> Unit,
+    onUpdateHomeCardLayout: (Float, String, Float, Float) -> Unit,
+    onDismiss: () -> Unit,
+    isHindi: Boolean
+) {
+    var orbScale by remember { mutableStateOf(userPreferences.orbScaleMultiplier) }
+    var orbX by remember { mutableStateOf(userPreferences.orbOffsetX) }
+    var orbY by remember { mutableStateOf(userPreferences.orbOffsetY) }
+
+    var cardScale by remember { mutableStateOf(userPreferences.homeCardScale) }
+    var cardUnit by remember { mutableStateOf(userPreferences.homeCardUnit) }
+    var cardX by remember { mutableStateOf(userPreferences.homeCardOffsetX) }
+    var cardY by remember { mutableStateOf(userPreferences.homeCardOffsetY) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Tune, contentDescription = null, tint = AccentPurple)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isHindi) "🛠️ डेवलपर लेआउट व एनिमेशन" else "🛠️ Dev Layout & Animation Inspector",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Section 1: Voice Orb Controls
+                Text("🔮 Voice Orb Layout (Anchor: Center)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
+
+                Text("Scale: ${"%.2f".format(orbScale)}x (Default 2.5x)", fontSize = 11.sp, color = TextSecondary)
+                Slider(
+                    value = orbScale,
+                    onValueChange = {
+                        orbScale = it
+                        onUpdateOrbScale(it)
+                    },
+                    valueRange = 0.5f..4.0f,
+                    colors = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Offset X: ${orbX.toInt()} dp", fontSize = 11.sp, color = TextSecondary)
+                        Slider(
+                            value = orbX,
+                            onValueChange = {
+                                orbX = it
+                                onUpdateOrbOffset(it, orbY)
+                            },
+                            valueRange = -150f..150f,
+                            colors = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Offset Y: ${orbY.toInt()} dp", fontSize = 11.sp, color = TextSecondary)
+                        Slider(
+                            value = orbY,
+                            onValueChange = {
+                                orbY = it
+                                onUpdateOrbOffset(orbX, it)
+                            },
+                            valueRange = -150f..150f,
+                            colors = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue)
+                        )
+                    }
+                }
+
+                // Section 2: Home Message Cards Layout
+                Text("💬 Home Cards & Animations (Anchor: Center)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentPurple)
+
+                // Units Switcher
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Unit:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                    listOf("PERCENT" to "%", "PX" to "px", "VW" to "vw", "VH" to "vh").forEach { (unitKey, unitLabel) ->
+                        val isSelected = cardUnit == unitKey
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) AccentPurple else Color.Transparent,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) AccentPurple else CardBorder),
+                            modifier = Modifier.clickable {
+                                cardUnit = unitKey
+                                onUpdateHomeCardLayout(cardScale, unitKey, cardX, cardY)
+                            }
+                        ) {
+                            Text(
+                                text = unitLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else TextSecondary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text("Card Scale: ${"%.2f".format(cardScale)} ($cardUnit)", fontSize = 11.sp, color = TextSecondary)
+                Slider(
+                    value = cardScale,
+                    onValueChange = {
+                        cardScale = it
+                        onUpdateHomeCardLayout(it, cardUnit, cardX, cardY)
+                    },
+                    valueRange = 0.5f..2.5f,
+                    colors = SliderDefaults.colors(thumbColor = AccentPurple, activeTrackColor = AccentPurple)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Cards Offset X: ${cardX.toInt()} dp", fontSize = 11.sp, color = TextSecondary)
+                        Slider(
+                            value = cardX,
+                            onValueChange = {
+                                cardX = it
+                                onUpdateHomeCardLayout(cardScale, cardUnit, it, cardY)
+                            },
+                            valueRange = -150f..150f,
+                            colors = SliderDefaults.colors(thumbColor = AccentPurple, activeTrackColor = AccentPurple)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Cards Offset Y: ${cardY.toInt()} dp", fontSize = 11.sp, color = TextSecondary)
+                        Slider(
+                            value = cardY,
+                            onValueChange = {
+                                cardY = it
+                                onUpdateHomeCardLayout(cardScale, cardUnit, cardX, it)
+                            },
+                            valueRange = -150f..150f,
+                            colors = SliderDefaults.colors(thumbColor = AccentPurple, activeTrackColor = AccentPurple)
+                        )
+                    }
+                }
+
+                // Reset Button
+                OutlinedButton(
+                    onClick = {
+                        orbScale = 2.5f
+                        orbX = 0f
+                        orbY = 0f
+                        cardScale = 1.0f
+                        cardUnit = "PERCENT"
+                        cardX = 0f
+                        cardY = 0f
+                        onUpdateOrbScale(2.5f)
+                        onUpdateOrbOffset(0f, 0f)
+                        onUpdateHomeCardLayout(1.0f, "PERCENT", 0f, 0f)
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isHindi) "डिफ़ॉल्ट पर रीसेट करें" else "Reset to Defaults (2.5x Orb)", color = TextSecondary)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(if (isHindi) "पूर्ण" else "Done", color = DarkBackground, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = SurfaceDark
+    )
 }

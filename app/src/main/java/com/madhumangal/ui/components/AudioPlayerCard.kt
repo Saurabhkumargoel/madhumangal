@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
@@ -157,6 +160,7 @@ fun AudioPlayerCard(
     }
 
     var showFileViewerDialog by remember { mutableStateOf(false) }
+    var showRunFlowConfirmDialog by remember { mutableStateOf(false) }
     var showTasksDialog by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<NoteTask?>(null) }
     var editTextValue by remember { mutableStateOf(transcription.text) }
@@ -317,85 +321,90 @@ fun AudioPlayerCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Visual Overlap Buffer Indicator
-            if (transcription.overlapSeconds > 0) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = AccentPurple.copy(alpha = 0.12f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("↺", color = AccentPurple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isHindi) "ओवरलैप सीमा: ~${transcription.overlapSeconds} से. पिछले टुकड़े से"
-                                   else "Overlap Boundary: ~${transcription.overlapSeconds}s carried over from previous slice",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AccentPurple,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            // ── Run Panel Row: Run Flow (Touch & Hold opens pop-up) + Notes + Tasks in same row ──
+            // ── Run Panel Row: Split Run Flow (Confirm on tap, chevron for direct options) + Notes + Tasks ──
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Reduced size Run Flow button (Single tap runs flow, Touch & Hold opens pop up)
+                // Split Run Flow button with Safe Confirmation on tap and Direct Chevron options
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = if (!isTranscribing && !isProcessingAi) AccentPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier
-                        .weight(1.4f)
+                        .weight(1.5f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .combinedClickable(
-                            enabled = !isTranscribing && !isProcessingAi,
-                            onClick = {
-                                Toast.makeText(context, if (isHindi) "फ्लो चल रहा है..." else "Running complete flow for this chunk...", Toast.LENGTH_SHORT).show()
-                                onRunFlow(transcription.id)
-                            },
-                            onLongClick = {
-                                showFlowActionsPopup = true
-                            }
-                        )
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isTranscribing || isProcessingAi) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isTranscribing) (if (isHindi) "ट्रांसक्राइब..." else "Transcribing...")
-                                       else (if (isHindi) "कार्य..." else "Extracting..."),
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                maxLines = 1
-                            )
-                        } else {
-                            Text("⚡", fontSize = 13.sp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isHindi) "फ्लो चलाएं" else "Run Flow",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                maxLines = 1
+                        // Main Action Button (Triggers Safe Confirmation Dialog)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable(
+                                    enabled = !isTranscribing && !isProcessingAi,
+                                    onClick = { showRunFlowConfirmDialog = true }
+                                )
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isTranscribing || isProcessingAi) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isTranscribing) (if (isHindi) "ट्रांसक्राइब..." else "Transcribing...")
+                                           else (if (isHindi) "कार्य..." else "Extracting..."),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            } else {
+                                Text("⚡", fontSize = 13.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isHindi) "फ्लो चलाएं" else "Run Flow",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        // Thin separator line
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight(0.6f)
+                                .background(Color.White.copy(alpha = 0.3f))
+                        )
+
+                        // Chevron options button (directly opens flow options dropdown)
+                        Box(
+                            modifier = Modifier
+                                .width(30.dp)
+                                .fillMaxHeight()
+                                .clickable(
+                                    enabled = !isTranscribing && !isProcessingAi,
+                                    onClick = { showFlowActionsPopup = true }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = "Flow Options",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -493,30 +502,6 @@ fun AudioPlayerCard(
                             style = MaterialTheme.typography.bodyLarge,
                             color = TextPrimary,
                             lineHeight = 22.sp
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = if (isHindi) "ऑडियो टुकड़ा रिकॉर्ड हुआ (${transcription.durationSeconds} से.)"
-                                   else "Audio slice captured (${transcription.durationSeconds}s)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (isHindi) "फ्लो चलाएं (या देर तक दबाकर मॉडल चुनें) जिससे यह टुकड़ा टेक्स्ट में बदल जाए।"
-                                   else "Tap 'Run Flow' above (or touch & hold to select individual models) to transcribe this chunk.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted
                         )
                     }
                 }
@@ -690,6 +675,93 @@ fun AudioPlayerCard(
                 }
             }
         }
+    }
+
+    // ── Safe Run Flow Confirmation Dialog ──
+    if (showRunFlowConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRunFlowConfirmDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚡", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHindi) "फ्लो चलाने की पुष्टि करें" else "Confirm Run Flow",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = TextPrimary
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = if (isHindi)
+                            "क्या आप इस टुकड़े पर पूरी एआई और ट्रांसक्रिप्शन पाइपलाइन चलाना चाहते हैं?"
+                        else
+                            "Run complete AI and speech processing pipeline on this audio slice?",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("✓", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isHindi) "वाक् प्रतिलेखन ($sttShortName)" else "Speech-to-Text ($sttShortName)",
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("✓", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isHindi) "एआई नोट्स व सारांश ($aiShortName)" else "AI Notes & Summary ($aiShortName)",
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("✓", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isHindi) "कार्य एवं कार्य-सूचियां" else "Action Items & Tasks",
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRunFlowConfirmDialog = false
+                        Toast.makeText(context, if (isHindi) "फ्लो चल रहा है..." else "Running complete flow for this chunk...", Toast.LENGTH_SHORT).show()
+                        onRunFlow(transcription.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (isHindi) "अभी चलाएं" else "Run Now", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRunFlowConfirmDialog = false }) {
+                    Text(if (isHindi) "रद्द करें" else "Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceDark,
+            tonalElevation = 6.dp
+        )
     }
 
     // ── Pop-up for Individual Transcribe & AI Notes (Triggered by Touch & Hold on Run Flow) ──
