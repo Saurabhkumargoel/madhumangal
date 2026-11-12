@@ -44,8 +44,8 @@ data class AiModelOption(
 
 data class UserPreferences(
     val settingsMode: SettingsMode = SettingsMode.SMART,
-    val bufferLengthSeconds: Int = 15, // Default to smaller 15s chunks
-    val overlapSeconds: Int = 3,       // Default 3s overlap
+    val bufferLengthSeconds: Int = 1800, // Default 30 minutes (1800s) split
+    val overlapSeconds: Int = 10,       // Default 10s overlap
     val sampleRate: Int = 8000,        // 8000 Hz = Tiniest Quality (Default from Good-Echo)
     val liveTranscribe: Boolean = true,// Live transcribe enabled by default
     val skipSilence: Boolean = true,   // Voice Activity Detection / skip silence
@@ -96,7 +96,21 @@ data class UserPreferences(
     val devAdvancedVisibleSettings: Set<String> = DEFAULT_ADVANCED_VISIBLE_SETTINGS,
     val homeTheme: String = HOME_THEME_CHARCOAL,
     val devSettingTierOverrides: Map<String, String> = emptyMap(),
-    val inverseRecordingsSort: Boolean = false
+    val inverseRecordingsSort: Boolean = true, // Default inverse sorting (newest first)
+    val mediaViewMode: String = "DETAILED", // "LIST", "GRID", "DETAILED"
+    val customBotName: String = "Madhu",
+    val customWakeAliases: Set<String> = emptySet(), // Acoustic names heard by STT
+    val googleAccountEmail: String = "",
+    val isGoogleSignedIn: Boolean = false,
+    val orbScaleMultiplier: Float = 2.5f, // 2.5x orb size
+    val orbOffsetX: Float = 0f,
+    val orbOffsetY: Float = 0f,
+    val homeCardScale: Float = 1.0f,
+    val homeCardUnit: String = "PERCENT", // "PX", "PERCENT", "VW", "VH"
+    val homeCardOffsetX: Float = 0f,
+    val homeCardOffsetY: Float = 0f,
+    val appLogoStyle: String = "DEFAULT", // "DEFAULT", "MINIMAL_ORB", "STUDIO_WAVE", "CUSTOM_IMAGE"
+    val customAppLogoUri: String = ""
 ) {
     val isDeveloperMode: Boolean get() = settingsMode == SettingsMode.DEVELOPER
     val isAdvancedOrDev: Boolean get() = settingsMode == SettingsMode.ADVANCED || settingsMode == SettingsMode.DEVELOPER

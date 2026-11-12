@@ -1100,6 +1100,44 @@ Field testing with merged log `session_20261020_005559_merged.txt` and user feed
 
 ---
 
+## 37. Voice Assistant Polish: Reminder Trigger, Dev-Controlled Advanced Mode Visibility, and Production Hardening (2026-11-12)
+
+### 1. Root Cause & Context
+- **Reminder Trigger Integration:** Users requested a natural Devanagari and Romanized voice trigger ("मुझे याद दिलाना" / "याद दिला" / "remind me") to directly launch calendar events/reminders without needing an external cloud assistant.
+- **Mode Hierarchy & Settings Curation:** In previous versions, the distinction between Smart, Advanced, and Developer modes was rigid. The user requested:
+  - Smart Mode: ultra-minimal, clutter-free assistant interface without "AI slop" or neon overload.
+  - Advanced Mode: clean subset of options curated specifically by Developer Mode.
+  - Developer Mode: contains a meta-control checkbox next to each setting and dropdown option, controlling whether it appears in Advanced Mode, while graying out currently active options to prevent accidental breakage.
+- **Settings Export:** Users needed to specify their export destination dynamically via Android's Storage Access Framework (`CreateDocument`) rather than relying on a hardcoded internal notes directory.
+- **Transcripts Tab & Recording Stability:** Audio recording service required clean state isolation across consecutive queries, and back button handling needed multi-selection cancellation prior to double-press exit.
+
+### 2. Mitigation Implemented
+1. **Reminder & Calendar Intent System:**
+   - In `DumbHomeTab.kt`, implemented `launchCalendarReminder(context, query, calendarApp)` handling triggers like `"याद दिलाना"`, `"याद दिला"`, `"remind me"`, `"याद रखना"`.
+   - Extracted relative time keywords ("कल" / "tomorrow", "minute" / "मिनट", "baje" / "बजे") to calculate prospective timestamp for `CalendarContract.EXTRA_BEGIN_TIME`.
+   - Supported package targeting: Google Calendar (`com.google.android.calendar`), Samsung Calendar (`com.samsung.android.calendar`), or system fallback.
+2. **Developer-Controlled Visibility Architecture:**
+   - Added `devAdvancedVisibleSettings: Set<String>` and `selectedCalendarApp: String` to `UserPreferences` and `PreferencesRepository`.
+   - In `SettingsTab.kt`, rendered checkboxes in Developer Mode alongside cards and dropdown options.
+   - Touching the checkbox toggles visibility in Advanced Mode; touching the row selects the option.
+   - Disabled/grayed out checkboxes for active settings to ensure safe state preservation.
+3. **SAF Dynamic File Export:**
+   - Implemented `rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"))` for settings backup, allowing the user to pick any destination folder on every export.
+4. **Onboarding & Design Overhaul:**
+   - Introduced `hasCompletedOnboarding` first-run wizard for app language, assistant mode, and one-tap offline model download.
+   - Replaced neon highlights with deep charcoal/black OLED gradients and muted slate accents.
+5. **Unit Testing & Packaging:**
+   - Added unit tests in `MadhuConversationalTest.kt` verifying reminder triggers, calendar package resolution, and time parsing.
+   - All 28 unit tests passing (`./gradlew testDebugUnitTest`).
+   - Exported `Madhumangal_v0.0.2026.11.12.2136.apk` (59,997 KB) to `.shared/`.
+
+### 3. Multi-Perspective Critique Evaluation
+- **🛠️ Tech Lead:** Fine-grained DataStore preferences serialization for `devAdvancedVisibleSettings` decouples UI curation from business logic, ensuring safe fallback if preferences are reset.
+- **📱 Product Manager:** Developer mode acts as an administrative studio to tailor the app experience for less technical family members or advanced users alike.
+- **👤 End-User:** Fast, offline reminder triggers in native Hindi/Hinglish directly route to their preferred calendar app without cloud delays or subscription requirements.
+
+---
+
 *End of Recommendations Document. Maintained automatically per `.agrules`.*
 
 

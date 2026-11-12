@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Madhumangal</string>
+    <string name="app_name">Madhu Mangal</string>
     <string name="service_name">Continuous Audio Service</string>
-    <string name="notification_title">Madhumangal Active</string>
+    <string name="notification_title">Madhu Mangal Active</string>
     <string name="notification_text">Listening continuously in background...</string>
 </resources>

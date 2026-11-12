@@ -21,7 +21,8 @@ class VoskLiveTranscriber(
     private val modelDir: File,
     private val sampleRate: Float = 16000f,
     private val onPartial: (String) -> Unit,
-    private val onFinal: (String) -> Unit
+    private val onFinal: (String) -> Unit,
+    private val onInitFailed: ((Throwable) -> Unit)? = null
 ) {
     private var model: Model? = null
     private var recognizer: Recognizer? = null
@@ -48,6 +49,7 @@ class VoskLiveTranscriber(
                     AppLogger.i("VOSK_LIVE", "Vosk Live Transcriber initialized successfully. Ready to stream.")
                 } catch (e: Throwable) {
                     AppLogger.e("VOSK_LIVE", "Failed to initialize Vosk Live Transcriber: ${e.message}", e)
+                    onInitFailed?.invoke(e)
                 }
             }
         } catch (_: RejectedExecutionException) {}

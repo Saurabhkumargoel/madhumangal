@@ -18,15 +18,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,12 +113,12 @@ fun TranscriptsTab(
     isHindi: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // Group transcriptions by attempt/session ID (PID), sorted by inverseRecordingsSort
+    // Group transcriptions by attempt/session ID (PID), sorted cleanly without broken reverseLayout
     val orderedTranscriptions = remember(transcriptions, inverseRecordingsSort) {
         if (inverseRecordingsSort) {
-            transcriptions.sortedBy { it.timestampMillis }
-        } else {
             transcriptions.sortedByDescending { it.timestampMillis }
+        } else {
+            transcriptions.sortedBy { it.timestampMillis }
         }
     }
 
@@ -123,6 +131,9 @@ fun TranscriptsTab(
             }
         }.toList()
     }
+
+    // State for List View vs Detailed View mode toggle
+    var isListViewMode by remember { mutableStateOf(false) }
 
     // State for collapsible sessions: default all expanded
     var expandedSessions by remember(groupedSessions) {
@@ -252,23 +263,39 @@ fun TranscriptsTab(
                     color = TextSecondary
                 )
 
-                TextButton(
-                    onClick = {
-                        expandedSessions = if (allExpanded) {
-                            emptySet()
-                        } else {
-                            groupedSessions.map { it.first }.toSet()
-                        }
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = if (allExpanded) (if (isHindi) "सभी समेटें 🔼" else "Collapse All 🔼")
-                               else (if (isHindi) "सभी खोलें 🔽" else "Expand All 🔽"),
-                        color = PrimaryBlue,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { isListViewMode = !isListViewMode },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isListViewMode) Icons.Default.ViewAgenda else Icons.Default.FormatListBulleted,
+                            contentDescription = if (isListViewMode) "Switch to Detailed View" else "Switch to Compact List View",
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    TextButton(
+                        onClick = {
+                            expandedSessions = if (allExpanded) {
+                                emptySet()
+                            } else {
+                                groupedSessions.map { it.first }.toSet()
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (allExpanded) (if (isHindi) "सभी समेटें 🔼" else "Collapse 🔼")
+                                   else (if (isHindi) "सभी खोलें 🔽" else "Expand 🔽"),
+                            color = PrimaryBlue,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }
@@ -318,13 +345,18 @@ fun TranscriptsTab(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 12.dp),
-                reverseLayout = inverseRecordingsSort
+                reverseLayout = false
             ) {
                 groupedSessions.forEach { (sessionId, sessionChunks) ->
                     val isExpanded = expandedSessions.contains(sessionId)
                     val totalDuration = sessionChunks.sumOf { it.durationSeconds }
                     val hasOverlap = sessionChunks.any { it.overlapSeconds > 0 }
                     val sessionTitle = formatSessionTitle(sessionId, sessionChunks.firstOrNull()?.timestampMillis ?: System.currentTimeMillis())
+                    val orderedChunks = if (inverseRecordingsSort) {
+                        sessionChunks.sortedByDescending { it.timestampMillis }
+                    } else {
+                        sessionChunks.sortedBy { it.timestampMillis }
+                    }
 
                     stickyHeader(key = "header_$sessionId") {
                         Surface(
@@ -439,31 +471,42 @@ fun TranscriptsTab(
 
                     if (isExpanded) {
                         items(
-                            items = sessionChunks,
+                            items = orderedChunks,
                             key = { "chunk_${it.id}" }
                         ) { chunk ->
                             val chunkTasks = remember(allTasks, chunk.id) {
                                 allTasks.filter { it.transcriptionId == chunk.id }
                             }
-                            AudioPlayerCard(
-                                transcription = chunk,
-                                tasks = chunkTasks,
-                                isTranscribing = transcribingIds.contains(chunk.id),
-                                isProcessingAi = processingAiIds.contains(chunk.id),
-                                defaultSttModel = defaultSttModel,
-                                defaultAiModel = defaultAiModel,
-                                onDelete = onDeleteTranscription,
-                                onRetranscribe = onRetranscribe,
-                                onRetranscribeWithModel = onRetranscribeWithModel,
-                                onReprocessAiWithModel = onReprocessAiWithModel,
-                                onUpdateText = onUpdateText,
-                                onToggleTaskCompletion = onToggleTaskCompletion,
-                                onUpdateTaskDetails = onUpdateTaskDetails,
-                                onDeleteTask = onDeleteTask,
-                                onRunFlow = { id -> onRunFlow(sessionId, id) },
-                                isHindi = isHindi,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
+                            if (isListViewMode) {
+                                CompactAudioPlayerRow(
+                                    transcription = chunk,
+                                    onDelete = onDeleteTranscription,
+                                    onRetranscribe = onRetranscribe,
+                                    onRunFlow = { id -> onRunFlow(sessionId, id) },
+                                    isHindi = isHindi,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            } else {
+                                AudioPlayerCard(
+                                    transcription = chunk,
+                                    tasks = chunkTasks,
+                                    isTranscribing = transcribingIds.contains(chunk.id),
+                                    isProcessingAi = processingAiIds.contains(chunk.id),
+                                    defaultSttModel = defaultSttModel,
+                                    defaultAiModel = defaultAiModel,
+                                    onDelete = onDeleteTranscription,
+                                    onRetranscribe = onRetranscribe,
+                                    onRetranscribeWithModel = onRetranscribeWithModel,
+                                    onReprocessAiWithModel = onReprocessAiWithModel,
+                                    onUpdateText = onUpdateText,
+                                    onToggleTaskCompletion = onToggleTaskCompletion,
+                                    onUpdateTaskDetails = onUpdateTaskDetails,
+                                    onDeleteTask = onDeleteTask,
+                                    onRunFlow = { id -> onRunFlow(sessionId, id) },
+                                    isHindi = isHindi,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -592,5 +635,141 @@ private fun formatSessionTitle(sessionId: String, fallbackTimeMillis: Long): Str
         "Attempt: $sessionId"
     } else {
         "Recording Attempt: " + SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(fallbackTimeMillis))
+    }
+}
+
+@Composable
+fun CompactAudioPlayerRow(
+    transcription: TranscriptionWithAudio,
+    onDelete: (Long) -> Unit,
+    onRetranscribe: (Long) -> Unit,
+    onRunFlow: (Long) -> Unit,
+    isHindi: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    val file = remember(transcription.filePath) { java.io.File(transcription.filePath) }
+    val audioExists = remember(file) { file.exists() }
+
+    fun togglePlay() {
+        if (!audioExists) {
+            android.widget.Toast.makeText(context, if (isHindi) "ऑडियो फ़ाइल नहीं मिली" else "Audio file not found", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isPlaying) {
+            mediaPlayer?.pause()
+            isPlaying = false
+        } else {
+            try {
+                if (mediaPlayer == null) {
+                    mediaPlayer = android.media.MediaPlayer().apply {
+                        setDataSource(transcription.filePath)
+                        prepare()
+                        setOnCompletionListener {
+                            isPlaying = false
+                        }
+                    }
+                }
+                mediaPlayer?.start()
+                isPlaying = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    DisposableEffect(transcription.filePath) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
+    val formattedTime = remember(transcription.timestampMillis) {
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(transcription.timestampMillis))
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = SurfaceDark,
+        border = BorderStroke(1.dp, CardBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(
+                onClick = { togglePlay() },
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(PrimaryBlue.copy(alpha = 0.15f))
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formattedTime,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "${transcription.durationSeconds}s",
+                        fontSize = 11.sp,
+                        color = TextMuted
+                    )
+                }
+                Text(
+                    text = if (transcription.text.isNotBlank()) transcription.text else (if (isHindi) "[ट्रांसक्रिप्शन बाकी]" else "[Pending transcription]"),
+                    fontSize = 12.sp,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            IconButton(
+                onClick = { onRetranscribe(transcription.id) },
+                modifier = Modifier.size(30.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retranscribe",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { onDelete(transcription.id) },
+                modifier = Modifier.size(30.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = ActiveRed.copy(alpha = 0.8f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }

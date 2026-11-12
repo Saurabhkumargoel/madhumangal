@@ -741,7 +741,7 @@ object AppStorageManager {
                         startTimeMillis = now,
                         endTimeMillis = now + (rawDuration * 1000L),
                         durationSeconds = rawDuration,
-                        overlapSeconds = 3,
+                        overlapSeconds = 10,
                         status = com.madhumangal.data.AudioSegment.STATUS_COMPLETED,
                         sessionId = sessionId
                     )

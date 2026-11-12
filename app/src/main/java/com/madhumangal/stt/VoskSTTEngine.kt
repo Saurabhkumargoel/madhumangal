@@ -38,6 +38,31 @@ class VoskSTTEngine(
 
         /** Buffer size for streaming audio bytes into Vosk */
         private const val BUFFER_SIZE = 4096
+
+        /**
+         * Recursively searches for the actual Vosk model directory containing model files (am, conf, graph).
+         * Handles both flat extraction and nested zip extraction (e.g., vosk_hindi/vosk-model-small-hi-0.22/).
+         */
+        fun findValidModelDir(baseDir: File): File? {
+            if (!baseDir.exists() || !baseDir.isDirectory) return null
+            if (isValidModelFolder(baseDir)) return baseDir
+            val subdirs = baseDir.listFiles() ?: return null
+            for (sub in subdirs) {
+                if (sub.isDirectory && isValidModelFolder(sub)) {
+                    return sub
+                }
+            }
+            return null
+        }
+
+        private fun isValidModelFolder(dir: File): Boolean {
+            val am = File(dir, "am")
+            val conf = File(dir, "conf")
+            val modelConf = File(dir, "model.conf")
+            val mfccConf = File(dir, "mfcc.conf")
+            val graph = File(dir, "graph")
+            return (am.exists() && am.isDirectory) || (conf.exists() && conf.isDirectory) || modelConf.exists() || mfccConf.exists() || (graph.exists() && graph.isDirectory)
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -150,11 +175,11 @@ class VoskSTTEngine(
         return textMatch?.groupValues?.getOrNull(1)?.trim() ?: ""
     }
 
-    /** Returns the extracted Vosk model directory, or null if not present */
+    /** Returns the extracted Vosk model directory, or null if not present or incomplete */
     private fun getModelDir(context: Context): File? {
         val modelsDir = AppStorageManager.getModelsDirectory(context)
-        val modelDir = File(modelsDir, modelDirName)
-        return if (modelDir.exists() && modelDir.isDirectory) modelDir else null
+        val baseDir = File(modelsDir, modelDirName)
+        return findValidModelDir(baseDir)
     }
 
     /** Parses sample rate and channel count from a standard 44-byte PCM WAV header */
@@ -178,17 +203,19 @@ class VoskSTTEngine(
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Static utility for MainViewModel to check if model is ready
-    // ──────────────────────────────────────────────────────────────────────────
+
+
     object ModelStatus {
         fun isInstalled(context: Context, modelDirName: String = MODEL_DIR_NAME): Boolean {
             val modelsDir = AppStorageManager.getModelsDirectory(context)
-            val modelDir = File(modelsDir, modelDirName)
-            return modelDir.exists() && modelDir.isDirectory && !modelDir.listFiles().isNullOrEmpty()
+            val baseDir = File(modelsDir, modelDirName)
+            return findValidModelDir(baseDir) != null
         }
 
-        fun getModelDir(context: Context, modelDirName: String = MODEL_DIR_NAME): File =
-            File(AppStorageManager.getModelsDirectory(context), modelDirName)
+        fun getModelDir(context: Context, modelDirName: String = MODEL_DIR_NAME): File? {
+            val modelsDir = AppStorageManager.getModelsDirectory(context)
+            val baseDir = File(modelsDir, modelDirName)
+            return findValidModelDir(baseDir) ?: baseDir
+        }
     }
 }

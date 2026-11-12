@@ -75,8 +75,8 @@ class AudioRecordingService : Service() {
 
         bufferManager = AudioBufferManager(
             outputDirectory = audioDir,
-            bufferLengthSeconds = 15,
-            overlapSeconds = 3,
+            bufferLengthSeconds = 1800,
+            overlapSeconds = 10,
             sampleRate = UserPreferences.QUALITY_TINIEST,
             skipSilence = true,
             onSegmentCreated = { file, startTime, endTime, duration, overlap ->

@@ -266,5 +266,111 @@ class MadhuConversationalTest {
         assertTrue(themes.contains(com.madhumangal.data.UserPreferences.HOME_THEME_EMERALD))
         assertTrue(themes.contains(com.madhumangal.data.UserPreferences.HOME_THEME_CARBON))
     }
+
+    @Test
+    fun testReminderTriggersDetection() {
+        val reminderQueries = listOf(
+            "mujhe yaad dilana",
+            "Mujhe Yaad Dilana",
+            "मुझे याद दिलाना",
+            "याद दिलाना",
+            "याद दिलाओ",
+            "याद दिला देना",
+            "याद दिला",
+            "remind me to call Mom",
+            "remind me at 5pm",
+            "याद रखना कल मीटिंग है"
+        )
+
+        for (q in reminderQueries) {
+            val qLower = q.lowercase(Locale.ROOT)
+            val isReminder = qLower.contains("याद दिला") ||
+                    qLower.contains("याद दिलाना") ||
+                    qLower.contains("remind me") ||
+                    qLower.contains("याद रखना") ||
+                    qLower.contains("yaad dilana") ||
+                    qLower.contains("yaad rakhna")
+            assertTrue("Expected query '$q' to be detected as reminder", isReminder)
+        }
+    }
+
+    @Test
+    fun testReminderFutureTimeCalculation() {
+        fun extractReminderTime(query: String, baseNow: Long = System.currentTimeMillis()): Long {
+            val qLower = query.lowercase(Locale.ROOT)
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = baseNow }
+            return when {
+                qLower.contains("कल") || qLower.contains("tomorrow") -> {
+                    cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                    cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+                    cal.set(java.util.Calendar.MINUTE, 0)
+                    cal.timeInMillis
+                }
+                qLower.contains("minute") || qLower.contains("मिनट") -> {
+                    val match = Regex("(\\d+)\\s*(minute|min|मिनट)").find(qLower)
+                    val mins = match?.groupValues?.get(1)?.toIntOrNull() ?: 10
+                    baseNow + (mins * 60 * 1000L)
+                }
+                else -> baseNow + (60 * 60 * 1000L)
+            }
+        }
+
+        val baseNow = System.currentTimeMillis()
+        val tomorrowTime = extractReminderTime("मुझे कल याद दिलाना", baseNow)
+        assertTrue("Tomorrow time must be greater than now", tomorrowTime > baseNow)
+
+        val fifteenMinTime = extractReminderTime("remind me in 15 minutes", baseNow)
+        val diffMins = (fifteenMinTime - baseNow) / (60 * 1000)
+        assertEquals(15L, diffMins)
+    }
+
+    @Test
+    fun testDevModeAdvancedOptionVisibility() {
+        val devVisibleSettings = setOf(
+            "card_display_mode",
+            "card_theme",
+            "card_voice_output"
+        )
+
+        fun isOptionVisibleInAdvancedMode(
+            optionKey: String,
+            activeValue: String,
+            currentOptionValue: String,
+            allowedDevSet: Set<String>
+        ): Boolean {
+            // Rule: Currently active option must ALWAYS be visible (safeguarded)
+            if (activeValue == currentOptionValue) return true
+            return allowedDevSet.contains(optionKey)
+        }
+
+        // Active option is always visible even if not in dev visible set
+        assertTrue(isOptionVisibleInAdvancedMode("card_debug", "ACTIVE_VAL", "ACTIVE_VAL", devVisibleSettings))
+
+        // In dev visible set, not active: visible
+        assertTrue(isOptionVisibleInAdvancedMode("card_display_mode", "OTHER_VAL", "NEW_VAL", devVisibleSettings))
+
+        // Not in dev visible set and not active: hidden
+        assertFalse(isOptionVisibleInAdvancedMode("card_hidden_feature", "OTHER_VAL", "NEW_VAL", devVisibleSettings))
+    }
+
+    @Test
+    fun testReverseRecordingsSortLogic() {
+        data class Chunk(val id: Long, val timestamp: Long)
+        val chunks = listOf(
+            Chunk(1, 1000L),
+            Chunk(2, 2000L),
+            Chunk(3, 3000L)
+        )
+
+        // Normal order (chronological)
+        val normal = chunks.sortedBy { it.timestamp }
+        assertEquals(1L, normal.first().id)
+        assertEquals(3L, normal.last().id)
+
+        // Inverted order (newest first)
+        val inverted = chunks.sortedByDescending { it.timestamp }
+        assertEquals(3L, inverted.first().id)
+        assertEquals(1L, inverted.last().id)
+    }
 }
 

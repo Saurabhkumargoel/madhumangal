@@ -27,6 +27,7 @@ class PreferencesRepository(private val context: Context) {
         val SELECTED_STT_MODEL = stringPreferencesKey("selected_stt_model")
         val SELECTED_AI_MODEL = stringPreferencesKey("selected_ai_model")
         val CLOUD_API_KEY = stringPreferencesKey("cloud_api_key")
+        val CLOUD_MODEL_NAME = stringPreferencesKey("cloud_model_name")
         val AUDIO_FOLDER_PATH = stringPreferencesKey("audio_folder_path")
         val TRANSCRIPTION_FOLDER_PATH = stringPreferencesKey("transcription_folder_path")
         val NOTES_FOLDER_PATH = stringPreferencesKey("notes_folder_path")
@@ -70,6 +71,20 @@ class PreferencesRepository(private val context: Context) {
         val HOME_THEME = stringPreferencesKey("home_theme")
         val DEV_SETTING_TIER_OVERRIDES = stringPreferencesKey("dev_setting_tier_overrides")
         val INVERSE_RECORDINGS_SORT = booleanPreferencesKey("inverse_recordings_sort")
+        val MEDIA_VIEW_MODE = stringPreferencesKey("media_view_mode")
+        val CUSTOM_BOT_NAME = stringPreferencesKey("custom_bot_name")
+        val CUSTOM_WAKE_ALIASES = androidx.datastore.preferences.core.stringSetPreferencesKey("custom_wake_aliases")
+        val GOOGLE_ACCOUNT_EMAIL = stringPreferencesKey("google_account_email")
+        val IS_GOOGLE_SIGNED_IN = booleanPreferencesKey("is_google_signed_in")
+        val ORB_SCALE_MULTIPLIER = floatPreferencesKey("orb_scale_multiplier")
+        val ORB_OFFSET_X = floatPreferencesKey("orb_offset_x")
+        val ORB_OFFSET_Y = floatPreferencesKey("orb_offset_y")
+        val HOME_CARD_SCALE = floatPreferencesKey("home_card_scale")
+        val HOME_CARD_UNIT = stringPreferencesKey("home_card_unit")
+        val HOME_CARD_OFFSET_X = floatPreferencesKey("home_card_offset_x")
+        val HOME_CARD_OFFSET_Y = floatPreferencesKey("home_card_offset_y")
+        val APP_LOGO_STYLE = stringPreferencesKey("app_logo_style")
+        val CUSTOM_APP_LOGO_URI = stringPreferencesKey("custom_app_logo_uri")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
@@ -87,8 +102,8 @@ class PreferencesRepository(private val context: Context) {
 
         UserPreferences(
             settingsMode = preferences[PreferencesKeys.SETTINGS_MODE]?.let { runCatching { SettingsMode.valueOf(it) }.getOrNull() } ?: SettingsMode.SMART,
-            bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 15,
-            overlapSeconds = preferences[PreferencesKeys.OVERLAP_SECONDS] ?: 3,
+            bufferLengthSeconds = preferences[PreferencesKeys.BUFFER_LENGTH_SECONDS] ?: 1800,
+            overlapSeconds = preferences[PreferencesKeys.OVERLAP_SECONDS] ?: 10,
             sampleRate = preferences[PreferencesKeys.SAMPLE_RATE] ?: UserPreferences.QUALITY_TINIEST,
             liveTranscribe = preferences[PreferencesKeys.LIVE_TRANSCRIBE] ?: true,
             skipSilence = preferences[PreferencesKeys.SKIP_SILENCE] ?: true,
@@ -97,6 +112,7 @@ class PreferencesRepository(private val context: Context) {
             selectedSttModel = preferences[PreferencesKeys.SELECTED_STT_MODEL] ?: UserPreferences.STT_MODEL_VOSK_HINDI,
             selectedAiModel = preferences[PreferencesKeys.SELECTED_AI_MODEL] ?: UserPreferences.AI_MODEL_LOCAL_TINY,
             cloudApiKey = preferences[PreferencesKeys.CLOUD_API_KEY] ?: "",
+            cloudModelName = preferences[PreferencesKeys.CLOUD_MODEL_NAME] ?: "gemini-1.5-flash",
             audioFolderPath = preferences[PreferencesKeys.AUDIO_FOLDER_PATH] ?: "",
             transcriptionFolderPath = preferences[PreferencesKeys.TRANSCRIPTION_FOLDER_PATH] ?: "",
             notesFolderPath = preferences[PreferencesKeys.NOTES_FOLDER_PATH] ?: "",
@@ -138,7 +154,21 @@ class PreferencesRepository(private val context: Context) {
             devAdvancedVisibleSettings = preferences[PreferencesKeys.DEV_ADVANCED_VISIBLE_SETTINGS] ?: UserPreferences.DEFAULT_ADVANCED_VISIBLE_SETTINGS,
             homeTheme = preferences[PreferencesKeys.HOME_THEME] ?: UserPreferences.HOME_THEME_CHARCOAL,
             devSettingTierOverrides = overridesMap,
-            inverseRecordingsSort = preferences[PreferencesKeys.INVERSE_RECORDINGS_SORT] ?: false
+            inverseRecordingsSort = preferences[PreferencesKeys.INVERSE_RECORDINGS_SORT] ?: true,
+            mediaViewMode = preferences[PreferencesKeys.MEDIA_VIEW_MODE] ?: "DETAILED",
+            customBotName = preferences[PreferencesKeys.CUSTOM_BOT_NAME] ?: "Madhu",
+            customWakeAliases = preferences[PreferencesKeys.CUSTOM_WAKE_ALIASES] ?: emptySet(),
+            googleAccountEmail = preferences[PreferencesKeys.GOOGLE_ACCOUNT_EMAIL] ?: "",
+            isGoogleSignedIn = preferences[PreferencesKeys.IS_GOOGLE_SIGNED_IN] ?: false,
+            orbScaleMultiplier = preferences[PreferencesKeys.ORB_SCALE_MULTIPLIER] ?: 2.5f,
+            orbOffsetX = preferences[PreferencesKeys.ORB_OFFSET_X] ?: 0f,
+            orbOffsetY = preferences[PreferencesKeys.ORB_OFFSET_Y] ?: 0f,
+            homeCardScale = preferences[PreferencesKeys.HOME_CARD_SCALE] ?: 1.0f,
+            homeCardUnit = preferences[PreferencesKeys.HOME_CARD_UNIT] ?: "PERCENT",
+            homeCardOffsetX = preferences[PreferencesKeys.HOME_CARD_OFFSET_X] ?: 0f,
+            homeCardOffsetY = preferences[PreferencesKeys.HOME_CARD_OFFSET_Y] ?: 0f,
+            appLogoStyle = preferences[PreferencesKeys.APP_LOGO_STYLE] ?: "DEFAULT",
+            customAppLogoUri = preferences[PreferencesKeys.CUSTOM_APP_LOGO_URI] ?: ""
         )
     }
 
@@ -521,6 +551,69 @@ class PreferencesRepository(private val context: Context) {
     suspend fun updateInverseRecordingsSort(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.INVERSE_RECORDINGS_SORT] = enabled
+        }
+    }
+
+    suspend fun updateMediaViewMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.MEDIA_VIEW_MODE] = mode
+        }
+    }
+
+    suspend fun updateCustomBotName(name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CUSTOM_BOT_NAME] = name
+        }
+    }
+
+    suspend fun addCustomWakeAlias(alias: String) {
+        if (alias.isBlank()) return
+        context.dataStore.edit { preferences ->
+            val current = preferences[PreferencesKeys.CUSTOM_WAKE_ALIASES] ?: emptySet()
+            preferences[PreferencesKeys.CUSTOM_WAKE_ALIASES] = current + alias.trim()
+        }
+    }
+
+    suspend fun removeCustomWakeAlias(alias: String) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[PreferencesKeys.CUSTOM_WAKE_ALIASES] ?: emptySet()
+            preferences[PreferencesKeys.CUSTOM_WAKE_ALIASES] = current - alias
+        }
+    }
+
+    suspend fun updateGoogleAccount(email: String, isSignedIn: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.GOOGLE_ACCOUNT_EMAIL] = email
+            preferences[PreferencesKeys.IS_GOOGLE_SIGNED_IN] = isSignedIn
+        }
+    }
+
+    suspend fun updateOrbScale(multiplier: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ORB_SCALE_MULTIPLIER] = multiplier
+        }
+    }
+
+    suspend fun updateOrbOffset(x: Float, y: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ORB_OFFSET_X] = x
+            preferences[PreferencesKeys.ORB_OFFSET_Y] = y
+        }
+    }
+
+    suspend fun updateHomeCardLayout(scale: Float, unit: String, offsetX: Float, offsetY: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HOME_CARD_SCALE] = scale
+            preferences[PreferencesKeys.HOME_CARD_UNIT] = unit
+            preferences[PreferencesKeys.HOME_CARD_OFFSET_X] = offsetX
+            preferences[PreferencesKeys.HOME_CARD_OFFSET_Y] = offsetY
+        }
+    }
+
+    suspend fun updateAppLogoStyle(style: String, customUri: String = "") {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.APP_LOGO_STYLE] = style
+            preferences[PreferencesKeys.CUSTOM_APP_LOGO_URI] = customUri
         }
     }
 
